@@ -13,6 +13,13 @@ public struct StrummedNote: Sendable {
     public let velocity: UInt8
     public let delayMs: Double // Time offset for arpeggiation/spread
     public let stringIndex: Int
+
+    public init(note: Note, velocity: UInt8, delayMs: Double, stringIndex: Int) {
+        self.note = note
+        self.velocity = velocity
+        self.delayMs = delayMs
+        self.stringIndex = stringIndex
+    }
 }
 
 public struct StrumResult: Sendable {

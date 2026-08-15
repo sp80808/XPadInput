@@ -66,24 +66,9 @@ public struct HarmonyWorkspaceView: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
                             ForEach(Array(activeProgression.blocks.enumerated()), id: \.offset) { index, block in
-                                VStack(spacing: 6) {
-                                    Text(block.romanNumeral)
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                    Text(block.chord.symbol)
-                                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                                        .foregroundStyle(selectedBlockIndex == index ? Color.accentColor : Color.primary)
-                                    Text("\(Int(block.durationBeats)) beats")
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                }
-                                .padding(14)
-                                .frame(width: 110, height: 100)
-                                .background(selectedBlockIndex == index ? Color.accentColor.opacity(0.15) : Material.ultraThinMaterial)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(selectedBlockIndex == index ? Color.accentColor : Color.white.opacity(0.1), lineWidth: 2)
+                                ChordBlockCard(
+                                    block: block,
+                                    isSelected: selectedBlockIndex == index
                                 )
                                 .onTapGesture {
                                     selectedBlockIndex = index
@@ -265,5 +250,32 @@ public struct HarmonyWorkspaceView: View {
             }
             delay += 1.2
         }
+    }
+}
+
+private struct ChordBlockCard: View {
+    let block: ChordBlock
+    let isSelected: Bool
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Text(block.romanNumeral)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(block.chord.symbol)
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+            Text("\(Int(block.durationBeats)) beats")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(14)
+        .frame(width: 110, height: 100)
+        .background(isSelected ? Color.accentColor.opacity(0.15) : Color.white.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isSelected ? Color.accentColor : Color.white.opacity(0.1), lineWidth: 2)
+        )
     }
 }

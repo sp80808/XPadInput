@@ -11,6 +11,10 @@ let package = Package(
             name: "XPadInput",
             targets: ["XPadInput"]
         ),
+        .executable(
+            name: "XPadTests",
+            targets: ["XPadTests"]
+        ),
         .library(
             name: "XPadCore",
             targets: ["XPadCore"]
@@ -81,29 +85,16 @@ let package = Package(
                 "XPadUI"
             ]
         ),
-        .testTarget(
-            name: "XPadCoreTests",
-            dependencies: ["XPadCore"]
-        ),
-        .testTarget(
-            name: "XPadTheoryTests",
-            dependencies: ["XPadCore", "XPadTheory"]
-        ),
-        .testTarget(
-            name: "XPadControllerTests",
-            dependencies: ["XPadCore", "XPadTheory", "XPadController"]
-        ),
-        .testTarget(
-            name: "XPadMIDITests",
-            dependencies: ["XPadCore", "XPadTheory", "XPadMIDI"]
-        ),
-        .testTarget(
-            name: "XPadAudioTests",
-            dependencies: ["XPadCore", "XPadTheory", "XPadAudio"]
-        ),
-        .testTarget(
-            name: "XPadSequencerTests",
-            dependencies: ["XPadCore", "XPadTheory", "XPadMIDI", "XPadAudio", "XPadSequencer"]
+        .executableTarget(
+            name: "XPadTests",
+            dependencies: [
+                "XPadCore",
+                "XPadTheory",
+                "XPadController",
+                "XPadMIDI",
+                "XPadAudio",
+                "XPadSequencer"
+            ]
         )
     ]
 )

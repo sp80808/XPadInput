@@ -19,25 +19,15 @@ public struct LibraryWorkspaceView: View {
 
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 180))], spacing: 12) {
                         ForEach(SynthPreset.allPresets) { preset in
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(preset.name)
-                                    .font(.subheadline)
-                                    .fontWeight(.bold)
-                                Text("Osc: \(preset.osc1Type.rawValue) + \(preset.osc2Type.rawValue)")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                Button(selectedPreset.id == preset.id ? "Active" : "Select") {
+                            PresetCard(
+                                preset: preset,
+                                isSelected: selectedPreset.id == preset.id,
+                                onSelect: {
                                     selectedPreset = preset
                                     AudioEngine.shared.setPreset(preset)
                                     auditionPreset()
                                 }
-                                .buttonStyle(selectedPreset.id == preset.id ? .borderedProminent : .bordered)
-                                .controlSize(.small)
-                            }
-                            .padding(12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Material.ultraThinMaterial)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            )
                         }
                     }
                 }
@@ -96,5 +86,35 @@ public struct LibraryWorkspaceView: View {
                 AudioEngine.shared.noteOff(note: note)
             }
         }
+    }
+}
+
+private struct PresetCard: View {
+    let preset: SynthPreset
+    let isSelected: Bool
+    let onSelect: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(preset.name)
+                .font(.subheadline)
+                .fontWeight(.bold)
+            Text("Osc: \(preset.osc1Type.rawValue) + \(preset.osc2Type.rawValue)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            if isSelected {
+                Button("Active", action: onSelect)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+            } else {
+                Button("Select", action: onSelect)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Material.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }

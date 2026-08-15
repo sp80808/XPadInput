@@ -195,7 +195,7 @@ public struct PlayWorkspaceView: View {
             guard let sectors = wheel.sectorsByLayer[activeWheelLayer] else { return }
             let sectorAngle = (2.0 * .pi) / Double(sectors.count)
 
-            for (index, sector) in sectors.enumerated() {
+            for (_, sector) in sectors.enumerated() {
                 let startAngle = Angle(radians: sector.angle - sectorAngle / 2.0)
                 let endAngle = Angle(radians: sector.angle + sectorAngle / 2.0)
 

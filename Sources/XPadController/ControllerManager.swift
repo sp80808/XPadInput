@@ -106,13 +106,19 @@ public final class ControllerManager: ObservableObject {
 
         // Motion / Gyro
         if let motion = controller.motion {
-            motion.sensorsRequireCurrentState = true
-            motion.valueChangedHandler = { [weak self] _ in
+            motion.valueChangedHandler = { [weak self] motion in
                 guard let self = self else { return }
+                let q = motion.attitude
+                // Convert quaternion (x, y, z, w) to Euler angles in radians
+                let sinp = 2.0 * (q.w * q.y - q.z * q.x)
+                let pitch = abs(sinp) >= 1.0 ? copysign(.pi / 2.0, sinp) : asin(sinp)
+                let roll = atan2(2.0 * (q.w * q.x + q.y * q.z), 1.0 - 2.0 * (q.x * q.x + q.y * q.y))
+                let yaw = atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+
                 Task { @MainActor in
-                    self.currentState.gyroPitch = motion.attitude.pitch
-                    self.currentState.gyroRoll = motion.attitude.roll
-                    self.currentState.gyroYaw = motion.attitude.yaw
+                    self.currentState.gyroPitch = pitch
+                    self.currentState.gyroRoll = roll
+                    self.currentState.gyroYaw = yaw
                     self.onStateChanged?(self.currentState)
                 }
             }

@@ -25,7 +25,7 @@ public struct SequenceWorkspaceView: View {
                         Text(scene.name)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 6)
-                            .background(sequencer.activeSceneIndex == index ? Color.accentColor : Material.ultraThinMaterial)
+                            .background(sequencer.activeSceneIndex == index ? Color.accentColor : Color.white.opacity(0.1))
                             .foregroundStyle(sequencer.activeSceneIndex == index ? Color.white : Color.primary)
                             .clipShape(Capsule())
                     }

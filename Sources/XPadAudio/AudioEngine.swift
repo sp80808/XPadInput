@@ -272,7 +272,9 @@ public final class AudioEngine: @unchecked Sendable {
 
                 let osc1Sample = renderOsc(type: preset.osc1Type, phase: voice.phase1)
                 let osc2Sample = renderOsc(type: preset.osc2Type, phase: voice.phase2)
-                let sample = (osc1Sample * 0.6 + osc2Sample * 0.4) * voice.envLevel * voice.velocity
+                let oscMix = (osc1Sample * 0.6) + (osc2Sample * 0.4)
+                let gain = voice.envLevel * voice.velocity
+                let sample = Float(oscMix) * gain
 
                 voice.phase1 += freq * dt
                 if voice.phase1 >= 1.0 { voice.phase1 -= 1.0 }
@@ -280,7 +282,7 @@ public final class AudioEngine: @unchecked Sendable {
                 voice.phase2 += freq2 * dt
                 if voice.phase2 >= 1.0 { voice.phase2 -= 1.0 }
 
-                mix += Float(sample)
+                mix += sample
             }
 
             // Simple soft-clipping limiter
