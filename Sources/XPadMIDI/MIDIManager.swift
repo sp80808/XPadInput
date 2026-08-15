@@ -296,6 +296,26 @@ public final class MIDIEngine: @unchecked Sendable {
         )
     }
 
+    /// Sends a normalized controller value without discarding precision before
+    /// the MIDI 2 boundary. MIDI 1 output and diagnostics still use 7-bit data.
+    public func sendCC(
+        port: VirtualPort,
+        channel: UInt8,
+        controller: UInt8,
+        normalizedValue: Double
+    ) {
+        let value7 = Self.midi7(normalizedValue)
+        emit(
+            [0xB0 | min(15, channel), min(127, controller), value7],
+            midi2Override: MIDI2UMPEncoder.controlChangeMessage(
+                channel: channel,
+                controller: controller,
+                normalizedValue: normalizedValue
+            ),
+            to: port
+        )
+    }
+
     public func sendPolyPressure(note: UInt8, pressure: UInt8, channel: UInt8 = 0) {
         sendPolyPressure(port: .mpe, channel: channel, note: note, pressure: pressure)
     }
@@ -316,6 +336,24 @@ public final class MIDIEngine: @unchecked Sendable {
         )
     }
 
+    public func sendPolyPressure(
+        port: VirtualPort,
+        channel: UInt8,
+        note: UInt8,
+        normalizedPressure: Double
+    ) {
+        let pressure7 = Self.midi7(normalizedPressure)
+        emit(
+            [0xA0 | min(15, channel), min(127, note), pressure7],
+            midi2Override: MIDI2UMPEncoder.polyPressureMessage(
+                channel: channel,
+                note: note,
+                normalizedPressure: normalizedPressure
+            ),
+            to: port
+        )
+    }
+
     public func sendChannelPressure(pressure: UInt8, channel: UInt8 = 0) {
         sendChannelPressure(port: .mpe, channel: channel, pressure: pressure)
     }
@@ -328,8 +366,37 @@ public final class MIDIEngine: @unchecked Sendable {
         emit([0xD0 | min(15, channel), min(127, pressure)], to: port)
     }
 
+    public func sendChannelPressure(
+        port: VirtualPort,
+        channel: UInt8,
+        normalizedPressure: Double
+    ) {
+        let pressure7 = Self.midi7(normalizedPressure)
+        emit(
+            [0xD0 | min(15, channel), pressure7],
+            midi2Override: MIDI2UMPEncoder.channelPressureMessage(
+                channel: channel,
+                normalizedPressure: normalizedPressure
+            ),
+            to: port
+        )
+    }
+
     public func sendTimbreCC74(port: VirtualPort, channel: UInt8, value: UInt8) {
         sendCC(port: port, channel: channel, controller: 74, value: value)
+    }
+
+    public func sendTimbreCC74(
+        port: VirtualPort,
+        channel: UInt8,
+        normalizedValue: Double
+    ) {
+        sendCC(
+            port: port,
+            channel: channel,
+            controller: 74,
+            normalizedValue: normalizedValue
+        )
     }
 
     public func sendPitchBend(value: UInt16, channel: UInt8 = 0) {
@@ -354,13 +421,23 @@ public final class MIDIEngine: @unchecked Sendable {
         semitoneOffset: Double,
         bendRangeSemitones: Double
     ) {
-        sendPitchBend(
-            port: port,
-            channel: channel,
-            value: Self.pitchBendValue(
+        let value14 = Self.pitchBendValue(
+            semitoneOffset: semitoneOffset,
+            bendRangeSemitones: bendRangeSemitones
+        )
+        let safeChannel = min(15, channel)
+        emit(
+            [
+                0xE0 | safeChannel,
+                UInt8(value14 & 0x7F),
+                UInt8((value14 >> 7) & 0x7F)
+            ],
+            midi2Override: MIDI2UMPEncoder.pitchBendMessage(
+                channel: safeChannel,
                 semitoneOffset: semitoneOffset,
                 bendRangeSemitones: bendRangeSemitones
-            )
+            ),
+            to: port
         )
     }
 
@@ -368,12 +445,20 @@ public final class MIDIEngine: @unchecked Sendable {
         semitoneOffset: Double,
         bendRangeSemitones: Double
     ) -> UInt16 {
-        guard bendRangeSemitones > 0 else { return 8192 }
+        guard semitoneOffset.isFinite, bendRangeSemitones.isFinite, bendRangeSemitones > 0 else {
+            return 8192
+        }
         let normalized = max(-1.0, min(1.0, semitoneOffset / bendRangeSemitones))
         if normalized >= 0 {
             return UInt16((8192.0 + normalized * 8191.0).rounded())
         }
         return UInt16((8192.0 + normalized * 8192.0).rounded())
+    }
+
+    private static func midi7(_ normalizedValue: Double) -> UInt8 {
+        guard normalizedValue.isFinite else { return 0 }
+        let normalized = min(1.0, max(0.0, normalizedValue))
+        return UInt8((normalized * 127.0).rounded())
     }
 
     /// Dispatches a semantic channel event to one DAW-visible source.
@@ -470,6 +555,14 @@ public final class MIDIEngine: @unchecked Sendable {
     // MARK: - Low-level MIDI
 
     private func emit(_ bytes: [UInt8], to port: VirtualPort) {
+        emit(bytes, midi2Override: nil, to: port)
+    }
+
+    private func emit(
+        _ bytes: [UInt8],
+        midi2Override: MIDIMessage_64?,
+        to port: VirtualPort
+    ) {
         lock.lock()
         let record = MIDIMessageRecord(port: port, bytes: bytes)
         if messageLog.count < Self.messageLogCapacity {
@@ -484,7 +577,12 @@ public final class MIDIEngine: @unchecked Sendable {
         lock.unlock()
 
         guard let endpoint, endpoint != 0 else { return }
-        sendMIDIMessage(bytes, endpoint: endpoint, protocolID: protocolID)
+
+        if protocolID == .midi2, let midi2Override {
+            sendMIDI2Message(midi2Override, endpoint: endpoint)
+        } else {
+            sendMIDIMessage(bytes, endpoint: endpoint, protocolID: protocolID)
+        }
     }
 
     private func emitChannelCleanup(to port: VirtualPort, channel: UInt8) {
@@ -551,7 +649,10 @@ public final class MIDIEngine: @unchecked Sendable {
 
     private func sendMIDI2Message(_ bytes: [UInt8], endpoint: MIDIEndpointRef) {
         guard let message = MIDI2UMPEncoder.message(from: bytes) else { return }
+        sendMIDI2Message(message, endpoint: endpoint)
+    }
 
+    private func sendMIDI2Message(_ message: MIDIMessage_64, endpoint: MIDIEndpointRef) {
         var eventList = MIDIEventList()
         var packet = MIDIEventListInit(&eventList, ._2_0)
         let words = [message.word0, message.word1]
