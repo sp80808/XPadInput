@@ -8,6 +8,10 @@ let package = Package(
     ],
     products: [
         .executable(
+            name: "XPI",
+            targets: ["XPadInput"]
+        ),
+        .executable(
             name: "XPadInput",
             targets: ["XPadInput"]
         ),

@@ -1,6 +1,6 @@
-# ROADMAP.md: XPadInput Development & Innovation Roadmap
+# ROADMAP.md — XPI: Game Controller MIDI Development & Innovation Roadmap
 
-This document outlines the multi-phase vision, milestones, and technical trajectory of **XPadInput** from MVP standalone instrument to an industry-standard expressive performance ecosystem.
+This document outlines the multi-phase vision, milestones, and technical trajectory of **XPI: Game Controller MIDI** from MVP standalone instrument to an industry-standard expressive performance ecosystem.
 
 ---
 
@@ -21,7 +21,7 @@ This document outlines the multi-phase vision, milestones, and technical traject
 ---
 
 ## Phase 2: DAW Plugin & Inter-App Audio Routing (Q3 2026)
-- [ ] **AUv3 / VST3 Plugin Targets**: Package XPadInput as an Audio Unit v3 MIDI FX and Instrument plugin for direct hosting inside Logic Pro, Ableton Live, Bitwig Studio, Reaper, and Cubase.
+- [ ] **AUv3 / VST3 Plugin Targets**: Package XPI as an Audio Unit v3 MIDI FX and Instrument plugin for direct hosting inside Logic Pro, Ableton Live, Bitwig Studio, Reaper, and Cubase.
 - [ ] **CoreAudio Virtual Audio Driver**: Provide a direct virtual loopback audio stream for zero-configuration system audio capture.
 - [ ] **Custom Scale & Microtuning Importer**: Support Scala (`.scl`) and MIDI Tuning Standard (MTS / MTS-ESP) for microtonal, just intonation, and non-Western harmonic wheels.
 - [ ] **Preset Cloud Synchronization & Community Exchange**: Sharing progression templates, custom chord wheels, and controller mapping profiles.
@@ -44,6 +44,6 @@ This document outlines the multi-phase vision, milestones, and technical traject
 ---
 
 ## Phase 5: Hardware & Embedded Ecosystem (2027+)
-- [ ] **XPad Wireless Hardware Bridge**: Dedicated low-latency USB-C / BLE hardware dongle delivering sub-1ms MIDI DIN and CV/Gate outputs for modular synthesizers (Eurorack).
+- [ ] **XPI Wireless Hardware Bridge**: Dedicated low-latency USB-C / BLE hardware dongle delivering sub-1ms MIDI DIN and CV/Gate outputs for modular synthesizers (Eurorack).
 - [ ] **iOS & iPadOS Companion**: Universal binary running on iPad with full Touch + Game Controller support.
 - [ ] **Open Controller Definition Standard (OCDS)**: Open-source JSON schema for community controller mapping profiles and visual 3D skinning.

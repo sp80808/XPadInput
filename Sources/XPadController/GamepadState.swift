@@ -121,6 +121,15 @@ public struct ControllerCapabilityProfile: Codable, Sendable {
         self.buttonLabels = buttonLabels
     }
 
+    public var capabilitySummary: String {
+        var caps: [String] = []
+        if hasTouchpad { caps.append("Touch") }
+        if hasMotionIMU { caps.append("IMU") }
+        if hasHaptics { caps.append("Haptics") }
+        if hasAnalogTriggers { caps.append("Triggers") }
+        return caps.isEmpty ? "Basic" : caps.joined(separator: " · ")
+    }
+
     public static let dualSense = ControllerCapabilityProfile(
         hasTouchpad: true,
         hasMotionIMU: true,
@@ -260,12 +269,12 @@ public struct StickCoordinates: Codable, Sendable {
 }
 
 public struct GamepadState: Codable, Sendable {
-    public var leftStick: ProcessedStickState
-    public var rightStick: ProcessedStickState
+    public var leftStick: StickCoordinates
+    public var rightStick: StickCoordinates
 
     // Triggers (0.0 to 1.0)
-    public var leftTrigger: ProcessedTriggerState
-    public var rightTrigger: ProcessedTriggerState
+    public var leftTrigger: Double
+    public var rightTrigger: Double
 
     // Shoulders
     public var leftShoulder: Bool
@@ -322,10 +331,10 @@ public struct GamepadState: Codable, Sendable {
     public var extraButtons: [String: Bool]
 
     public init(
-        leftStick: ProcessedStickState = ProcessedStickState(),
-        rightStick: ProcessedStickState = ProcessedStickState(),
-        leftTrigger: ProcessedTriggerState = ProcessedTriggerState(),
-        rightTrigger: ProcessedTriggerState = ProcessedTriggerState(),
+        leftStick: StickCoordinates = StickCoordinates(),
+        rightStick: StickCoordinates = StickCoordinates(),
+        leftTrigger: Double = 0.0,
+        rightTrigger: Double = 0.0,
         leftShoulder: Bool = false,
         rightShoulder: Bool = false,
         buttonA: Bool = false,
@@ -412,8 +421,8 @@ public struct GamepadState: Codable, Sendable {
         if leftShoulder && rightShoulder { return .bothShoulders }
         if leftShoulder { return .leftShoulder }
         if rightShoulder { return .rightShoulder }
-        if leftTrigger.value > 0.5 { return .leftTrigger }
-        if rightTrigger.value > 0.5 { return .rightTrigger }
+        if leftTrigger > 0.5 { return .leftTrigger }
+        if rightTrigger > 0.5 { return .rightTrigger }
         return .none
     }
 }
@@ -469,6 +478,11 @@ public final class ControllerState: @unchecked Sendable {
     
     public init() {}
     
+    public var leftStickX: Float { leftStick.x }
+    public var leftStickY: Float { leftStick.y }
+    public var rightStickX: Float { rightStick.x }
+    public var rightStickY: Float { rightStick.y }
+
     public var leftStickAngle: Double {
         leftStick.angle
     }

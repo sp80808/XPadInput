@@ -100,6 +100,11 @@ public struct Chord: Hashable, Codable, Sendable, Identifiable {
         self.quality = quality
         self.inversion = inversion
     }
+
+    /// Convenience alias used by suggestion/tests (`type` == `quality`).
+    public init(root: PitchClass, type: ChordQuality, inversion: Int = 0) {
+        self.init(root: root, quality: type, inversion: inversion)
+    }
     
     public var id: String { "\(root.displayName)\(quality.symbol)_inv\(inversion)" }
     
@@ -147,6 +152,34 @@ public struct Chord: Hashable, Codable, Sendable, Identifiable {
     /// Pitch classes in this chord
     public var pitchClasses: [PitchClass] {
         quality.intervals.map { root.transposed(by: $0 % 12) }
+    }
+
+    /// Chord-tone pitch class for a melodic role. Missing extensions fall back to the implied interval.
+    public func pitchClass(for role: ChordToneRole) -> PitchClass {
+        let pcs = pitchClasses
+        switch role {
+        case .root:
+            return root
+        case .third:
+            return pcs.count > 1 ? pcs[1] : root.transposed(by: quality.intervals.contains(3) ? 3 : 4)
+        case .fifth:
+            return pcs.count > 2 ? pcs[2] : root.transposed(by: 7)
+        case .seventh:
+            if pcs.count > 3 { return pcs[3] }
+            switch quality {
+            case .major, .major7, .major9, .add9, .sixth: return root.transposed(by: 11)
+            case .dominant7, .dominant9, .dominant11, .dominant13, .augmented7: return root.transposed(by: 10)
+            default: return root.transposed(by: 10)
+            }
+        case .ninth:
+            return root.transposed(by: 14 % 12)
+        case .eleventh:
+            return root.transposed(by: 17 % 12)
+        case .thirteenth:
+            return root.transposed(by: 21 % 12)
+        case .tension:
+            return root.transposed(by: 10)
+        }
     }
     
     /// Generate concrete voiced notes for this chord

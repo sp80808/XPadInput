@@ -3,7 +3,7 @@ import XPadCore
 import XPadController
 
 public struct MapWorkspaceView: View {
-    @ObservedObject var controllerManager: ControllerManager
+    public var controllerManager: ControllerManager
 
     public init(controllerManager: ControllerManager) {
         self.controllerManager = controllerManager

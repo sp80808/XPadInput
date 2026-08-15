@@ -253,6 +253,34 @@ final class XPadCoreTests: XCTestCase {
         XCTAssertEqual(shellVoicing.count, 3)
     }
 
+    func testVoiceLeadingKeepsStablePlayableRegister() {
+        let progression = [
+            Chord(root: .d, quality: .minor),
+            Chord(root: .c, quality: .major),
+            Chord(root: .e, quality: .diminished),
+            Chord(root: .f, quality: .major),
+            Chord(root: .a, quality: .minor),
+            Chord(root: .g, quality: .minor)
+        ]
+        var voicing = ChordVoicing.strummed(chord: progression[0], strings: 6, baseOctave: 3)
+
+        for _ in 0..<16 {
+            for chord in progression {
+                voicing = ChordVoicing.voiceLed(
+                    chord: chord,
+                    from: voicing,
+                    baseOctave: 3,
+                    voiceCount: 6
+                )
+                XCTAssertEqual(voicing.notes.count, 6)
+                XCTAssertTrue(voicing.notes.allSatisfy { (36...84).contains($0.midiNote) })
+            }
+        }
+
+        XCTAssertLessThanOrEqual(voicing.notes.last?.midiNote ?? 127, 84)
+        XCTAssertGreaterThanOrEqual(voicing.notes.first?.midiNote ?? 0, 36)
+    }
+
     // MARK: - PerformanceEvent & Transport Tests
     func testPerformanceEventCodable() throws {
         let events: [PerformanceEvent] = [

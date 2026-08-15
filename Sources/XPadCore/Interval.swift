@@ -22,6 +22,8 @@ public enum Interval: Int, CaseIterable, Codable, Hashable, Sendable {
     
     public var semitones: Int { rawValue }
     
+    public var shortName: String { name }
+
     public var name: String {
         switch self {
         case .unison: return "P1"

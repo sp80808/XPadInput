@@ -25,6 +25,8 @@ public enum GlyphSize {
 
 /// A styled vector glyph badge for any gamepad, rhythm controller, or niche control element.
 public struct ControllerGlyphView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     public let key: GlyphKey
     public let iconPack: ControllerIconPack
     public var isPressed: Bool
@@ -80,8 +82,11 @@ public struct ControllerGlyphView: View {
                 .minimumScaleFactor(0.6)
         }
         .frame(width: size.dimension, height: size.dimension)
-        .animation(.spring(response: 0.2, dampingFraction: 0.6), value: isPressed)
+        .animation(reduceMotion ? nil : .spring(response: 0.2, dampingFraction: 0.72), value: isPressed)
         .help(showTooltip ? "\(spec.fullTitle): \(spec.musicalRoleHint)" : "")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(spec.fullTitle), \(spec.musicalRoleHint)")
+        .accessibilityValue(isPressed ? "Pressed" : "Released")
     }
 }
 

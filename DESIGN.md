@@ -1,14 +1,14 @@
-# DESIGN.md — XPadInput Product & Interaction Design System
+# DESIGN.md — XPI: Game Controller MIDI Product & Interaction Design System
 
-> **Status:** Authoritative design direction for XPadInput UI, interaction, feedback, and controller ergonomics.
+> **Status:** Authoritative design direction for XPI UI, interaction, feedback, and controller ergonomics.
 >
-> XPadInput is not a MIDI-mapping utility with a gamepad skin. It is a **native macOS musical instrument whose physical vocabulary happens to be a modern game controller**.
+> XPI: Game Controller MIDI is not a MIDI-mapping utility with a gamepad skin. It is a **native macOS musical instrument whose physical vocabulary happens to be a modern game controller**.
 
 ---
 
 ## 1. Purpose
 
-This document defines how XPadInput should **look, feel, teach, respond, and behave** as development continues.
+This document defines how XPI should **look, feel, teach, respond, and behave** as development continues.
 
 It exists to prevent three common failure modes:
 
@@ -109,7 +109,7 @@ Do not force metaphor when a straightforward control is more understandable.
 
 Recent DMI research cautions against thinking of mapping as a static one-way connection from sensor to parameter. The performer continuously adapts to what the instrument gives back.
 
-XPadInput should therefore treat feedback as part of the mapping itself:
+XPI should therefore treat feedback as part of the mapping itself:
 
 **input → interpretation → sound → visual state → haptic state → performer adaptation**
 
@@ -132,7 +132,7 @@ Do not continuously vibrate simply because the controller supports it.
 
 Research on accessible digital musical instruments repeatedly identifies adaptability, customisation, iterative prototyping, and participation as important design qualities.
 
-For XPadInput this means that:
+For XPI this means that:
 
 - deadzones are adjustable;
 - response curves are adjustable;
@@ -148,7 +148,7 @@ Accessibility settings should be presented as **instrument personalisation**, no
 
 ## 4. Product Personality
 
-XPadInput should feel:
+XPI should feel:
 
 - **native** — unmistakably at home on macOS;
 - **musical** — the interface is organised around sound and gesture, not engineering telemetry;
@@ -231,7 +231,7 @@ The existing green identity is strong enough to keep, but should become more dis
 
 ### 6.1 Primary accent
 
-Use the XPad green as the application identity and positive musical activity accent.
+Use the XPI green as the application identity and positive musical activity accent.
 
 Green should indicate things such as:
 
@@ -415,7 +415,7 @@ Where screen width is constrained, low-priority routing/status can collapse into
 
 ## 11. PLAY Workspace
 
-PLAY is the heart of XPadInput.
+PLAY is the heart of XPI.
 
 It must answer three questions instantly:
 
@@ -560,6 +560,30 @@ A performer should be able to make PLAY visually stage-safe:
 - controller HUD;
 - minimal transport;
 - no configuration clutter.
+
+
+### 11.8 Instrument-Aware Bend Feedback
+
+A bend is a playing technique, not a generic slider or exposed MIDI value.
+
+The active `InstrumentProfile` owns both the gesture meaning and its adjacent HUD label. Guitar may present `Strum / Bend`, while Synth Lead presents `Bend / Timbre` and Keys must not inherit a guitar bend metaphor. Changing profiles updates those semantics without rebuilding PLAY.
+
+Canonical PLAY behaviour:
+
+- only interpret lateral right-stick movement as bend while a note is sustained and the active instrument profile supports bending;
+- preserve continuous pitch movement while applying only soft attraction toward context-ranked chord, scale, or chromatic targets;
+- deform the active note or string toward the target and reveal a compact target label only while the bend is active;
+- make target proximity visible through firmness, opacity, or geometry rather than colour alone;
+- emit at most one subtle haptic detent when an exact target is crossed, then re-arm only after leaving that target zone;
+- suppress conflicting strum feedback while the lateral bend gesture owns the right stick;
+- require MPE or an otherwise isolated voice for independent pitch; a shared-channel conventional MIDI chord must be blocked and explained in MAP;
+- return the visual state cleanly to neutral as pitch returns to centre, including under Reduce Motion.
+
+PLAY must describe the musical result, such as `Bend +2 → G`. Raw 14-bit pitch-bend values, member-channel allocation, destination range, and fallback diagnostics belong in MAP.
+
+Instrument selection lives in the PLAY transport as a compact family picker (Guitar, Bass, Keys, Lead, Strings, Generic MPE). Changing the profile updates HUD labels, gesture interpretation, MIDI translation, haptics, and theory assistance without rebuilding the workspace.
+
+**Implemented slice:** the Guitar profile, sustained-note lateral bend interpretation, contextual target/proximity state, restrained label state, and return-to-centre contract exist in the semantic performance path. Physical-controller feel, haptic delivery, and destination-specific DAW behaviour still require manual proof.
 
 ---
 
@@ -824,7 +848,7 @@ Use combinations of:
 - role label;
 - haptic/audio reinforcement.
 
-Apple guidance for controls reinforces the importance of visible/tactile interaction states; XPadInput should extend that principle to its performance HUD.
+Apple guidance for controls reinforces the importance of visible/tactile interaction states; XPI should extend that principle to its performance HUD.
 
 ---
 
@@ -919,7 +943,7 @@ The first launch must demonstrate the instrument before teaching the application
 
 Preferred flow:
 
-1. XPadInput opens into PLAY.
+1. XPI opens into PLAY.
 2. “Connect a controller” appears only if none is present.
 3. Controller is automatically recognised.
 4. A comfortable default sound and scale load.
@@ -1027,7 +1051,7 @@ See Motion System above.
 
 ## 22. Window & Responsive Behaviour
 
-XPadInput is a desktop instrument, but users will run it beside a DAW.
+XPI is a desktop instrument, but users will run it beside a DAW.
 
 Design for at least three useful widths:
 
@@ -1301,7 +1325,7 @@ The design direction is working when:
 
 ## 31. Research Basis & References
 
-This document synthesises the current XPadInput implementation with the following design and research sources.
+This document synthesises the current XPI implementation with the following design and research sources.
 
 ### Apple platform guidance
 
@@ -1323,12 +1347,14 @@ This document synthesises the current XPadInput implementation with the followin
 - Gareth W. Young, David Murphy & Jeffrey Weeter, **A Functional Analysis of Haptic Feedback in Digital Musical Instrument Interactions**, 2018. https://consensus.app/papers/a-functional-analysis-of-haptic-feedback-in-digital-young-murphy/a44dce433b645245a1d4effddd893e89/
 - Stefano Papetti, Hanna Järveläinen & Federico Fontana, **Design and Assessment of Digital Musical Devices Yielding Vibrotactile Feedback**, Arts, 2023.
 
-### Existing XPadInput documents that remain complementary
+### Existing XPI documents that remain complementary
 
 - `SOUL.md` — artistic identity and philosophy;
 - `PRODUCT_RESEARCH.md` — competitive and product research;
 - `TECH_STACK.md` — architectural/performance constraints;
 - `ROADMAP.md` — delivery sequencing;
+- `INSTRUMENT_TECHNIQUES.md` — semantic technique and instrument-profile contract;
+- `MIDI_MPE_SPEC.md` — MIDI/MPE wire, lifecycle, and fallback contract;
 - `DESIGN.md` — **authoritative visual, interaction, ergonomic, and feedback rules**.
 
 ---
@@ -1337,6 +1363,6 @@ This document synthesises the current XPadInput implementation with the followin
 
 > **Do not show the user that a controller value changed. Show them that the instrument responded to their gesture.**
 
-A successful XPadInput interface should become progressively less necessary to stare at as the player gains skill.
+A successful XPI interface should become progressively less necessary to stare at as the player gains skill.
 
 The screen teaches the instrument, confirms the instrument, and reveals its deeper state — but the player’s hands should ultimately be able to make music without asking the screen what to do next.

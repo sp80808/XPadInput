@@ -121,6 +121,17 @@ public struct Progression: Identifiable, Codable, Sendable {
                         ChordBlock(chord: Chord(root: r.transposed(by: 3), quality: .major), durationBeats: 4.0, romanNumeral: "♭III"),
                         ChordBlock(chord: Chord(root: r.transposed(by: 10), quality: .major), durationBeats: 4.0, romanNumeral: "♭VII")
                     ]
+                ),
+                Progression(
+                    name: "Andalusian Cadence (i - VII - VI - V)",
+                    root: root,
+                    scale: scale,
+                    blocks: [
+                        ChordBlock(chord: Chord(root: r, quality: .minor), durationBeats: 4.0, romanNumeral: "i"),
+                        ChordBlock(chord: Chord(root: r.transposed(by: 10), quality: .major), durationBeats: 4.0, romanNumeral: "VII"),
+                        ChordBlock(chord: Chord(root: r.transposed(by: 8), quality: .major), durationBeats: 4.0, romanNumeral: "VI"),
+                        ChordBlock(chord: Chord(root: r.transposed(by: 7), quality: .major), durationBeats: 4.0, romanNumeral: "V")
+                    ]
                 )
             ]
         } else {
@@ -145,6 +156,17 @@ public struct Progression: Identifiable, Codable, Sendable {
                         ChordBlock(chord: Chord(root: r.transposed(by: 7), quality: .dominant9), durationBeats: 4.0, romanNumeral: "V9"),
                         ChordBlock(chord: Chord(root: r, quality: .major7), durationBeats: 4.0, romanNumeral: "Imaj7"),
                         ChordBlock(chord: Chord(root: r.transposed(by: 9), quality: .minor7), durationBeats: 4.0, romanNumeral: "vi7")
+                    ]
+                ),
+                Progression(
+                    name: "Jazz Turnaround (I - vi - ii - V)",
+                    root: root,
+                    scale: scale,
+                    blocks: [
+                        ChordBlock(chord: Chord(root: r, quality: .major7), durationBeats: 4.0, romanNumeral: "Imaj7"),
+                        ChordBlock(chord: Chord(root: r.transposed(by: 9), quality: .minor7), durationBeats: 4.0, romanNumeral: "vi7"),
+                        ChordBlock(chord: Chord(root: r.transposed(by: 2), quality: .minor7), durationBeats: 4.0, romanNumeral: "ii7"),
+                        ChordBlock(chord: Chord(root: r.transposed(by: 7), quality: .dominant9), durationBeats: 4.0, romanNumeral: "V9")
                     ]
                 )
             ]

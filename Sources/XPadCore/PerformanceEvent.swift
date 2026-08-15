@@ -1,7 +1,7 @@
 import Foundation
 
 /// Real-time expressive performance events produced by Gamepad gestures or Sequencer.
-public enum PerformanceEvent: Codable, Sendable {
+public enum PerformanceEvent: Codable, Equatable, Sendable {
     case noteOn(channel: UInt8, note: UInt8, velocity: UInt8)
     case noteOff(channel: UInt8, note: UInt8)
     case pitchBend(channel: UInt8, value: Int16) // -8192 to 8191

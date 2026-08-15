@@ -120,7 +120,7 @@ public struct SequenceWorkspaceView: View {
         let exporter = SMFExporter()
         let midiData = exporter.encode(events: events, bpm: sequencer.transport.bpm)
 
-        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("XPadInput_Performance.mid")
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("XPI Performance.mid")
         do {
             try midiData.write(to: tempURL)
             self.exportedMidiURL = tempURL

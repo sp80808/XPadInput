@@ -1,10 +1,10 @@
-# PRODUCT RESEARCH: Gamepad Music Instrument, MPE Controller & Theory Workstation (XPadInput)
+# PRODUCT RESEARCH — XPI: Game Controller MIDI
 
 ## 1. Executive Summary & Product Vision
 
-**XPadInput** transforms standard game controllers (Sony DualSense / DualShock 4, Microsoft Xbox Wireless Controller, Nintendo Switch Pro Controller, and generic MFi/HID gamepads) into professional-grade, expressive musical instruments, MPE MIDI controllers, and intelligent harmony workstations for macOS.
+**XPI: Game Controller MIDI** transforms standard game controllers (Sony DualSense / DualShock 4, Microsoft Xbox Wireless Controller, Nintendo Switch Pro Controller, and generic MFi/HID gamepads) into professional-grade, expressive musical instruments, MPE MIDI controllers, and intelligent harmony workstations for macOS.
 
-Rather than treating game controllers as awkward arrays of arbitrary binary MIDI buttons, **XPadInput** treats the physical vocabulary of a gamepad — dual analog sticks (angular position, radius, velocity, trajectory), analog triggers (progressive travel), capacitive touchpads (2D surface strumming and timbre sweeps), IMU motion sensors (6-axis gyro and accelerometer), and haptic actuators — as an expressive musical interface.
+Rather than treating game controllers as awkward arrays of arbitrary binary MIDI buttons, **XPI** treats the physical vocabulary of a gamepad — dual analog sticks (angular position, radius, velocity, trajectory), analog triggers (progressive travel), capacitive touchpads (2D surface strumming and timbre sweeps), IMU motion sensors (6-axis gyro and accelerometer), and haptic actuators — as an expressive musical interface.
 
 ---
 
@@ -43,14 +43,14 @@ Rather than treating game controllers as awkward arrays of arbitrary binary MIDI
 
 ### 3.2 CoreMIDI & MPE Engine
 * Native `MIDIClientCreateWithBlock` and virtual source endpoints (`MIDISourceCreate`) exposing independent virtual ports:
-  1. *XPadInput Main*
-  2. *XPadInput Chords*
-  3. *XPadInput Melody*
-  4. *XPadInput Bass*
-  5. *XPadInput Drums*
-  6. *XPadInput Expression (MPE)*
+  1. *XPI Main*
+  2. *XPI Chords*
+  3. *XPI Melody*
+  4. *XPI Bass*
+  5. *XPI Drums*
+  6. *XPI Expression (MPE)*
 * MPE Channel Manager: Allocates MPE Member Channels (Channels 2–15) with Zone Master on Channel 1, distributing strummed chord notes across unique channels with per-note pitch bend (±48 semitones), polyphonic pressure / aftertouch, and CC74 timbre.
-* Real-time stuck-note watchdog and MIDI Panic (All Notes Off / All Sound Off CC 120/123 on all 16 channels).
+* Tracked note cleanup plus MIDI Panic using CC123 All Notes Off on all 16 channels.
 
 ### 3.3 Audio Engine (`AVAudioEngine`)
 * Built-in multi-timbral polyphonic synthesizer built with custom `AVAudioSourceNode` and `AVAudioUnitSampler` fallback.

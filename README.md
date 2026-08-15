@@ -1,4 +1,4 @@
-# 🎮 XPadInput: Gamepad Music Instrument, MPE Controller & Theory Workstation
+# 🎮 XPI: Game Controller MIDI
 
 <div align="center">
 
@@ -40,12 +40,12 @@
 
 ### 4. ⚡ True MPE & Multi-Port CoreMIDI Routing
 - **Native CoreMIDI Virtual Ports**:
-  - `XPadInput Main`
-  - `XPadInput Chords`
-  - `XPadInput Melody`
-  - `XPadInput Bass`
-  - `XPadInput Drums`
-  - `XPadInput Expression (MPE)`
+  - `XPI Main`
+  - `XPI Chords`
+  - `XPI Melody`
+  - `XPI Bass`
+  - `XPI Drums`
+  - `XPI Expression (MPE)`
 - **MPE Zone Distribution**: Independent per-note voice allocation across Channels 2–15.
 - **Multi-Dimensional Expression**:
   - **Pitch Bend**: 6-axis gyro tilt or stick deflection ($\pm 48$ semitones).
@@ -98,8 +98,8 @@ cd XPadInput
 # Build the macOS application
 swift build
 
-# Run the application
-swift run XPadInput
+# Run the branded application (the legacy XPadInput product remains available)
+swift run XPI
 ```
 
 ### Running Automated Test Suites
@@ -112,19 +112,19 @@ swift run XPadTests
 ## 🎛️ DAW Setup Guide
 
 ### Ableton Live 11 / 12
-1. Launch **XPadInput** and connect your controller.
+1. Launch **XPI: Game Controller MIDI** and connect your controller.
 2. Open Ableton Live **Settings $\rightarrow$ Link/MIDI**.
-3. Under MIDI Inputs, enable **Track** and **Remote** for `XPadInput Main` or `XPadInput Chords`.
-4. In your MIDI Track, set MIDI From $\rightarrow$ `XPadInput Expression (MPE)` and enable MPE Mode in Ableton instrument devices (Wavetable, Sampler, Drift).
+3. Under MIDI Inputs, enable **Track** and **Remote** for `XPI Main` or `XPI Chords`.
+4. In your MIDI Track, set MIDI From $\rightarrow$ `XPI Expression (MPE)` and enable MPE Mode in a compatible instrument.
 
 ### Apple Logic Pro
 1. Create a Software Instrument track (e.g. Alchemy or Studio Strings).
-2. In Track Inspector, select MIDI Input Port: `XPadInput Chords`.
+2. In Track Inspector, select MIDI Input Port: `XPI Chords`.
 3. In Alchemy settings, enable MPE mode for multi-channel pitch bend and pressure.
 
 ### Bitwig Studio
-1. Bitwig automatically recognizes `XPadInput Expression (MPE)` as an active MPE controller.
-2. Route channels directly into Polymer, Phase-4, or The Grid.
+1. Select `XPI Expression (MPE)` as the controller input.
+2. Route its member channels directly into Polymer, Phase-4, or The Grid.
 
 ---
 
@@ -145,6 +145,9 @@ XPadInput/
 ├── Tests/               # Unit and integration test suites
 ├── .agents/skills/      # Specialized agent skills and workflow guides
 ├── AGENTS.md            # Agent operating instructions and modular rules
+├── DESIGN.md            # Authoritative interaction, feedback, and ergonomic rules
+├── INSTRUMENT_TECHNIQUES.md # Semantic technique and instrument-profile contract
+├── MIDI_MPE_SPEC.md      # CoreMIDI, MPE zone, expression, and fallback contract
 ├── SOUL.md              # Philosophical and artistic instrument manifesto
 ├── ROADMAP.md           # 5-phase product development trajectory
 ├── TECH_STACK.md        # Technical, mathematical & latency specifications

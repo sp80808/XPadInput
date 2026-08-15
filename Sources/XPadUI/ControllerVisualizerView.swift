@@ -9,99 +9,55 @@ struct ControllerVisualizerView: View {
     var body: some View {
         let state = appState.controllerManager.controllerState
         let isConnected = appState.controllerManager.isConnected
+        let hasLiveInput = isConnected || state.hasVisiblePerformanceInput
         
-        VStack(spacing: 16) {
+        VStack(spacing: 18) {
             // Header
             HStack {
                 Image(systemName: isConnected ? "gamecontroller.fill" : "gamecontroller")
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(isConnected ? XTheme.controllerConnected : XTheme.controllerDisconnected)
                 
-                Text(appState.controllerManager.controllerName)
-                    .font(.system(size: 13, weight: .medium))
+                Text(isConnected ? appState.controllerManager.controllerName : appState.controllerManager.controllerKind.rawValue)
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
                     .foregroundColor(XTheme.textPrimary)
+                    .lineLimit(1)
                 
                 Spacer()
-                
+
                 if let profile = appState.controllerManager.capabilityProfile {
                     Text(profile.capabilitySummary)
-                        .font(.system(size: 9))
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundColor(XTheme.textTertiary)
                 }
+
+                Text(isConnected ? "LIVE" : hasLiveInput ? "SIM" : "PREVIEW")
+                    .font(.system(size: 9, weight: .black, design: .monospaced))
+                    .foregroundStyle(isConnected ? XTheme.controllerConnected : XTheme.warning)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule().fill((isConnected ? XTheme.controllerConnected : XTheme.warning).opacity(0.10))
+                    )
+                    .overlay(
+                        Capsule().stroke((isConnected ? XTheme.controllerConnected : XTheme.warning).opacity(0.26), lineWidth: 1)
+                    )
             }
-            
-            if isConnected {
-                // Controller layout
-                HStack(spacing: 24) {
-                    // Left side: stick + shoulder + trigger
-                    VStack(spacing: 12) {
-                        // L1 / L2
-                        HStack(spacing: 8) {
-                            ButtonIndicator(label: "L1", isPressed: state.leftShoulder, role: "Colour")
-                            TriggerIndicator(label: "L2", value: state.leftTrigger, role: "Expression")
-                        }
-                        
-                        // Left stick
-                        StickVisualizer(
-                            label: "L",
-                            x: state.leftStickX,
-                            y: state.leftStickY,
-                            isPressed: state.leftStickButton,
-                            role: "Chord Select"
-                        )
-                    }
-                    
-                    // Center: D-pad + face buttons
-                    VStack(spacing: 16) {
-                        // Face buttons
-                        FaceButtonsView(state: state)
-                        
-                        // D-pad
-                        DPadView(state: state)
-                    }
-                    
-                    // Right side: stick + shoulder + trigger
-                    VStack(spacing: 12) {
-                        HStack(spacing: 8) {
-                            TriggerIndicator(label: "R2", value: state.rightTrigger, role: "Variation")
-                            ButtonIndicator(label: "R1", isPressed: state.rightShoulder, role: "Rhythm")
-                        }
-                        
-                        StickVisualizer(
-                            label: "R",
-                            x: state.rightStickX,
-                            y: state.rightStickY,
-                            isPressed: state.rightStickButton,
-                            role: "Strum"
-                        )
-                    }
-                }
-                
-                // Touchpad / Motion if available
-                if state.hasMotion {
-                    MotionDataView(state: state)
-                }
-                
-            } else {
-                // Disconnected state
-                VStack(spacing: 12) {
-                    Image(systemName: "gamecontroller")
-                        .font(.system(size: 40))
-                        .foregroundColor(XTheme.textTertiary)
-                    
-                    Text("Connect a Controller")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(XTheme.textSecondary)
-                    
-                    Text("Pair a DualSense, DualShock 4, Xbox, or Switch Pro controller via Bluetooth or USB")
-                        .font(.caption)
-                        .foregroundColor(XTheme.textTertiary)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 280)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+
+            ControllerPerformanceHUD(
+                state: state,
+                controllerKind: appState.controllerManager.controllerKind,
+                isConnected: isConnected,
+                labels: appState.hudLabels,
+                frame: hasLiveInput ? appState.lastFrame : nil,
+                instrument: appState.instrumentProfile,
+                duoMode: appState.duoPerformanceMode,
+                currentChord: appState.currentChord,
+                lastVelocity: hasLiveInput ? appState.lastVelocity : 0,
+                lastStrumDirection: hasLiveInput ? appState.lastStrumDirection : .none
+            )
         }
-        .padding(16)
+        .padding(18)
         .xCard(isActive: isConnected)
     }
 }

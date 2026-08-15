@@ -8,12 +8,12 @@ final class MIDITests: XCTestCase {
     // MARK: - Virtual Port Tests
     func testVirtualPorts() {
         XCTAssertEqual(VirtualPort.allCases.count, 6)
-        XCTAssertEqual(VirtualPort.main.rawValue, "XPadInput Main")
-        XCTAssertEqual(VirtualPort.chords.rawValue, "XPadInput Chords")
-        XCTAssertEqual(VirtualPort.melody.rawValue, "XPadInput Melody")
-        XCTAssertEqual(VirtualPort.bass.rawValue, "XPadInput Bass")
-        XCTAssertEqual(VirtualPort.drums.rawValue, "XPadInput Drums")
-        XCTAssertEqual(VirtualPort.mpe.rawValue, "XPadInput Expression (MPE)")
+        XCTAssertEqual(VirtualPort.main.rawValue, "XPI Main")
+        XCTAssertEqual(VirtualPort.chords.rawValue, "XPI Chords")
+        XCTAssertEqual(VirtualPort.melody.rawValue, "XPI Melody")
+        XCTAssertEqual(VirtualPort.bass.rawValue, "XPI Bass")
+        XCTAssertEqual(VirtualPort.drums.rawValue, "XPI Drums")
+        XCTAssertEqual(VirtualPort.mpe.rawValue, "XPI Expression (MPE)")
     }
 
     // MARK: - MIDIManager Lifecycle & Event Dispatching
@@ -29,6 +29,133 @@ final class MIDITests: XCTestCase {
         midi.sendNoteOff(port: .main, channel: 0, note: 60)
 
         midi.panic()
+    }
+
+    func testRepeatedNoteOnClosesPreviousVoiceDeterministically() {
+        let midi = MIDIEngine()
+        midi.clearMessageLog()
+
+        midi.sendNoteOn(port: .main, channel: 0, note: 60, velocity: 90)
+        midi.sendNoteOn(port: .main, channel: 0, note: 60, velocity: 100)
+
+        XCTAssertEqual(
+            midi.sentMessages.map(\.bytes),
+            [
+                [0x90, 60, 90],
+                [0x80, 60, 0],
+                [0x90, 60, 100]
+            ]
+        )
+        XCTAssertEqual(midi.activeNoteCount, 1)
+
+        midi.sendNoteOff(port: .main, channel: 0, note: 60)
+        XCTAssertEqual(midi.activeNoteCount, 0)
+        XCTAssertEqual(midi.sentMessages.last?.bytes, [0x80, 60, 0])
+    }
+
+    func testZeroVelocityNoteOnUsesCanonicalNoteOffPath() {
+        let midi = MIDIEngine()
+        midi.sendNoteOn(port: .melody, channel: 3, note: 72, velocity: 80)
+        midi.clearMessageLog()
+
+        midi.sendNoteOn(port: .melody, channel: 3, note: 72, velocity: 0)
+
+        XCTAssertEqual(midi.sentMessages, [
+            MIDIMessageRecord(port: .melody, bytes: [0x83, 72, 0])
+        ])
+        XCTAssertEqual(midi.activeNoteCount, 0)
+    }
+
+    func testOutOfRangeMIDIDataClampsInsteadOfWrapping() {
+        let midi = MIDIEngine()
+        midi.clearMessageLog()
+
+        midi.sendNoteOn(port: .main, channel: 255, note: 255, velocity: 255)
+        midi.sendCC(
+            port: .main,
+            channel: 255,
+            controller: 255,
+            value: 255
+        )
+
+        XCTAssertEqual(midi.sentMessages.map(\.bytes), [
+            [0x9F, 127, 127],
+            [0xBF, 127, 127]
+        ])
+    }
+
+    func testAllNotesOffIsScopedAndNeutralizesDAWChannel() {
+        let midi = MIDIEngine()
+        midi.sendNoteOn(port: .drums, channel: 9, note: 36, velocity: 110)
+        midi.sendNoteOn(port: .drums, channel: 9, note: 38, velocity: 105)
+        midi.sendNoteOn(port: .main, channel: 0, note: 60, velocity: 95)
+        midi.clearMessageLog()
+
+        midi.sendAllNotesOff(port: .drums, channel: 9)
+
+        let messages = midi.sentMessages
+        XCTAssertEqual(Array(messages.prefix(2)).map(\.bytes), [
+            [0x89, 36, 0],
+            [0x89, 38, 0]
+        ])
+        XCTAssertTrue(messages.contains { $0.bytes == [0xE9, 0, 0x40] })
+        XCTAssertTrue(messages.contains { $0.bytes == [0xB9, 64, 0] })
+        XCTAssertTrue(messages.contains { $0.bytes == [0xB9, 66, 0] })
+        XCTAssertTrue(messages.contains { $0.bytes == [0xB9, 121, 0] })
+        XCTAssertTrue(messages.contains { $0.bytes == [0xB9, 123, 0] })
+        XCTAssertTrue(messages.contains { $0.bytes == [0xB9, 120, 0] })
+        XCTAssertEqual(midi.activeNoteCount, 1)
+
+        midi.sendNoteOff(port: .main, channel: 0, note: 60)
+        XCTAssertEqual(midi.activeNoteCount, 0)
+    }
+
+    func testPerformanceEventDispatchUsesSignedPitchBendAndPortRouting() {
+        let midi = MIDIEngine()
+        midi.clearMessageLog()
+
+        midi.send(
+            [
+                PerformanceEvent.pitchBend(channel: 2, value: 0),
+                .noteOn(channel: 2, note: 64, velocity: 96),
+                .noteOff(channel: 2, note: 64)
+            ],
+            to: .mpe
+        )
+
+        XCTAssertEqual(midi.sentMessages, [
+            MIDIMessageRecord(port: .mpe, bytes: [0xE2, 0, 0x40]),
+            MIDIMessageRecord(port: .mpe, bytes: [0x92, 64, 96]),
+            MIDIMessageRecord(port: .mpe, bytes: [0x82, 64, 0])
+        ])
+        XCTAssertEqual(midi.activeNoteCount, 0)
+    }
+
+    func testPanicClearsRunningNotesAndCriticalControllers() {
+        let midi = MIDIEngine()
+        midi.sendNoteOn(port: .chords, channel: 0, note: 60, velocity: 90)
+        midi.sendNoteOn(port: .mpe, channel: 1, note: 67, velocity: 100)
+        midi.clearMessageLog()
+
+        midi.panic()
+
+        XCTAssertEqual(midi.activeNoteCount, 0)
+        XCTAssertTrue(midi.lastSentNotes.isEmpty)
+        XCTAssertTrue(midi.sentMessages.contains {
+            $0.port == .chords && $0.bytes == [0x80, 60, 0]
+        })
+        XCTAssertTrue(midi.sentMessages.contains {
+            $0.port == .mpe && $0.bytes == [0x81, 67, 0]
+        })
+        XCTAssertTrue(midi.sentMessages.contains {
+            $0.port == .mpe && $0.bytes == [0xB1, 64, 0]
+        })
+        XCTAssertTrue(midi.sentMessages.contains {
+            $0.port == .mpe && $0.bytes == [0xB1, 123, 0]
+        })
+        XCTAssertTrue(midi.sentMessages.contains {
+            $0.port == .mpe && $0.bytes == [0xB1, 120, 0]
+        })
     }
 
     // MARK: - MPEManager Tests
@@ -48,6 +175,87 @@ final class MIDITests: XCTestCase {
 
         mpe.noteOff(note: 60)
         mpe.stopAllNotes()
+    }
+
+    func testMPEPitchBendLifecycleAndChannelIsolation() {
+        let midi = MIDIEngine()
+        let mpe = MPEManager(midiEngine: midi, bendRangeSemitones: 2)
+        midi.clearMessageLog()
+
+        mpe.noteOn(note: 60, velocity: 100)
+        XCTAssertEqual(mpe.activeVoice(for: 60)?.channel, 1)
+
+        let attack = midi.sentMessages
+        XCTAssertEqual(attack.first?.port, .mpe)
+        XCTAssertEqual(attack.first?.bytes, [0xE1, 0x00, 0x40])
+        XCTAssertEqual(attack.last?.bytes, [0x91, 60, 100])
+
+        mpe.noteOn(note: 64, velocity: 90)
+        XCTAssertEqual(mpe.activeVoice(for: 64)?.channel, 2)
+
+        midi.clearMessageLog()
+        mpe.setPitchBend(for: 60, semitones: 2)
+        XCTAssertEqual(midi.sentMessages.last?.bytes, [0xE1, 0x7F, 0x7F])
+        XCTAssertEqual(mpe.activeVoice(for: 60)?.currentPitchBend, 2)
+
+        mpe.setPitchBend(for: 60, semitones: 0)
+        XCTAssertEqual(midi.sentMessages.last?.bytes, [0xE1, 0x00, 0x40])
+
+        midi.clearMessageLog()
+        mpe.noteOff(note: 60)
+        XCTAssertEqual(midi.sentMessages.first?.bytes, [0x81, 60, 0])
+        XCTAssertTrue(midi.sentMessages.contains { $0.bytes == [0xE1, 0x00, 0x40] })
+        XCTAssertNil(mpe.activeVoice(for: 60))
+        XCTAssertEqual(mpe.activeVoiceCount, 1)
+    }
+
+    func testMPEVoiceStealReleasesAndResetsBeforeChannelReuse() {
+        let midi = MIDIEngine()
+        let mpe = MPEManager(midiEngine: midi)
+        for note: UInt8 in 60..<74 {
+            mpe.noteOn(note: note, velocity: 90)
+        }
+        XCTAssertEqual(mpe.activeVoiceCount, 14)
+        XCTAssertEqual(mpe.voice(for: 60)?.channel, 1)
+
+        midi.clearMessageLog()
+        mpe.noteOn(note: 74, velocity: 101)
+
+        XCTAssertNil(mpe.voice(for: 60))
+        XCTAssertEqual(mpe.voice(for: 74)?.channel, 1)
+        XCTAssertEqual(mpe.activeVoiceCount, 14)
+        XCTAssertEqual(midi.sentMessages.map(\.bytes), [
+            [0x81, 60, 0],
+            [0xE1, 0, 0x40],
+            [0xD1, 0],
+            [0xB1, 74, 64],
+            [0x91, 74, 101]
+        ])
+    }
+
+    func testMPEStopAllResetsAllocatorAndChannelState() {
+        let midi = MIDIEngine()
+        let mpe = MPEManager(midiEngine: midi)
+        mpe.noteOn(note: 60, velocity: 90)
+        mpe.noteOn(note: 64, velocity: 90)
+
+        midi.clearMessageLog()
+        mpe.stopAllNotes()
+        XCTAssertEqual(mpe.activeVoiceCount, 0)
+        XCTAssertEqual(midi.activeNoteCount, 0)
+        XCTAssertTrue(midi.sentMessages.contains { $0.bytes == [0xB1, 123, 0] })
+        XCTAssertTrue(midi.sentMessages.contains { $0.bytes == [0xB2, 123, 0] })
+
+        midi.clearMessageLog()
+        mpe.noteOn(note: 67, velocity: 92)
+        XCTAssertEqual(mpe.voice(for: 67)?.channel, 1)
+        XCTAssertEqual(midi.sentMessages.last?.bytes, [0x91, 67, 92])
+    }
+
+    func testPitchBendCodecEndpoints() {
+        XCTAssertEqual(MIDIEngine.pitchBendValue(semitoneOffset: -2, bendRangeSemitones: 2), 0)
+        XCTAssertEqual(MIDIEngine.pitchBendValue(semitoneOffset: 0, bendRangeSemitones: 2), 8192)
+        XCTAssertEqual(MIDIEngine.pitchBendValue(semitoneOffset: 2, bendRangeSemitones: 2), 16_383)
     }
 
     // MARK: - SMFExporter (Standard MIDI File) Tests

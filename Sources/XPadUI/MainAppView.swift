@@ -4,26 +4,13 @@ import XPadController
 
 /// Main content view with sidebar navigation and transport bar.
 public struct ContentView: View {
-    @Environment(AppState.self) private var appState
-    
     public init() {}
     
     public var body: some View {
-        @Bindable var state = appState
-        
         VStack(spacing: 0) {
-            // Main content area
-            HStack(spacing: 0) {
-                // Sidebar
-                SidebarView()
-                
-                Divider()
-                    .background(XTheme.border)
-                
-                // Workspace content
-                workspaceContent
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+            // XPI is intentionally a single, focused performance surface.
+            PlayView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             
             Divider()
                 .background(XTheme.border)
@@ -31,24 +18,24 @@ public struct ContentView: View {
             // Transport bar (always visible)
             TransportBar()
         }
-        .background(XTheme.background)
-        .preferredColorScheme(.dark)
-    }
-    
-    @ViewBuilder
-    private var workspaceContent: some View {
-        switch appState.selectedWorkspace {
-        case .play:
-            PlayView()
-        case .harmony:
-            HarmonyPlaceholderView()
-        case .sequence:
-            SequencePlaceholderView()
-        case .map:
-            MapPlaceholderView()
-        case .library:
-            LibraryPlaceholderView()
+        .background {
+            ZStack {
+                XTheme.background
+                RadialGradient(
+                    colors: [XTheme.primary.opacity(0.10), .clear],
+                    center: .topLeading,
+                    startRadius: 24,
+                    endRadius: 620
+                )
+                LinearGradient(
+                    colors: [.clear, Color.black.opacity(0.18)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+            .ignoresSafeArea()
         }
+        .preferredColorScheme(.dark)
     }
 }
 
@@ -61,6 +48,18 @@ struct SidebarView: View {
         @Bindable var state = appState
         
         VStack(spacing: 2) {
+            VStack(spacing: 0) {
+                Text("XPI")
+                    .font(.system(size: 15, weight: .black, design: .rounded))
+                    .foregroundColor(XTheme.primary)
+                Text("MIDI")
+                    .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                    .foregroundColor(XTheme.textTertiary)
+            }
+            .frame(width: 60, height: 44)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("XPI: Game Controller MIDI")
+
             ForEach(Workspace.allCases) { workspace in
                 SidebarButton(
                     workspace: workspace,
@@ -95,6 +94,9 @@ struct SidebarView: View {
 }
 
 struct SidebarButton: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering = false
+
     let workspace: Workspace
     let isSelected: Bool
     let action: () -> Void
@@ -113,10 +115,31 @@ struct SidebarButton: View {
             .frame(width: 60, height: 52)
             .background(
                 RoundedRectangle(cornerRadius: XTheme.radiusSmall)
-                    .fill(isSelected ? XTheme.primary.opacity(0.12) : .clear)
+                    .fill(
+                        isSelected
+                            ? XTheme.primary.opacity(0.14)
+                            : isHovering ? XTheme.surfaceHover.opacity(0.72) : .clear
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: XTheme.radiusSmall)
+                            .stroke(isSelected ? XTheme.primary.opacity(0.34) : Color.clear, lineWidth: 1)
+                    )
             )
+            .overlay(alignment: .leading) {
+                Capsule()
+                    .fill(XTheme.primaryGradient)
+                    .frame(width: 3, height: isSelected ? 28 : 0)
+                    .padding(.leading, 1)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: XTheme.radiusSmall))
         }
         .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+        .help("Open \(workspace.rawValue) workspace")
+        .accessibilityLabel("\(workspace.rawValue) workspace")
+        .accessibilityValue(isSelected ? "Selected" : "")
+        .animation(reduceMotion ? nil : XTheme.quickAnimation, value: isHovering)
+        .animation(reduceMotion ? nil : XTheme.quickAnimation, value: isSelected)
     }
 }
 

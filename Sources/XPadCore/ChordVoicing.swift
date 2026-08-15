@@ -24,38 +24,58 @@ public struct ChordVoicing: Hashable, Codable, Sendable {
         return ChordVoicing(chord: chord, notes: chord.voiced(baseOctave: baseOctave))
     }
     
-    /// Create a voicing optimised for smooth voice leading from a previous voicing
-    public static func voiceLed(chord: Chord, from previous: ChordVoicing) -> ChordVoicing {
-        let targetPCs = chord.pitchClasses
+    /// Create a smooth voicing without allowing repeated chord changes to drift
+    /// indefinitely through octaves. The fixed-register baseline also preserves
+    /// the requested voice count, so repeated strums do not collapse from six
+    /// voices to a triad and then re-expand later.
+    public static func voiceLed(
+        chord: Chord,
+        from previous: ChordVoicing,
+        baseOctave: Int = 3,
+        voiceCount: Int? = nil,
+        playableRegister: ClosedRange<UInt8> = 36...84
+    ) -> ChordVoicing {
+        let count = max(chord.pitchClasses.count, voiceCount ?? previous.notes.count)
+        let baseline = strummed(chord: chord, strings: count, baseOctave: baseOctave).notes
+        guard !baseline.isEmpty else { return ChordVoicing(chord: chord, notes: []) }
+
+        let previousNotes = previous.notes
+        let lower = Int(playableRegister.lowerBound)
+        let upper = Int(playableRegister.upperBound)
         var newNotes: [Note] = []
-        let prevNotes = previous.notes
-        
-        for (i, targetPC) in targetPCs.enumerated() {
-            if i < prevNotes.count {
-                // Find nearest octave placement of this pitch class to the previous note
-                let prevNote = prevNotes[i]
-                let prevMidi = Int(prevNote.midiNote)
-                
-                var bestNote = Note(pitchClass: targetPC, octave: prevNote.octave)
-                var bestDist = abs(Int(bestNote.midiNote) - prevMidi)
-                
-                for octaveShift in [-1, 1] {
-                    let candidate = Note(pitchClass: targetPC, octave: prevNote.octave + octaveShift)
-                    let dist = abs(Int(candidate.midiNote) - prevMidi)
-                    if dist < bestDist {
-                        bestNote = candidate
-                        bestDist = dist
-                    }
+        newNotes.reserveCapacity(count)
+
+        for index in 0..<count {
+            let baselineNote = baseline[min(index, baseline.count - 1)]
+            let previousNote = previousNotes.isEmpty
+                ? baselineNote
+                : previousNotes[min(index, previousNotes.count - 1)]
+            let previousMIDI = Int(previousNote.midiNote)
+            let baselineMIDI = Int(baselineNote.midiNote)
+            let pitchClassValue = baselineNote.pitchClass.rawValue
+
+            var bestMIDI = max(lower, min(upper, baselineMIDI))
+            var bestScore = Double.greatestFiniteMagnitude
+
+            for midi in lower...upper where midi % 12 == pitchClassValue {
+                let movement = abs(midi - previousMIDI)
+                let registerPull = abs(midi - baselineMIDI)
+                let crossingPenalty: Int
+                if let prior = newNotes.last, midi <= Int(prior.midiNote) {
+                    crossingPenalty = 18
+                } else {
+                    crossingPenalty = 0
                 }
-                
-                newNotes.append(bestNote)
-            } else {
-                // Extra voices: place near the highest previous note
-                let refOctave = prevNotes.last?.octave ?? 4
-                newNotes.append(Note(pitchClass: targetPC, octave: refOctave))
+                let score = Double(movement) + Double(registerPull) * 0.45 + Double(crossingPenalty)
+                if score < bestScore {
+                    bestScore = score
+                    bestMIDI = midi
+                }
             }
+
+            newNotes.append(Note.fromMIDI(UInt8(bestMIDI)))
         }
-        
+
         return ChordVoicing(chord: chord, notes: newNotes.sorted())
     }
     

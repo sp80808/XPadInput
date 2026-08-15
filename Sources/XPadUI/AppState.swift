@@ -1,5 +1,6 @@
 import SwiftUI
 import XPadCore
+import XPadTheory
 import XPadController
 import XPadMIDI
 import XPadAudio
@@ -7,12 +8,14 @@ import XPadAudio
 /// Central application state coordinating all engines.
 @Observable
 public final class AppState: @unchecked Sendable {
-    // Engines
     public var controllerManager = ControllerManager()
     public var midiEngine = MIDIEngine()
     public var audioEngine = AudioEngine()
-    
-    // Music state
+    public var mpeManager: MPEManager
+    public var performanceEngine = InstrumentPerformanceEngine()
+    public var midiTranslator = TechniqueMIDITranslator()
+    public var techniqueRecorder = TechniqueRecorder()
+
     public var currentKey: PitchClass = .d
     public var currentScale: Scale = .naturalMinor
     public var bpm: Double = 120
@@ -20,130 +23,490 @@ public final class AppState: @unchecked Sendable {
     public var isRecording: Bool = false
     public var isLooping: Bool = false
     public var metronomeEnabled: Bool = false
-    
-    // Chord state
+
     public var diatonicChords: [Chord] = []
     public var selectedChordIndex: Int = 0
     public var currentChord: Chord?
     public var previousVoicing: ChordVoicing?
-    
-    // Active notes being played
+
     public var activeNotes: [Note] = []
-    
-    // Performance state
     public var lastStrumDirection: StrumDirection = .none
     public var lastVelocity: UInt8 = 0
     public var lastStrumTime: Date?
-    
-    // Navigation
+
     public var selectedWorkspace: Workspace = .play
-    
-    // UI state
     public var showDiagnostics: Bool = false
-    
-    public init() {}
-    
+
+    public var instrumentProfile: InstrumentProfile = .guitar
+    public var destinationProfile: DestinationCapabilityProfile = .internalSynth
+    public var expressionSettings = ExpressionSettings()
+    public var performancePreset: PerformancePreset = .guitarCleanExpressive
+    public var lastFrame: PerformanceFrame?
+    public var lastMIDITranslation: MIDITranslationResult?
+    public var currentTick: UInt64 = 0
+    public var chordGateConfiguration = ChordGateConfiguration(mode: .timed, timedDuration: 0.85)
+    public var duoPerformanceMode: DuoPerformanceMode = .instrumentOnly
+    public var lastDrumHit: DuoDrumHit?
+
+    private var strumState = StrumState()
+    private var heldFaceNotes: [ChordToneRole: Note] = [:]
+    private var soundingChordNotes: Set<UInt8> = []
+    private var pendingStrumNotes: [DispatchWorkItem] = []
+    private var chordGateReleaseWorkItem: DispatchWorkItem?
+    private var strumGeneration: UInt64 = 0
+    private var lastInputTime = ProcessInfo.processInfo.systemUptime
+    private var lastHint: String?
+    private var chordGateEngine = ChordGateEngine(
+        configuration: ChordGateConfiguration(mode: .timed, timedDuration: 0.85)
+    )
+    private var velocityStabilizer = VelocityStabilizer()
+    private var duoControlEngine = DuoControlEngine()
+
+    public init() {
+        mpeManager = MPEManager(midiEngine: MIDIEngine())
+    }
+
     public func initialize() {
         updateDiatonicChords()
         audioEngine.start()
-        
-        // Wire controller to performance engine
+        mpeManager = MPEManager(midiEngine: midiEngine, bendRangeSemitones: destinationProfile.bendRangeSemitones)
+        midiEngine.onVirtualMIDIChanged = { [weak self] enabled in
+            guard let self else { return }
+            if enabled {
+                self.mpeManager.sendMPEZoneConfiguration()
+            } else {
+                self.panic()
+            }
+        }
+        if midiEngine.virtualMIDIEnabled {
+            mpeManager.sendMPEZoneConfiguration()
+        }
+        applyInstrument(instrumentProfile)
+
         controllerManager.onStateChanged = { [weak self] state in
             self?.handleControllerInput(state)
         }
+        controllerManager.onDisconnected = { [weak self] in
+            self?.panic()
+        }
     }
-    
+
     public func updateDiatonicChords() {
         diatonicChords = Chord.diatonicChords(root: currentKey, scale: currentScale)
         if diatonicChords.isEmpty == false {
-            selectedChordIndex = 0
-            currentChord = diatonicChords[0]
+            selectedChordIndex = min(selectedChordIndex, diatonicChords.count - 1)
+            currentChord = diatonicChords[selectedChordIndex]
         }
     }
-    
+
     public func setKey(_ key: PitchClass) {
         currentKey = key
         updateDiatonicChords()
     }
-    
+
     public func setScale(_ scale: Scale) {
         currentScale = scale
         updateDiatonicChords()
     }
-    
-    // MARK: - Controller Input Handling
-    
-    private var strumState: StrumState = StrumState()
-    
-    private func handleControllerInput(_ state: ControllerState) {
-        // Left stick: Chord selection via angle
-        handleChordSelection(state)
-        
-        // Right stick: Strumming
-        handleStrumming(state)
-        
-        // Modifiers
-        handleModifiers(state)
+
+    public func setInstrument(_ profile: InstrumentProfile) {
+        stopActiveNotes()
+        applyInstrument(profile)
     }
-    
+
+    public func setPerformancePreset(_ preset: PerformancePreset) {
+        performancePreset = preset
+        setInstrument(preset.applied(to: InstrumentProfile.profile(for: preset.family)))
+    }
+
+    public func setDestination(_ destination: DestinationCapabilityProfile) {
+        stopActiveNotes()
+        destinationProfile = destination
+        midiTranslator.destination = destination
+        performanceEngine.setDestination(destination)
+        mpeManager.bendRangeSemitones = destination.bendRangeSemitones
+        if midiEngine.virtualMIDIEnabled {
+            mpeManager.sendMPEZoneConfiguration()
+        }
+    }
+
+    public func setPitchAssist(_ assist: PitchAssistMode) {
+        expressionSettings.pitchAssist = assist
+        performanceEngine.setAssist(assist)
+    }
+
+    public func setChordHoldMode(_ mode: ChordHoldMode) {
+        var updated = chordGateConfiguration
+        updated.mode = mode
+        applyChordGateConfiguration(updated)
+    }
+
+    public func setChordTimedDuration(_ duration: TimeInterval) {
+        var updated = chordGateConfiguration
+        updated.setTimedDuration(duration)
+        applyChordGateConfiguration(updated)
+    }
+
+    public func setDuoPerformanceMode(_ mode: DuoPerformanceMode) {
+        guard duoPerformanceMode != mode else { return }
+        stopActiveNotes()
+        duoPerformanceMode = mode
+        duoControlEngine.setMode(mode)
+        lastDrumHit = nil
+    }
+
+    public func setVelocityCurve(_ curve: SynthVelocityCurve) {
+        audioEngine.setVelocityCurve(curve)
+        let configuration: VelocityStabilizerConfiguration
+        switch curve {
+        case .expressive:
+            configuration = VelocityStabilizerConfiguration(floor: 28, ceiling: 124, smoothing: 0.68, maximumStep: 28)
+        case .balanced:
+            configuration = VelocityStabilizerConfiguration(floor: 36, ceiling: 120, smoothing: 0.45, maximumStep: 18)
+        case .even:
+            configuration = VelocityStabilizerConfiguration(floor: 48, ceiling: 112, smoothing: 0.28, maximumStep: 10)
+        }
+        velocityStabilizer.updateConfiguration(configuration)
+        duoControlEngine.drumVelocityStabilizer.updateConfiguration(configuration)
+    }
+
+    private func applyChordGateConfiguration(_ configuration: ChordGateConfiguration) {
+        chordGateReleaseWorkItem?.cancel()
+        chordGateReleaseWorkItem = nil
+        let releaseEvents = chordGateEngine.updateConfiguration(configuration)
+        chordGateConfiguration = configuration
+        handleChordGateEvents(releaseEvents, velocity: lastVelocity, direction: lastStrumDirection)
+    }
+
+    private func applyInstrument(_ profile: InstrumentProfile) {
+        instrumentProfile = profile
+        performanceEngine.setProfile(profile)
+        midiTranslator.profile = profile
+        midiTranslator.destination = destinationProfile
+        lastFrame = nil
+        lastHint = nil
+    }
+
+    private func musicalContext(currentNote: Note? = nil) -> MusicalContext {
+        MusicalContext(
+            key: currentKey,
+            scale: currentScale,
+            chord: currentChord,
+            previousNote: activeNotes.last,
+            currentNote: currentNote ?? activeNotes.max(),
+            chromaticMode: expressionSettings.chromaticMode,
+            pitchAssist: expressionSettings.pitchAssist,
+            registerOctave: instrumentProfile.family == .bass ? 2 : 3
+        )
+    }
+
+    private func handleControllerInput(_ state: ControllerState) {
+        let now = ProcessInfo.processInfo.systemUptime
+        handleChordSelection(state)
+
+        let drumVelocity = UInt8(clamping: 72 + Int(Double(state.rightTrigger.value) * 48))
+        let duoFrame = duoControlEngine.process(state: state, drumVelocity: drumVelocity)
+        handleDuoDrumHits(duoFrame.drumHits)
+
+        let frame = performanceEngine.process(
+            state: state,
+            context: musicalContext(),
+            heldNotes: activeNotes,
+            timestamp: now
+        )
+        lastFrame = frame
+        if let hint = frame.hint { lastHint = hint }
+
+        if !duoFrame.suppressesInstrumentFaceButtons {
+            handleFaceEvents(frame.faceEvents)
+        }
+        applyExpression(frame)
+
+        if !frame.suppressStrum {
+            handleStrumming(state, timestamp: now)
+        } else if instrumentProfile.family == .synthLead || instrumentProfile.family == .genericMPE {
+            applyLeadTimbre(frame.timbre)
+        }
+
+        if let haptic = frame.haptic {
+            controllerManager.playTechniqueHaptic(haptic)
+        }
+
+        lastInputTime = now
+    }
+
     private func handleChordSelection(_ state: ControllerState) {
         guard state.leftStickMagnitude > 0.3 else { return }
-        
+
         let angle = state.leftStickAngle
         let chordCount = diatonicChords.count
         guard chordCount > 0 else { return }
-        
-        // Map angle to chord index
-        // Top = I, clockwise through the diatonic chords
-        // Normalise angle: 0 = up, clockwise positive
+
         var normalised = -(angle - .pi / 2)
         if normalised < 0 { normalised += 2 * .pi }
-        
+
         let sliceAngle = (2.0 * .pi) / Double(chordCount)
-        let index = Int(normalised / sliceAngle) % chordCount
-        
+        let centred = (normalised + sliceAngle / 2).truncatingRemainder(dividingBy: 2 * .pi)
+        let slicePosition = centred / sliceAngle
+        let index = Int(slicePosition) % chordCount
+        let positionWithinSlice = slicePosition - floor(slicePosition)
+
+        // Leave a narrow neutral band at sector boundaries so small analog
+        // jitter cannot make the harmonic wheel flicker between neighbours.
+        guard positionWithinSlice > 0.14, positionWithinSlice < 0.86 else { return }
+
         if index != selectedChordIndex {
             selectedChordIndex = index
             currentChord = diatonicChords[index]
+            retargetHeldChordTones()
         }
     }
-    
-    private func handleStrumming(_ state: ControllerState) {
+
+    private func retargetHeldChordTones() {
+        guard expressionSettings.chordToneLayout, let chord = currentChord else { return }
+        let targeter = ContextualPitchTargeter()
+        let heldSnapshot = Array(heldFaceNotes)
+        let baseOctave = instrumentProfile.family == .bass ? 2 : 3
+        for (role, previous) in heldSnapshot {
+            let next = targeter.note(for: role, chord: chord, previous: previous, baseOctave: baseOctave)
+            if next.midiNote != previous.midiNote {
+                stopFaceNote(for: role, recordsEvent: false)
+                startFaceNote(
+                    FaceButtonNoteEvent(
+                        role: role,
+                        note: next,
+                        isOn: true,
+                        technique: .legato,
+                        velocity: 86
+                    ),
+                    recordsEvent: false
+                )
+            }
+        }
+    }
+
+    private func handleFaceEvents(_ events: [FaceButtonNoteEvent]) {
+        for event in events {
+            if event.isOn {
+                startFaceNote(event)
+            } else {
+                stopFaceNote(for: event.role)
+            }
+        }
+    }
+
+    private func startFaceNote(_ event: FaceButtonNoteEvent, recordsEvent: Bool = true) {
+        if let previous = heldFaceNotes[event.role] {
+            guard previous.midiNote != event.note.midiNote else { return }
+            stopFaceNote(for: event.role, recordsEvent: recordsEvent)
+        }
+
+        let wasSounding = isNoteOwned(event.note.midiNote)
+        let alreadyOwnedByFace = heldFaceNotes.values.contains { $0.midiNote == event.note.midiNote }
+        heldFaceNotes[event.role] = event.note
+
+        if !wasSounding {
+            beginPhysicalVoice(event.note, velocity: event.velocity, technique: event.technique)
+        }
+        if !destinationProfile.supportsMPE, !alreadyOwnedByFace {
+            midiEngine.sendNoteOn(
+                port: melodicMIDIPort,
+                channel: 0,
+                note: event.note.midiNote,
+                velocity: event.velocity
+            )
+        }
+        addActiveNote(event.note)
+
+        if recordsEvent, isRecording {
+            techniqueRecorder.record(
+                InstrumentPerformanceEvent(
+                    note: event.note,
+                    phase: .began,
+                    technique: event.technique,
+                    velocity: event.velocity,
+                    role: event.role
+                ),
+                tick: currentTick
+            )
+        }
+    }
+
+    private func stopFaceNote(for role: ChordToneRole, recordsEvent: Bool = true) {
+        guard let held = heldFaceNotes.removeValue(forKey: role) else { return }
+        let stillOwnedByFace = heldFaceNotes.values.contains { $0.midiNote == held.midiNote }
+
+        if !destinationProfile.supportsMPE, !stillOwnedByFace {
+            midiEngine.sendNoteOff(port: melodicMIDIPort, channel: 0, note: held.midiNote)
+            if heldFaceNotes.isEmpty {
+                resetConventionalExpression(on: melodicMIDIPort)
+            }
+        }
+        finishPhysicalVoiceIfUnowned(held)
+
+        if recordsEvent, isRecording {
+            techniqueRecorder.recordNoteOff(note: held.midiNote, tick: currentTick)
+        }
+    }
+
+    private func applyExpression(_ frame: PerformanceFrame) {
+        guard let lead = bendLeadNote() else { return }
+        let conventionalPorts = midiPorts(for: lead.midiNote)
+
+        let bend = frame.bend.totalSemitones + (frame.slide.isSliding ? frame.slide.pitchOffset : 0)
+        if destinationProfile.supportsMPE {
+            audioEngine.setPitchBend(for: lead.midiNote, semitones: bend)
+            mpeManager.setPitchBend(for: lead.midiNote, semitones: bend)
+            lastMIDITranslation = midiTranslator.translateBend(
+                semitones: bend,
+                channel: mpeManager.voice(for: lead.midiNote)?.channel ?? 0,
+                activeVoiceCount: activeNotes.count
+            )
+        } else if activeNotes.count <= 1 {
+            audioEngine.setPitchBend(for: lead.midiNote, semitones: bend)
+            for port in conventionalPorts {
+                midiEngine.sendPitchBend(
+                    port: port,
+                    channel: 0,
+                    semitoneOffset: bend,
+                    bendRangeSemitones: destinationProfile.bendRangeSemitones
+                )
+            }
+            lastMIDITranslation = midiTranslator.translateBend(
+                semitones: bend,
+                channel: 0,
+                activeVoiceCount: activeNotes.count
+            )
+        } else {
+            lastMIDITranslation = midiTranslator.translateBend(
+                semitones: bend,
+                channel: 0,
+                activeVoiceCount: activeNotes.count
+            )
+        }
+
+        let pressure = frame.pressure.midiValue
+        audioEngine.setPressure(for: lead.midiNote, pressure: frame.pressure.smoothed)
+        if destinationProfile.supportsMPE {
+            mpeManager.setPressure(for: lead.midiNote, pressure: pressure)
+        } else {
+            for port in conventionalPorts {
+                switch destinationProfile.resolvedPressureMode(preferred: instrumentProfile.pressureMode).mode {
+                case .mpePressure, .channelPressure:
+                    midiEngine.sendChannelPressure(port: port, channel: 0, pressure: pressure)
+                case .polyPressure:
+                    midiEngine.sendPolyPressure(port: port, channel: 0, note: lead.midiNote, pressure: pressure)
+                case .cc11:
+                    midiEngine.sendCC(port: port, channel: 0, controller: 11, value: pressure)
+                }
+            }
+        }
+
+        let timbre = UInt8(min(127, Int(frame.timbre * 127)))
+        audioEngine.setTimbre(for: lead.midiNote, timbre: frame.timbre)
+        if destinationProfile.supportsMPE {
+            mpeManager.setTimbre(for: lead.midiNote, value: timbre)
+        } else if destinationProfile.supportsCC74 {
+            for port in conventionalPorts {
+                midiEngine.sendTimbreCC74(port: port, channel: 0, value: timbre)
+            }
+        }
+
+        for note in activeNotes {
+            audioEngine.setDamping(for: note.midiNote, damping: frame.palmMuteAmount)
+        }
+
+        if frame.slide.arrived, let source = frame.slide.source, let dest = frame.slide.destination {
+            mpeManager.retarget(from: source.midiNote, to: dest.midiNote)
+            controllerManager.playTechniqueHaptic(.slideArrival)
+        }
+
+        if isRecording {
+            for event in frame.expressionEvents {
+                techniqueRecorder.record(event, tick: currentTick)
+            }
+        }
+    }
+
+    private func bendLeadNote() -> Note? {
+        activeNotes.max()
+    }
+
+    private func applyLeadTimbre(_ timbre: Double) {
+        guard let lead = bendLeadNote() else { return }
+        audioEngine.setTimbre(for: lead.midiNote, timbre: timbre)
+        let value = UInt8(min(127, Int(timbre * 127)))
+        if destinationProfile.supportsMPE {
+            mpeManager.setTimbre(for: lead.midiNote, value: value)
+        } else if destinationProfile.supportsCC74 {
+            for port in midiPorts(for: lead.midiNote) {
+                midiEngine.sendTimbreCC74(port: port, channel: 0, value: value)
+            }
+        }
+    }
+
+    private func handleStrumming(_ state: ControllerState, timestamp: TimeInterval) {
         let rightY = state.rightStickY
-        let speed = abs(rightY)
-        let threshold: Float = 0.25
-        
-        // Detect strum crossing
-        if speed > threshold {
+        let travel = abs(rightY)
+        let attackThreshold: Float = 0.22
+        let releaseThreshold: Float = 0.15
+
+        if travel > attackThreshold {
             let direction: StrumDirection = rightY > 0 ? .down : .up
-            
+
             if direction != strumState.lastDirection || strumState.hasReset {
-                // New strum detected
+                if !strumState.hasReset, direction != strumState.lastDirection {
+                    let releaseEvents = chordGateEngine.process(
+                        voice: nil,
+                        isGestureActive: false,
+                        timestamp: timestamp
+                    )
+                    handleChordGateEvents(
+                        releaseEvents,
+                        velocity: lastVelocity,
+                        direction: lastStrumDirection
+                    )
+                }
+
                 strumState.lastDirection = direction
                 strumState.hasReset = false
                 lastStrumDirection = direction
-                
-                // Calculate velocity from speed
-                let velocity = UInt8(max(30, min(127, Int(speed * 140))))
+
+                let travelIntensity = min(1, Double(travel) * 0.72)
+                let axisIntensity = min(1, Double(abs(state.rightStick.yVelocity)) / 8)
+                let motionIntensity = min(1, Double(state.rightStick.movementVelocity) / 10)
+                let intensity = max(travelIntensity, axisIntensity, motionIntensity)
+                let velocity = velocityStabilizer.process(normalizedIntensity: intensity)
                 lastVelocity = velocity
                 lastStrumTime = Date()
-                
-                // Apply modifier for chord quality changes
+
                 var chord = currentChord ?? diatonicChords.first ?? Chord(root: currentKey, quality: .major)
-                let modifier = state.activeModifier
-                chord = applyModifier(chord, modifier: modifier)
-                
-                triggerChord(chord, velocity: velocity, direction: direction)
+                chord = applyModifier(chord, modifier: state.activeModifier)
+                let voice = makeChordVoice(chord)
+                let events = chordGateEngine.process(
+                    voice: voice,
+                    isGestureActive: true,
+                    timestamp: timestamp
+                )
+                handleChordGateEvents(events, velocity: velocity, direction: direction)
             }
-        } else {
+        } else if travel < releaseThreshold {
             strumState.hasReset = true
+            let events = chordGateEngine.process(
+                voice: nil,
+                isGestureActive: false,
+                timestamp: timestamp
+            )
+            handleChordGateEvents(events, velocity: lastVelocity, direction: lastStrumDirection)
+        } else {
+            let events = chordGateEngine.advance(timestamp: timestamp)
+            handleChordGateEvents(events, velocity: lastVelocity, direction: lastStrumDirection)
         }
     }
-    
+
     private func applyModifier(_ chord: Chord, modifier: ControllerModifier) -> Chord {
         switch modifier {
         case .leftShoulder:
-            // Add 7th
             switch chord.quality {
             case .major: return Chord(root: chord.root, quality: .major7)
             case .minor: return Chord(root: chord.root, quality: .minor7)
@@ -151,21 +514,18 @@ public final class AppState: @unchecked Sendable {
             default: return chord
             }
         case .rightShoulder:
-            // Sus chords
             switch chord.quality {
             case .major: return Chord(root: chord.root, quality: .sus4)
             case .minor: return Chord(root: chord.root, quality: .sus2)
             default: return chord
             }
         case .leftTrigger:
-            // Add 9
             switch chord.quality {
             case .major: return Chord(root: chord.root, quality: .add9)
             case .minor: return Chord(root: chord.root, quality: .minor9)
             default: return chord
             }
         case .rightTrigger:
-            // 6th chords
             switch chord.quality {
             case .major: return Chord(root: chord.root, quality: .sixth)
             case .minor: return Chord(root: chord.root, quality: .minorSixth)
@@ -175,87 +535,294 @@ public final class AppState: @unchecked Sendable {
             return chord
         }
     }
-    
-    private func triggerChord(_ chord: Chord, velocity: UInt8, direction: StrumDirection) {
-        // Stop previous notes
-        stopActiveNotes()
-        
-        // Create voicing
+
+    private func makeChordVoice(_ chord: Chord) -> ChordGateVoice {
         let voicing: ChordVoicing
+        let voiceCount = instrumentProfile.stringCount == 0 ? 5 : instrumentProfile.stringCount
+        let baseOctave = instrumentProfile.family == .bass ? 2 : 3
         if let prev = previousVoicing {
-            voicing = ChordVoicing.voiceLed(chord: chord, from: prev)
+            voicing = ChordVoicing.voiceLed(
+                chord: chord,
+                from: prev,
+                baseOctave: baseOctave,
+                voiceCount: voiceCount
+            )
         } else {
-            voicing = ChordVoicing.strummed(chord: chord, strings: 5, baseOctave: 3)
+            voicing = ChordVoicing.strummed(
+                chord: chord,
+                strings: voiceCount,
+                baseOctave: baseOctave
+            )
         }
-        
         previousVoicing = voicing
-        
-        // Get notes in strum order
-        var notes = voicing.notes
-        if direction == .up {
-            notes = notes.reversed()
-        }
-        
-        activeNotes = notes
-        
-        // Strum with slight delays between notes
-        let strumDelay = 0.012 // 12ms between notes
-        for (i, note) in notes.enumerated() {
-            let delay = Double(i) * strumDelay
-            let noteVel = max(30, Int(velocity) - i * 3) // Slightly decrease velocity per string
-            
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-                self?.audioEngine.noteOn(note: note.midiNote, velocity: UInt8(noteVel))
-                self?.midiEngine.sendNoteOn(note: note.midiNote, velocity: UInt8(noteVel))
+        return ChordGateVoice(chord: chord, notes: voicing.notes)
+    }
+
+    private func handleChordGateEvents(
+        _ events: [ChordGateEvent],
+        velocity: UInt8,
+        direction: StrumDirection
+    ) {
+        for event in events {
+            switch event {
+            case .began(let voice):
+                startChordVoice(voice, velocity: velocity, direction: direction)
+                scheduleTimedChordReleaseIfNeeded()
+            case .ended(let voice):
+                chordGateReleaseWorkItem?.cancel()
+                chordGateReleaseWorkItem = nil
+                stopChordVoice(voice)
             }
         }
     }
-    
-    public func stopActiveNotes() {
-        for note in activeNotes {
-            audioEngine.noteOff(note: note.midiNote)
-            midiEngine.sendNoteOff(note: note.midiNote)
+
+    private func scheduleTimedChordReleaseIfNeeded() {
+        chordGateReleaseWorkItem?.cancel()
+        chordGateReleaseWorkItem = nil
+        guard chordGateConfiguration.mode == .timed else { return }
+
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            let events = self.chordGateEngine.advance(
+                timestamp: ProcessInfo.processInfo.systemUptime
+            )
+            self.handleChordGateEvents(
+                events,
+                velocity: self.lastVelocity,
+                direction: self.lastStrumDirection
+            )
         }
-        activeNotes.removeAll()
+        chordGateReleaseWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + chordGateConfiguration.timedDuration,
+            execute: workItem
+        )
     }
-    
-    private func handleModifiers(_ state: ControllerState) {
-        // Face buttons as direct triggers
-        if state.buttonA {
-            // Root note
-            let rootNote = Note(pitchClass: currentKey, octave: 3)
-            audioEngine.noteOn(note: rootNote.midiNote, velocity: 100)
-            midiEngine.sendNoteOn(note: rootNote.midiNote, velocity: 100)
+
+    private func startChordVoice(
+        _ voice: ChordGateVoice,
+        velocity: UInt8,
+        direction: StrumDirection
+    ) {
+        cancelPendingStrumNotes()
+
+        var notes = voice.notes
+        if direction == .up {
+            notes.reverse()
         }
+        let technique: MusicalTechnique = controllerManager.controllerState.leftTrigger.value > 0.35 ? .palmMute : .normal
+        let strumDelay = 0.012
+        let generation = strumGeneration
+        for (i, note) in notes.enumerated() {
+            let delay = Double(i) * strumDelay
+            let noteVel = max(30, Int(velocity) - i * 3)
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self, self.strumGeneration == generation else { return }
+                let wasSounding = self.isNoteOwned(note.midiNote)
+                let wasInserted = self.soundingChordNotes.insert(note.midiNote).inserted
+                guard wasInserted else { return }
+
+                if !wasSounding {
+                    self.beginPhysicalVoice(
+                        note,
+                        velocity: UInt8(noteVel),
+                        technique: technique
+                    )
+                }
+                if !self.destinationProfile.supportsMPE {
+                    self.midiEngine.sendNoteOn(
+                        port: .chords,
+                        channel: 0,
+                        note: note.midiNote,
+                        velocity: UInt8(noteVel)
+                    )
+                }
+                self.addActiveNote(note)
+            }
+            pendingStrumNotes.append(workItem)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+        }
+    }
+
+    private func stopChordVoice(_ voice: ChordGateVoice) {
+        cancelPendingStrumNotes()
+        var releasedConventionalVoice = false
+        for note in voice.notes {
+            guard soundingChordNotes.remove(note.midiNote) != nil else { continue }
+            if !destinationProfile.supportsMPE {
+                midiEngine.sendNoteOff(port: .chords, channel: 0, note: note.midiNote)
+                releasedConventionalVoice = true
+            }
+            finishPhysicalVoiceIfUnowned(note)
+        }
+        if releasedConventionalVoice {
+            resetConventionalExpression(on: .chords)
+        }
+    }
+
+    private func beginPhysicalVoice(_ note: Note, velocity: UInt8, technique: MusicalTechnique) {
+        audioEngine.noteOn(note: note.midiNote, velocity: velocity, technique: technique)
+        if destinationProfile.supportsMPE {
+            mpeManager.noteOn(note: note.midiNote, velocity: velocity, technique: technique)
+        }
+        lastMIDITranslation = midiTranslator.translate(
+            InstrumentPerformanceEvent(note: note, phase: .began, technique: technique, velocity: velocity),
+            memberChannel: mpeManager.voice(for: note.midiNote)?.channel
+        )
+    }
+
+    private func finishPhysicalVoiceIfUnowned(_ note: Note) {
+        guard !isNoteOwned(note.midiNote) else { return }
+        audioEngine.noteOff(note: note.midiNote)
+        if destinationProfile.supportsMPE {
+            mpeManager.noteOff(note: note.midiNote)
+        }
+        activeNotes.removeAll { $0.midiNote == note.midiNote }
+        if activeNotes.isEmpty {
+            performanceEngine.pitchEngine.reset()
+        }
+    }
+
+    private func addActiveNote(_ note: Note) {
+        if !activeNotes.contains(where: { $0.midiNote == note.midiNote }) {
+            activeNotes.append(note)
+        }
+    }
+
+    private func isNoteOwned(_ midiNote: UInt8) -> Bool {
+        soundingChordNotes.contains(midiNote)
+            || heldFaceNotes.values.contains { $0.midiNote == midiNote }
+    }
+
+    private var melodicMIDIPort: VirtualPort {
+        instrumentProfile.family == .bass ? .bass : .melody
+    }
+
+    private func midiPorts(for midiNote: UInt8) -> [VirtualPort] {
+        var ports: [VirtualPort] = []
+        if soundingChordNotes.contains(midiNote) {
+            ports.append(.chords)
+        }
+        if heldFaceNotes.values.contains(where: { $0.midiNote == midiNote }) {
+            ports.append(melodicMIDIPort)
+        }
+        return ports.isEmpty ? [.main] : ports
+    }
+
+    private func resetConventionalExpression(on port: VirtualPort) {
+        midiEngine.sendPitchBend(port: port, channel: 0, value: 8192)
+        midiEngine.sendChannelPressure(port: port, channel: 0, pressure: 0)
+        midiEngine.sendCC(port: port, channel: 0, controller: 11, value: 127)
+        midiEngine.sendCC(port: port, channel: 0, controller: 64, value: 0)
+        midiEngine.sendTimbreCC74(port: port, channel: 0, value: 64)
+    }
+
+    private func handleDuoDrumHits(_ hits: [DuoDrumHit]) {
+        for hit in hits {
+            let sound: BuiltInDrumSound
+            switch hit.voice {
+            case .kick: sound = .kick
+            case .snare: sound = .snare
+            case .closedHat: sound = .closedHiHat
+            case .openHat: sound = .openHiHat
+            }
+
+            audioEngine.triggerDrum(sound, velocity: hit.velocity)
+            midiEngine.sendNoteOn(
+                port: .drums,
+                channel: 9,
+                note: hit.voice.generalMIDINote,
+                velocity: hit.velocity
+            )
+            lastDrumHit = hit
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+                self?.midiEngine.sendNoteOff(
+                    port: .drums,
+                    channel: 9,
+                    note: hit.voice.generalMIDINote
+                )
+            }
+        }
+    }
+
+    public func stopActiveNotes() {
+        chordGateReleaseWorkItem?.cancel()
+        chordGateReleaseWorkItem = nil
+        cancelPendingStrumNotes()
+        _ = chordGateEngine.releaseAll()
+        audioEngine.panic()
+        mpeManager.stopAllNotes()
+        midiEngine.sendAllNotesOff(port: .chords, channel: 0)
+        midiEngine.sendAllNotesOff(port: .melody, channel: 0)
+        midiEngine.sendAllNotesOff(port: .bass, channel: 0)
+        midiEngine.sendAllNotesOff(port: .drums, channel: 9)
+        activeNotes.removeAll()
+        heldFaceNotes.removeAll()
+        soundingChordNotes.removeAll()
+        velocityStabilizer.reset()
+        duoControlEngine.drumVelocityStabilizer.reset()
+        strumState = StrumState()
+        performanceEngine.pitchEngine.reset()
+    }
+
+    public func panic() {
+        stopActiveNotes()
+        midiEngine.panic()
+        lastFrame = nil
+        lastDrumHit = nil
+    }
+
+    private func cancelPendingStrumNotes() {
+        strumGeneration &+= 1
+        pendingStrumNotes.forEach { $0.cancel() }
+        pendingStrumNotes.removeAll(keepingCapacity: true)
+    }
+
+    public var instrumentStatusLabel: String {
+        lastFrame?.instrumentStatusLabel ?? instrumentProfile.family.shortName
+    }
+
+    public var hudLabels: GestureHUDLabels {
+        instrumentProfile.defaultGestureMapping
+    }
+
+    public var activeTechniqueLabel: String? {
+        guard let frame = lastFrame else { return nil }
+        if frame.bend.isBending && abs(frame.bend.bendSemitones) > 0.08 {
+            return frame.bend.displayLabel.map { "Bend \($0)" } ?? "Bend"
+        }
+        return frame.activeTechnique.playLabel
+    }
+
+    public var contextualHint: String? {
+        lastFrame?.hint ?? lastHint
     }
 }
 
-/// Strum direction
 public enum StrumDirection: String, Sendable {
     case up = "Up"
     case down = "Down"
     case none = "—"
 }
 
-/// Internal strum tracking state
 public struct StrumState {
     public var lastDirection: StrumDirection = .none
     public var hasReset: Bool = true
     public var lastCrossTime: Date?
-    
+
     public init() {}
 }
 
-/// Main workspace navigation
 public enum Workspace: String, CaseIterable, Identifiable {
     case play = "Play"
     case harmony = "Harmony"
     case sequence = "Sequence"
     case map = "Map"
     case library = "Library"
-    
+
     public var id: String { rawValue }
-    
+
     public var icon: String {
         switch self {
         case .play: return "gamecontroller.fill"

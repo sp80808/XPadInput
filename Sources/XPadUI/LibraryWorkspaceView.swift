@@ -42,17 +42,17 @@ public struct LibraryWorkspaceView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         dawGuideCard(
                             daw: "Ableton Live 11 / 12",
-                            steps: "1. Open Preferences → Link/MIDI.\n2. Enable 'Track' and 'Remote' on 'XPadInput Main' or 'XPadInput Chords'.\n3. Enable MPE Mode on MIDI tracks for expressive polyphonic bend."
+                            steps: "1. Open Preferences → Link/MIDI.\n2. Enable 'Track' and 'Remote' on 'XPI Main' or 'XPI Chords'.\n3. Use 'XPI Expression (MPE)' for independent expressive bend."
                         )
 
                         dawGuideCard(
                             daw: "Apple Logic Pro",
-                            steps: "1. Create a Software Instrument track.\n2. In Track Inspector, select MIDI Input Port: 'XPadInput Chords'.\n3. Enable MPE in Logic instrument settings (e.g. Alchemy / Sculpture)."
+                            steps: "1. Create a Software Instrument track.\n2. In Track Inspector, select MIDI Input Port: 'XPI Expression (MPE)'.\n3. Enable MPE in Logic instrument settings (e.g. Alchemy / Sculpture)."
                         )
 
                         dawGuideCard(
                             daw: "Bitwig Studio",
-                            steps: "1. Bitwig automatically detects 'XPadInput Expression (MPE)' as an MPE controller.\n2. Route channels directly to Polymer, Phase-4, or Grid devices."
+                            steps: "1. Select 'XPI Expression (MPE)' as the controller input.\n2. Route channels directly to Polymer, Phase-4, or Grid devices."
                         )
                     }
                 }

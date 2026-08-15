@@ -177,9 +177,9 @@ public final class NicheControllerMappingEngine: Sendable {
         actions.append(.pitchBend(cents: twistBend))
 
         // Trigger -> Fire Chord Strum
-        if state.rightTrigger.value > 0.7 || state.buttonA {
+        if state.rightTrigger > 0.7 || state.buttonA {
             let chord = Chord(root: scale.root, quality: .major7)
-            actions.append(.chordStrum(notes: chord.voicedNotes(baseOctave: currentBaseOctave), velocity: UInt8(state.rightTrigger.value * 127), direction: .down))
+            actions.append(.chordStrum(notes: chord.voicedNotes(baseOctave: currentBaseOctave), velocity: UInt8(state.rightTrigger * 127), direction: .down))
         }
 
         return actions

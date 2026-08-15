@@ -6,6 +6,7 @@ import XPadController
 /// Left stick position selects chords; visual feedback shows selection, tension, and relationships.
 struct HarmonicWheelView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     var body: some View {
         GeometryReader { geo in
@@ -60,11 +61,10 @@ struct HarmonicWheelView: View {
     private func chordSegments(center: CGPoint, radius: CGFloat, innerRadius: CGFloat) -> some View {
         let chords = appState.diatonicChords
         let count = chords.count
-        guard count > 0 else { return }
-        
-        let sliceAngle = (2 * CGFloat.pi) / CGFloat(count)
-        
-        ForEach(0..<count, id: \.self) { index in
+        if count > 0 {
+            let sliceAngle = (2 * CGFloat.pi) / CGFloat(count)
+
+            ForEach(0..<count, id: \.self) { index in
             let chord = chords[index]
             let isSelected = index == appState.selectedChordIndex
             let tension = chord.tension(in: appState.currentKey, scale: appState.currentScale)
@@ -85,7 +85,7 @@ struct HarmonicWheelView: View {
             )
             .position(x: x, y: y)
             .onTapGesture {
-                withAnimation(XTheme.springAnimation) {
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
                     appState.selectedChordIndex = index
                     appState.currentChord = chord
                 }
@@ -100,6 +100,7 @@ struct HarmonicWheelView: View {
                 isSelected ? XTheme.primary.opacity(0.4) : XTheme.border,
                 lineWidth: isSelected ? 2 : 0.5
             )
+            }
         }
     }
     
@@ -158,6 +159,8 @@ struct HarmonicWheelView: View {
 // MARK: - Chord Node
 
 struct ChordNodeView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let chord: Chord
     let isSelected: Bool
     let tension: Double
@@ -167,7 +170,7 @@ struct ChordNodeView: View {
     var body: some View {
         VStack(spacing: 3) {
             Text(chord.displayName)
-                .font(.system(size: isSelected ? 16 : 13, weight: isSelected ? .bold : .semibold, design: .rounded))
+                .font(.system(size: isSelected ? 14 : 13, weight: isSelected ? .bold : .semibold, design: .rounded))
                 .foregroundColor(isSelected ? .white : XTheme.textPrimary)
             
             if let roman = chord.romanNumeral(in: key, scale: scale) {
@@ -176,20 +179,20 @@ struct ChordNodeView: View {
                     .foregroundColor(isSelected ? XTheme.accent : XTheme.textTertiary)
             }
         }
-        .frame(width: isSelected ? 64 : 54, height: isSelected ? 46 : 38)
+        .frame(width: 58, height: 42)
         .background(
-            RoundedRectangle(cornerRadius: isSelected ? 12 : 10)
-                .fill(isSelected ? XTheme.primary.opacity(0.25) : XTheme.surface)
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isSelected ? XTheme.primary.opacity(0.20) : XTheme.surface)
                 .overlay(
-                    RoundedRectangle(cornerRadius: isSelected ? 12 : 10)
+                    RoundedRectangle(cornerRadius: 10)
                         .stroke(
                             isSelected ? XTheme.primary : XTheme.tensionColor(tension).opacity(0.3),
-                            lineWidth: isSelected ? 2 : 1
+                            lineWidth: isSelected ? 1.5 : 1
                         )
                 )
         )
-        .xGlow(isActive: isSelected, color: XTheme.primary)
-        .scaleEffect(isSelected ? 1.15 : 1.0)
-        .animation(XTheme.springAnimation, value: isSelected)
+        .shadow(color: isSelected ? XTheme.primary.opacity(0.22) : .clear, radius: 7)
+        .scaleEffect(isSelected && !reduceMotion ? 1.035 : 1.0)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isSelected)
     }
 }

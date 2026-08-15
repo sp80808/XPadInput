@@ -102,4 +102,25 @@ public final class VirtualStrummer: @unchecked Sendable {
         }
         return result.notes
     }
+
+    public func processStrum(rightStickY: Double, notes: [Note]) -> [StrummedNote] {
+        let stick = ProcessedStickState(y: Float(rightStickY), radius: Float(abs(rightStickY)), yVelocity: Float(rightStickY * 8))
+        return processStrum(stick: stick, notes: notes)
+    }
+
+    public func processStick(
+        x: Double,
+        y: Double,
+        triggerMute: Double,
+        chordNotes: [Note],
+        timestamp: TimeInterval
+    ) -> StrumResult? {
+        let stick = ProcessedStickState(
+            x: Float(x),
+            y: Float(y),
+            radius: Float(min(1, sqrt(x * x + y * y))),
+            yVelocity: Float((y - previousY) / 0.05)
+        )
+        return processStick(stick: stick, triggerMute: triggerMute, chordNotes: chordNotes, timestamp: timestamp)
+    }
 }

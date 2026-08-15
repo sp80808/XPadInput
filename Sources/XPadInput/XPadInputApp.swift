@@ -6,7 +6,7 @@ struct XPadInputApp: App {
     @State private var appState = AppState()
     
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("XPI: Game Controller MIDI") {
             ContentView()
                 .environment(appState)
                 .frame(minWidth: 1100, minHeight: 700)
@@ -20,7 +20,7 @@ struct XPadInputApp: App {
             CommandGroup(replacing: .newItem) {}
             CommandMenu("MIDI") {
                 Button("Panic — All Notes Off") {
-                    appState.midiEngine.panic()
+                    appState.panic()
                 }
                 .keyboardShortcut(".", modifiers: [.command, .shift])
                 

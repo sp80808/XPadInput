@@ -14,24 +14,25 @@ struct TransportBar: View {
         HStack(spacing: 16) {
             // Transport controls
             HStack(spacing: 6) {
-                TransportButton(icon: "stop.fill", isActive: false) {
+                TransportButton(icon: "stop.fill", label: "Stop", isActive: false) {
                     appState.stopActiveNotes()
                     appState.isPlaying = false
                 }
                 
-                TransportButton(icon: "play.fill", isActive: appState.isPlaying) {
+                TransportButton(icon: "play.fill", label: "Play", isActive: appState.isPlaying) {
                     state.isPlaying.toggle()
                 }
                 
                 TransportButton(
                     icon: "record.circle",
+                    label: "Record",
                     isActive: appState.isRecording,
                     activeColor: XTheme.recording
                 ) {
                     state.isRecording.toggle()
                 }
                 
-                TransportButton(icon: "repeat", isActive: appState.isLooping) {
+                TransportButton(icon: "repeat", label: "Loop", isActive: appState.isLooping) {
                     state.isLooping.toggle()
                 }
             }
@@ -41,12 +42,19 @@ struct TransportBar: View {
             
             // BPM
             HStack(spacing: 4) {
-                Image(systemName: "metronome")
-                    .font(.system(size: 11))
-                    .foregroundColor(appState.metronomeEnabled ? XTheme.primary : XTheme.textTertiary)
-                    .onTapGesture {
-                        state.metronomeEnabled.toggle()
-                    }
+                Button {
+                    state.metronomeEnabled.toggle()
+                } label: {
+                    Image(systemName: "metronome")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(appState.metronomeEnabled ? XTheme.primary : XTheme.textTertiary)
+                        .frame(width: 25, height: 25)
+                }
+                .buttonStyle(XTactileButtonStyle(isActive: appState.metronomeEnabled))
+                .help(appState.metronomeEnabled ? "Disable metronome" : "Enable metronome")
+                .accessibilityLabel("Metronome")
+                .accessibilityValue(appState.metronomeEnabled ? "On" : "Off")
+                .keyboardShortcut("k", modifiers: [])
                 
                 Text("\(Int(appState.bpm))")
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
@@ -99,6 +107,27 @@ struct TransportBar: View {
             
             Divider()
                 .frame(height: 20)
+
+            Picker("Instrument", selection: Binding(
+                get: { appState.instrumentProfile.family },
+                set: { family in
+                    appState.setInstrument(InstrumentProfile.profile(for: family))
+                }
+            )) {
+                ForEach(InstrumentProfile.playableProfiles, id: \.family) { profile in
+                    Text(profile.family.shortName).tag(profile.family)
+                }
+            }
+            .pickerStyle(.menu)
+            .frame(width: 88)
+
+            Text(appState.instrumentStatusLabel)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(XTheme.accent)
+                .frame(minWidth: 90, alignment: .leading)
+
+            Divider()
+                .frame(height: 20)
             
             // MIDI activity
             HStack(spacing: 6) {
@@ -115,6 +144,8 @@ struct TransportBar: View {
                     .toggleStyle(.switch)
                     .scaleEffect(0.6)
                     .frame(width: 30)
+                    .labelsHidden()
+                    .accessibilityLabel("Virtual MIDI")
             }
             
             Divider()
@@ -137,26 +168,32 @@ struct TransportBar: View {
             
             // Panic button
             Button {
-                appState.midiEngine.panic()
-                appState.audioEngine.allNotesOff()
-                appState.activeNotes.removeAll()
+                appState.panic()
             } label: {
                 Image(systemName: "exclamationmark.octagon")
-                    .font(.system(size: 12))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(XTheme.tense)
+                    .frame(width: 28, height: 28)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(XTactileButtonStyle(activeColor: XTheme.tense))
             .help("MIDI Panic — All Notes Off")
+            .accessibilityLabel("MIDI Panic, all notes off")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
-        .frame(height: 40)
-        .background(XTheme.surface)
+        .frame(height: 48)
+        .background(XTheme.cardGradient)
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color.white.opacity(0.055))
+                .frame(height: 1)
+        }
     }
 }
 
 struct TransportButton: View {
     let icon: String
+    let label: String
     let isActive: Bool
     var activeColor: Color = XTheme.primary
     let action: () -> Void
@@ -166,12 +203,11 @@ struct TransportButton: View {
             Image(systemName: icon)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(isActive ? activeColor : XTheme.textSecondary)
-                .frame(width: 26, height: 26)
-                .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(isActive ? activeColor.opacity(0.15) : .clear)
-                )
+                .frame(width: 28, height: 28)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(XTactileButtonStyle(isActive: isActive, activeColor: activeColor))
+        .help(label)
+        .accessibilityLabel(label)
+        .accessibilityValue(isActive ? "On" : "Off")
     }
 }

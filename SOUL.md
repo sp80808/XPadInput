@@ -1,4 +1,4 @@
-# SOUL.md: The Philosophical & Artistic Identity of XPadInput
+# SOUL.md — The Philosophical & Artistic Identity of XPI: Game Controller MIDI
 
 > *"A gamepad is not a compromised keyboard. It is a dual-analog, multi-axis, haptic-resonant continuous acoustic bow for the digital era."*
 
@@ -17,20 +17,20 @@ Modern game controllers (Sony DualSense, Xbox Wireless, Switch Pro) represent hu
 - Sub-millisecond capacitive multi-touch surfaces for organic strumming and XY filter sweeps.
 - Voice-coil haptic actuators that can translate musical resonance directly into the player's fingertips.
 
-**XPadInput** treats the gamepad not as a novelty toy, but as a virtuoso musical instrument.
+**XPI: Game Controller MIDI** treats the gamepad not as a novelty toy, but as a virtuoso musical instrument.
 
 ---
 
 ## 2. Design Tenets & Emotional Rules
 
 ### I. Immediacy Over Configuration
-A musician picking up an acoustic guitar doesn't configure drivers. The instant XPadInput launches:
+A musician picking up an acoustic guitar doesn't configure drivers. The instant XPI launches:
 - Any plugged-in or Bluetooth controller is automatically recognized and calibrated.
 - The built-in low-latency DSP synthesizer produces rich sound immediately without requiring external DAWs or plugins.
 - Virtual CoreMIDI MPE ports are exposed system-wide for seamless integration into Ableton Live, Logic Pro, Bitwig, or Studio One.
 
 ### II. Musical Guardrails Without Creative Confinement
-- Music theory in XPadInput is not a math test; it is an intelligent, reactive navigator.
+- Music theory in XPI is not a math test; it is an intelligent, reactive navigator.
 - Harmonic wheels organize functional harmony spatially: Moving clockwise explores the Circle of Fifths; expanding outward explores harmonic tension and chromatic mediants.
 - Real-time voice leading algorithms eliminate jarring register leaps, keeping common tones anchored so chords transition like a master pianist.
 

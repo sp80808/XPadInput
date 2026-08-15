@@ -1,11 +1,15 @@
 import Foundation
 import GameController
+import CoreHaptics
+import XPadCore
 
 /// Manages controller discovery and input handling.
 @Observable
 public final class ControllerManager: @unchecked Sendable {
     public var connectedController: GCController?
     public var controllerState = ControllerState()
+    public var currentState = GamepadState()
+    public var controllerKind: ControllerKind = .simulated
     public var capabilityProfile: ControllerCapabilityProfile?
     public var isConnected: Bool = false
     public var controllerName: String = "No Controller"
@@ -18,8 +22,10 @@ public final class ControllerManager: @unchecked Sendable {
     
     // Input callbacks
     public var onStateChanged: ((ControllerState) -> Void)?
+    public var onDisconnected: (() -> Void)?
     
     private var observers: [Any] = []
+    private var hapticEngine: CHHapticEngine?
     
     public init() {
         setupNotifications()
@@ -68,7 +74,8 @@ public final class ControllerManager: @unchecked Sendable {
     private func controllerConnected(_ controller: GCController) {
         connectedController = controller
         isConnected = true
-        controllerName = controller.vendorName ?? controller.productCategory ?? "Controller"
+        controllerName = controller.vendorName ?? controller.productCategory
+        controllerKind = identifyControllerKind(controller)
         capabilityProfile = ControllerCapabilityProfile.from(controller)
         
         setupInputHandlers(controller)
@@ -77,6 +84,8 @@ public final class ControllerManager: @unchecked Sendable {
         if let motion = controller.motion {
             motion.sensorsActive = true
         }
+
+        prepareHaptics(for: controller)
     }
     
     private func controllerDisconnected() {
@@ -85,6 +94,12 @@ public final class ControllerManager: @unchecked Sendable {
         controllerName = "No Controller"
         capabilityProfile = nil
         controllerState = ControllerState()
+        currentState = GamepadState()
+        controllerKind = .simulated
+        hapticEngine?.stop(completionHandler: nil)
+        hapticEngine = nil
+        onStateChanged?(controllerState)
+        onDisconnected?()
     }
     
     // applyDeadzone removed in favor of input processors
@@ -147,7 +162,8 @@ public final class ControllerManager: @unchecked Sendable {
             // Menu
             state.menuButton = gamepad.buttonMenu.isPressed
             state.optionsButton = gamepad.buttonOptions?.isPressed ?? false
-            
+
+            self.currentState = Self.gamepadState(from: state)
             self.onStateChanged?(state)
         }
         
@@ -164,7 +180,191 @@ public final class ControllerManager: @unchecked Sendable {
                 state.accelY = motion.userAcceleration.y
                 state.accelZ = motion.userAcceleration.z
                 state.hasMotion = true
+                self.currentState = Self.gamepadState(from: state)
+                self.onStateChanged?(state)
             }
         }
+    }
+
+    public var isHardwareConnected: Bool { isConnected }
+
+    /// Selects a visual/simulated controller family without requiring hardware.
+    public func selectControllerKind(_ kind: ControllerKind) {
+        controllerKind = kind
+        capabilityProfile = Self.capabilityProfile(for: kind)
+        if !isConnected {
+            controllerName = kind.rawValue
+        }
+    }
+
+    /// Allows tests, previews, and keyboard fallbacks to drive the same processed callback path.
+    public func injectSimulatedState(_ transform: (inout GamepadState) -> Void) {
+        var state = currentState
+        transform(&state)
+        currentState = state
+        controllerState = Self.controllerState(from: state)
+        onStateChanged?(controllerState)
+    }
+
+    /// Plays a single restrained haptic for a discrete technique landmark.
+    public func playTechniqueHaptic(_ kind: TechniqueHaptic) {
+        guard let engine = hapticEngine else { return }
+        let intensity: Float
+        let sharpness: Float
+        switch kind {
+        case .bendDetent:
+            intensity = 0.12; sharpness = 0.65
+        case .hammerOn, .pullOff:
+            intensity = 0.10; sharpness = 0.40
+        case .slideArrival:
+            intensity = 0.16; sharpness = 0.35
+        case .pinchHarmonic:
+            intensity = 0.22; sharpness = 0.90
+        case .palmMuteThreshold:
+            intensity = 0.08; sharpness = 0.20
+        }
+        do {
+            let event = CHHapticEvent(
+                eventType: .hapticTransient,
+                parameters: [
+                    CHHapticEventParameter(parameterID: .hapticIntensity, value: intensity),
+                    CHHapticEventParameter(parameterID: .hapticSharpness, value: sharpness)
+                ],
+                relativeTime: 0
+            )
+            let pattern = try CHHapticPattern(events: [event], parameters: [])
+            let player = try engine.makePlayer(with: pattern)
+            try player.start(atTime: CHHapticTimeImmediate)
+        } catch {}
+    }
+
+    /// Plays one restrained transient when an exact bend target is crossed.
+    public func playBendTargetDetent() {
+        playTechniqueHaptic(.bendDetent)
+    }
+
+    private func prepareHaptics(for controller: GCController) {
+        guard capabilityProfile?.hasHaptics == true,
+              let engine = controller.haptics?.createEngine(withLocality: .default) else {
+            hapticEngine = nil
+            return
+        }
+
+        do {
+            try engine.start()
+            hapticEngine = engine
+        } catch {
+            hapticEngine = nil
+        }
+    }
+
+    private func identifyControllerKind(_ controller: GCController) -> ControllerKind {
+        let identity = "\(controller.vendorName ?? "") \(controller.productCategory)".lowercased()
+        if identity.contains("dualsense") || identity.contains("ps5") { return .dualSense }
+        if identity.contains("dualshock") || identity.contains("ps4") { return .dualShock4 }
+        if identity.contains("xbox") { return .xbox }
+        if identity.contains("switch") || identity.contains("pro controller") { return .switchPro }
+        if identity.contains("steam") { return .steamDeck }
+        return .generic
+    }
+
+    private static func capabilityProfile(for kind: ControllerKind) -> ControllerCapabilityProfile {
+        switch kind {
+        case .dualSense, .dualShock4: return .dualSense
+        case .xbox: return .xbox
+        case .switchPro: return .switchPro
+        case .steamDeck: return .steamDeck
+        case .guitarHero: return .guitarHero
+        case .soundVoltex: return .soundVoltex
+        case .beatmaniaIIDX: return .beatmaniaIIDX
+        case .popnMusic: return .popnMusic
+        case .taikoDrum: return .taikoDrum
+        case .danceMat: return .danceMat
+        case .flightStick: return .flightStick
+        case .racingWheel: return .racingWheel
+        case .fightStick: return .fightStick
+        case .generic, .simulated: return .generic
+        }
+    }
+
+    private static func gamepadState(from state: ControllerState) -> GamepadState {
+        GamepadState(
+            leftStick: StickCoordinates(x: Double(state.leftStick.x), y: Double(state.leftStick.y)),
+            rightStick: StickCoordinates(x: Double(state.rightStick.x), y: Double(state.rightStick.y)),
+            leftTrigger: Double(state.leftTrigger.value),
+            rightTrigger: Double(state.rightTrigger.value),
+            leftShoulder: state.leftShoulder,
+            rightShoulder: state.rightShoulder,
+            buttonA: state.buttonA,
+            buttonB: state.buttonB,
+            buttonX: state.buttonX,
+            buttonY: state.buttonY,
+            dpadUp: state.dpadUp,
+            dpadDown: state.dpadDown,
+            dpadLeft: state.dpadLeft,
+            dpadRight: state.dpadRight,
+            leftStickClick: state.leftStickButton,
+            rightStickClick: state.rightStickButton,
+            touchX: Double(state.touchpadX),
+            touchY: Double(state.touchpadY),
+            isTouching: state.touchpadActive,
+            gyroPitch: state.gyroX,
+            gyroRoll: state.gyroY,
+            gyroYaw: state.gyroZ
+        )
+    }
+
+    private static func controllerState(from state: GamepadState) -> ControllerState {
+        let processed = ControllerState()
+        processed.leftStick = ProcessedStickState(
+            rawX: Float(state.leftStick.x),
+            rawY: Float(state.leftStick.y),
+            x: Float(state.leftStick.x),
+            y: Float(state.leftStick.y),
+            radius: Float(state.leftStick.radius),
+            angle: state.leftStick.angle,
+            isInDeadzone: !state.leftStick.isActive,
+            isNearEdge: state.leftStick.radius > 0.95
+        )
+        processed.rightStick = ProcessedStickState(
+            rawX: Float(state.rightStick.x),
+            rawY: Float(state.rightStick.y),
+            x: Float(state.rightStick.x),
+            y: Float(state.rightStick.y),
+            radius: Float(state.rightStick.radius),
+            angle: state.rightStick.angle,
+            isInDeadzone: !state.rightStick.isActive,
+            isNearEdge: state.rightStick.radius > 0.95
+        )
+        processed.leftTrigger = ProcessedTriggerState(
+            rawValue: Float(state.leftTrigger),
+            value: Float(state.leftTrigger),
+            isPressed: state.leftTrigger > 0.1
+        )
+        processed.rightTrigger = ProcessedTriggerState(
+            rawValue: Float(state.rightTrigger),
+            value: Float(state.rightTrigger),
+            isPressed: state.rightTrigger > 0.1
+        )
+        processed.leftShoulder = state.leftShoulder
+        processed.rightShoulder = state.rightShoulder
+        processed.buttonA = state.buttonA
+        processed.buttonB = state.buttonB
+        processed.buttonX = state.buttonX
+        processed.buttonY = state.buttonY
+        processed.dpadUp = state.dpadUp
+        processed.dpadDown = state.dpadDown
+        processed.dpadLeft = state.dpadLeft
+        processed.dpadRight = state.dpadRight
+        processed.leftStickButton = state.leftStickClick
+        processed.rightStickButton = state.rightStickClick
+        processed.touchpadX = Float(state.touchX)
+        processed.touchpadY = Float(state.touchY)
+        processed.touchpadActive = state.isTouching
+        processed.gyroX = state.gyroPitch
+        processed.gyroY = state.gyroRoll
+        processed.gyroZ = state.gyroYaw
+        processed.hasMotion = state.gyroPitch != 0 || state.gyroRoll != 0 || state.gyroYaw != 0
+        return processed
     }
 }

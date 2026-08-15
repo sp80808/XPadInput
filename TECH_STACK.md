@@ -1,6 +1,6 @@
 # TECH_STACK.md: Technology Stack & Architectural Specifications
 
-This document outlines the architectural patterns, native frameworks, performance parameters, and mathematical foundations powering **XPadInput**.
+This document outlines the architectural patterns, native frameworks, performance parameters, and mathematical foundations powering **XPI: Game Controller MIDI**.
 
 ---
 
