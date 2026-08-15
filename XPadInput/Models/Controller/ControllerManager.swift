@@ -1,0 +1,160 @@
+import Foundation
+import GameController
+
+/// Manages controller discovery and input handling.
+@Observable
+final class ControllerManager: @unchecked Sendable {
+    var connectedController: GCController?
+    var controllerState = ControllerState()
+    var capabilityProfile: ControllerCapabilityProfile?
+    var isConnected: Bool = false
+    var controllerName: String = "No Controller"
+    
+    // Deadzone for sticks
+    var stickDeadzone: Float = 0.15
+    
+    // Input callbacks
+    var onStateChanged: ((ControllerState) -> Void)?
+    
+    private var observers: [Any] = []
+    
+    init() {
+        setupNotifications()
+        scanForControllers()
+    }
+    
+    deinit {
+        observers.forEach { NotificationCenter.default.removeObserver($0) }
+    }
+    
+    func setupNotifications() {
+        let connectObserver = NotificationCenter.default.addObserver(
+            forName: .GCControllerDidConnect,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let controller = notification.object as? GCController else { return }
+            self?.controllerConnected(controller)
+        }
+        
+        let disconnectObserver = NotificationCenter.default.addObserver(
+            forName: .GCControllerDidDisconnect,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let controller = notification.object as? GCController else { return }
+            if self?.connectedController === controller {
+                self?.controllerDisconnected()
+            }
+        }
+        
+        observers = [connectObserver, disconnectObserver]
+    }
+    
+    func scanForControllers() {
+        GCController.startWirelessControllerDiscovery {
+            // Discovery completed
+        }
+        
+        // Check already-connected controllers
+        if let controller = GCController.controllers().first {
+            controllerConnected(controller)
+        }
+    }
+    
+    private func controllerConnected(_ controller: GCController) {
+        connectedController = controller
+        isConnected = true
+        controllerName = controller.vendorName ?? controller.productCategory ?? "Controller"
+        capabilityProfile = ControllerCapabilityProfile.from(controller)
+        
+        setupInputHandlers(controller)
+        
+        // Enable motion if available
+        if let motion = controller.motion {
+            motion.sensorsActive = true
+        }
+    }
+    
+    private func controllerDisconnected() {
+        connectedController = nil
+        isConnected = false
+        controllerName = "No Controller"
+        capabilityProfile = nil
+        controllerState = ControllerState()
+    }
+    
+    private func applyDeadzone(_ value: Float) -> Float {
+        if abs(value) < stickDeadzone {
+            return 0
+        }
+        // Remap deadzone to full range
+        let sign: Float = value < 0 ? -1 : 1
+        return sign * (abs(value) - stickDeadzone) / (1.0 - stickDeadzone)
+    }
+    
+    private func setupInputHandlers(_ controller: GCController) {
+        guard let gamepad = controller.extendedGamepad else { return }
+        
+        gamepad.valueChangedHandler = { [weak self] (gamepad, element) in
+            guard let self = self else { return }
+            
+            // Update state on main thread for UI, but capture values immediately
+            let state = self.controllerState
+            
+            // Left stick
+            state.leftStickX = self.applyDeadzone(gamepad.leftThumbstick.xAxis.value)
+            state.leftStickY = self.applyDeadzone(gamepad.leftThumbstick.yAxis.value)
+            
+            // Right stick
+            state.rightStickX = self.applyDeadzone(gamepad.rightThumbstick.xAxis.value)
+            state.rightStickY = self.applyDeadzone(gamepad.rightThumbstick.yAxis.value)
+            
+            // Triggers
+            state.leftTrigger = gamepad.leftTrigger.value
+            state.rightTrigger = gamepad.rightTrigger.value
+            
+            // Shoulders
+            state.leftShoulder = gamepad.leftShoulder.isPressed
+            state.rightShoulder = gamepad.rightShoulder.isPressed
+            
+            // Face buttons
+            state.buttonA = gamepad.buttonA.isPressed
+            state.buttonB = gamepad.buttonB.isPressed
+            state.buttonX = gamepad.buttonX.isPressed
+            state.buttonY = gamepad.buttonY.isPressed
+            
+            // D-pad
+            state.dpadUp = gamepad.dpad.up.isPressed
+            state.dpadDown = gamepad.dpad.down.isPressed
+            state.dpadLeft = gamepad.dpad.left.isPressed
+            state.dpadRight = gamepad.dpad.right.isPressed
+            
+            // Stick buttons
+            state.leftStickButton = gamepad.leftThumbstickButton?.isPressed ?? false
+            state.rightStickButton = gamepad.rightThumbstickButton?.isPressed ?? false
+            
+            // Menu
+            state.menuButton = gamepad.buttonMenu.isPressed
+            state.optionsButton = gamepad.buttonOptions?.isPressed ?? false
+            
+            self.onStateChanged?(state)
+        }
+        
+        // Motion handling
+        if let motion = controller.motion {
+            motion.valueChangedHandler = { [weak self] (motion) in
+                guard let self = self else { return }
+                let state = self.controllerState
+                
+                state.gyroX = motion.rotationRate.x
+                state.gyroY = motion.rotationRate.y
+                state.gyroZ = motion.rotationRate.z
+                state.accelX = motion.userAcceleration.x
+                state.accelY = motion.userAcceleration.y
+                state.accelZ = motion.userAcceleration.z
+                state.hasMotion = true
+            }
+        }
+    }
+}

@@ -1,0 +1,30 @@
+# AppleDouble & macOS Files
+._*
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+.Spotlight-V100
+.Trashes
+
+# Xcode & Swift Package Manager Build Artefacts
+.build/
+.swiftpm/
+Packages/
+Package.pins
+Package.resolved
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcshareddata/
+*.xcworkspace/xcuserdata/
+*.xcworkspace/project.xcworkspace/xcuserdata/
+*.xcuserdatad/
+*.xcuserstate
+
+# Logs & Temporary Files
+*.log
+*.tmp
+*.bak
+*.swp
+*~
