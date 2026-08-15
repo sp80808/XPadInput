@@ -1,4 +1,6 @@
 import SwiftUI
+import XPadCore
+import XPadController
 
 /// Live interactive controller visualiser showing all inputs and their musical assignments.
 struct ControllerVisualizerView: View {

@@ -11,24 +11,23 @@ public struct MPEVoice: Sendable {
 }
 
 public final class MPEManager: @unchecked Sendable {
-    private let midiManager: MIDIManager
+    private let midiEngine: MIDIEngine
     private let memberChannels: [UInt8] = Array(2...15)
     private var activeVoices: [UInt8: MPEVoice] = [:] // Keyed by MIDI Note
     private var nextChannelIndex: Int = 0
     private let lock = NSLock()
 
-    public init(midiManager: MIDIManager = .shared) {
-        self.midiManager = midiManager
+    public init(midiEngine: MIDIEngine = MIDIEngine()) {
+        self.midiEngine = midiEngine
     }
 
     /// Initializes MPE Zone Configuration (Lower Zone, Master = Ch 1, 14 Member Channels).
     public func sendMPEZoneConfiguration() {
-        // Master Ch 1: RPN 0x0006 = 14 member channels
-        midiManager.sendCC(port: .mpe, channel: 0, controller: 101, value: 0) // RPN MSB
-        midiManager.sendCC(port: .mpe, channel: 0, controller: 100, value: 6) // RPN LSB (MPE Config)
-        midiManager.sendCC(port: .mpe, channel: 0, controller: 6, value: 14) // Data Entry MSB = 14 member channels
-        midiManager.sendCC(port: .mpe, channel: 0, controller: 101, value: 127) // Null RPN
-        midiManager.sendCC(port: .mpe, channel: 0, controller: 100, value: 127)
+        midiEngine.sendCC(controller: 101, value: 0, channel: 0)
+        midiEngine.sendCC(controller: 100, value: 6, channel: 0)
+        midiEngine.sendCC(controller: 6, value: 14, channel: 0)
+        midiEngine.sendCC(controller: 101, value: 127, channel: 0)
+        midiEngine.sendCC(controller: 100, value: 127, channel: 0)
     }
 
     /// Starts an MPE note on an allocated member channel.
@@ -36,7 +35,6 @@ public final class MPEManager: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
-        // Find available channel
         let channel = memberChannels[nextChannelIndex % memberChannels.count]
         nextChannelIndex += 1
 
@@ -50,9 +48,8 @@ public final class MPEManager: @unchecked Sendable {
         )
         activeVoices[note] = voice
 
-        // Reset bend on this channel before noteOn
-        midiManager.sendPitchBend(port: .mpe, channel: channel - 1, semitoneOffset: 0.0)
-        midiManager.sendNoteOn(port: .mpe, channel: channel - 1, note: note, velocity: velocity)
+        midiEngine.sendPitchBend(value: 8192, channel: channel - 1)
+        midiEngine.sendNoteOn(note: note, velocity: velocity, channel: channel - 1)
     }
 
     /// Releases an MPE note and frees its channel.
@@ -61,7 +58,7 @@ public final class MPEManager: @unchecked Sendable {
         defer { lock.unlock() }
 
         guard let voice = activeVoices[note] else { return }
-        midiManager.sendNoteOff(port: .mpe, channel: voice.channel - 1, note: note)
+        midiEngine.sendNoteOff(note: note, channel: voice.channel - 1)
         activeVoices.removeValue(forKey: note)
     }
 
@@ -71,7 +68,9 @@ public final class MPEManager: @unchecked Sendable {
         defer { lock.unlock() }
 
         guard let voice = activeVoices[note] else { return }
-        midiManager.sendPitchBend(port: .mpe, channel: voice.channel - 1, semitoneOffset: semitones)
+        let normalized = max(-1.0, min(1.0, semitones / 48.0))
+        let value = UInt16(8192.0 + normalized * 8191.0)
+        midiEngine.sendPitchBend(value: value, channel: voice.channel - 1)
     }
 
     /// Modulates polyphonic pressure (Z-axis / aftertouch) for a specific note.
@@ -80,7 +79,7 @@ public final class MPEManager: @unchecked Sendable {
         defer { lock.unlock() }
 
         guard let voice = activeVoices[note] else { return }
-        midiManager.sendPolyPressure(port: .mpe, channel: voice.channel - 1, note: note, pressure: pressure)
+        midiEngine.sendCC(controller: 11, value: pressure, channel: voice.channel - 1)
     }
 
     /// Modulates CC74 Timbre (Y-axis / brightness) for a specific note.
@@ -89,7 +88,7 @@ public final class MPEManager: @unchecked Sendable {
         defer { lock.unlock() }
 
         guard let voice = activeVoices[note] else { return }
-        midiManager.sendTimbreCC74(port: .mpe, channel: voice.channel - 1, value: value)
+        midiEngine.sendCC(controller: 74, value: value, channel: voice.channel - 1)
     }
 
     /// Stops all notes and clears voice tracking.
@@ -98,9 +97,9 @@ public final class MPEManager: @unchecked Sendable {
         defer { lock.unlock() }
 
         for (note, voice) in activeVoices {
-            midiManager.sendNoteOff(port: .mpe, channel: voice.channel - 1, note: note)
+            midiEngine.sendNoteOff(note: note, channel: voice.channel - 1)
         }
         activeVoices.removeAll()
-        midiManager.panic()
+        midiEngine.panic()
     }
 }

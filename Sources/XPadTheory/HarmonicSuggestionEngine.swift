@@ -15,7 +15,7 @@ public enum SuggestionCategory: String, CaseIterable, Identifiable, Codable, Sen
 }
 
 public struct ChordSuggestion: Identifiable, Codable, Sendable {
-    public var id: String { "\(category.rawValue)_\(chord.symbol)" }
+    public var id: String { "\(category.rawValue)_\(chord.displayName)" }
     public let chord: Chord
     public let category: SuggestionCategory
     public let reason: String
@@ -41,18 +41,17 @@ public struct HarmonicSuggestionEngine: Sendable {
     public init() {}
 
     /// Generates ranked next chord suggestions given the current chord, the scale, and voice leading context.
-    public func suggestions(for currentChord: Chord, in scale: Scale) -> [ChordSuggestion] {
+    public func suggestions(for currentChord: Chord, in key: PitchClass, scale: Scale) -> [ChordSuggestion] {
         var results: [ChordSuggestion] = []
         let currentPcs = Set(currentChord.pitchClasses)
-        let root = scale.root
 
         // 1. FAMILIAR: Diatonic standard motions
         let standardNext: [(PitchClass, ChordQuality, String)] = [
             (currentChord.root.transposed(by: 5), .major, "Circle of Fifths motion (Strong root progression)"),
             (currentChord.root.transposed(by: 7), .major, "Dominant movement"),
-            (scale.root, (scale.type == .major ? .major : .minor), "Resolution to Tonic (I)"),
-            (scale.root.transposed(by: 5), .major, "Movement to Subdominant (IV)"),
-            (scale.root.transposed(by: 9), .minor, "Deceptive resolution to Relative Minor (vi)")
+            (key, (scale.id.contains("minor") ? .minor : .major), "Resolution to Tonic (I)"),
+            (key.transposed(by: 5), .major, "Movement to Subdominant (IV)"),
+            (key.transposed(by: 9), .minor, "Deceptive resolution to Relative Minor (vi)")
         ]
         for spec in standardNext {
             let chord = Chord(root: spec.0, quality: spec.1)
@@ -71,11 +70,11 @@ public struct HarmonicSuggestionEngine: Sendable {
             for q in [ChordQuality.major, .minor, .major7, .minor7, .sus4] {
                 let candidate = Chord(root: pc, quality: q)
                 let common = currentPcs.intersection(Set(candidate.pitchClasses)).count
-                if common >= 2 && candidate.symbol != currentChord.symbol {
+                if common >= 2 && candidate.displayName != currentChord.displayName {
                     results.append(ChordSuggestion(
                         chord: candidate,
                         category: .smooth,
-                        reason: "Shares \(common) notes with \(currentChord.symbol)",
+                        reason: "Shares \(common) notes with \(currentChord.displayName)",
                         score: 75.0 + Double(common * 8),
                         commonToneCount: common
                     ))
@@ -88,7 +87,7 @@ public struct HarmonicSuggestionEngine: Sendable {
         results.append(ChordSuggestion(
             chord: dominantOfRoot,
             category: .resolution,
-            reason: "Dominant 7th preparing resolution back to \(currentChord.root.standardName)",
+            reason: "Dominant 7th preparing resolution back to \(currentChord.root.displayName)",
             score: 95.0,
             commonToneCount: currentPcs.intersection(Set(dominantOfRoot.pitchClasses)).count
         ))
@@ -135,7 +134,7 @@ public struct HarmonicSuggestionEngine: Sendable {
         }
 
         // 6. DARKER & BRIGHTER
-        let parallelMinorBorrowed = Chord(root: root.transposed(by: 8), quality: .major)
+        let parallelMinorBorrowed = Chord(root: key.transposed(by: 8), quality: .major)
         results.append(ChordSuggestion(
             chord: parallelMinorBorrowed,
             category: .darker,
@@ -144,7 +143,7 @@ public struct HarmonicSuggestionEngine: Sendable {
             commonToneCount: currentPcs.intersection(Set(parallelMinorBorrowed.pitchClasses)).count
         ))
 
-        let lydianMajor = Chord(root: root.transposed(by: 2), quality: .major)
+        let lydianMajor = Chord(root: key.transposed(by: 2), quality: .major)
         results.append(ChordSuggestion(
             chord: lydianMajor,
             category: .brighter,
@@ -153,12 +152,12 @@ public struct HarmonicSuggestionEngine: Sendable {
             commonToneCount: currentPcs.intersection(Set(lydianMajor.pitchClasses)).count
         ))
 
-        // De-duplicate by chord symbol and sort by score descending
+        // De-duplicate by chord displayName and sort by score descending
         var seen = Set<String>()
         var unique: [ChordSuggestion] = []
         for s in results.sorted(by: { $0.score > $1.score }) {
-            if !seen.contains(s.chord.symbol) {
-                seen.insert(s.chord.symbol)
+            if !seen.contains(s.chord.displayName) {
+                seen.insert(s.chord.displayName)
                 unique.append(s)
             }
         }

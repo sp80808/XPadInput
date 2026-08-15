@@ -43,7 +43,7 @@ public struct HarmonicWheel: Codable, Sendable {
     public let scale: Scale
     public let sectorsByLayer: [WheelLayer: [WheelSector]]
 
-    public init(scale: Scale) {
+    public init(scale: Scale = .cMajor) {
         self.scale = scale
         var dict: [WheelLayer: [WheelSector]] = [:]
 
@@ -77,15 +77,15 @@ public struct HarmonicWheel: Codable, Sendable {
 
         for i in 0..<count {
             let angle = (Double(i) / Double(count)) * 2.0 * .pi - (.pi / 2.0)
-            let root = pcs[i]
+            let chordRoot = pcs[i]
             let (quality, roman, fn) = qualities[i]
-            let chord = Chord(root: root, quality: quality)
+            let chord = Chord(root: chordRoot, quality: quality)
             diatonicSectors.append(WheelSector(
                 id: i,
                 angle: angle,
                 chord: chord,
                 romanNumeral: roman,
-                label: "\(root.standardName)\(quality.rawValue)",
+                label: chord.symbol,
                 layer: .diatonic,
                 harmonicFunction: fn
             ))
@@ -100,10 +100,10 @@ public struct HarmonicWheel: Codable, Sendable {
 
         for i in 0..<count {
             let angle = (Double(i) / Double(count)) * 2.0 * .pi - (.pi / 2.0)
-            let root = pcs[i]
-            let quality = colourQualities[i]
-            let chord = Chord(root: root, quality: quality)
-            let roman = qualities[i].1 + (quality == .major7 ? "maj7" : quality == .minor7 ? "7" : "7")
+            let chordRoot = pcs[i]
+            let quality = colourQualities[i % colourQualities.count]
+            let chord = Chord(root: chordRoot, quality: quality)
+            let roman = qualities[i].1 + (quality == .major7 ? "maj7" : "7")
             colourSectors.append(WheelSector(
                 id: i + 100,
                 angle: angle,
@@ -217,7 +217,6 @@ public struct HarmonicWheel: Codable, Sendable {
         let sectorSpan = (2.0 * .pi) / Double(sectors.count)
         let halfSpan = sectorSpan / 2.0
 
-        // Find closest sector
         for sector in sectors {
             var sAngle = sector.angle
             while sAngle < 0 { sAngle += 2.0 * .pi }

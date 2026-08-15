@@ -2,26 +2,32 @@ import Foundation
 import GameController
 
 /// Describes the capabilities of a connected controller.
-struct ControllerCapabilityProfile: Sendable {
-    let name: String
-    let vendorName: String?
-    let productCategory: String?
+public struct ControllerCapabilityProfile: Sendable {
+    public let name: String
+    public let vendorName: String?
+    public let productCategory: String?
     
-    var hasLeftStick: Bool = false
-    var hasRightStick: Bool = false
-    var hasDpad: Bool = false
-    var hasFaceButtons: Bool = false
-    var hasShoulders: Bool = false
-    var hasTriggers: Bool = false
-    var hasStickButtons: Bool = false
-    var hasTouchpad: Bool = false
-    var hasGyroscope: Bool = false
-    var hasAccelerometer: Bool = false
-    var hasHaptics: Bool = false
-    var hasAdaptiveTriggers: Bool = false
+    public var hasLeftStick: Bool = false
+    public var hasRightStick: Bool = false
+    public var hasDpad: Bool = false
+    public var hasFaceButtons: Bool = false
+    public var hasShoulders: Bool = false
+    public var hasTriggers: Bool = false
+    public var hasStickButtons: Bool = false
+    public var hasTouchpad: Bool = false
+    public var hasGyroscope: Bool = false
+    public var hasAccelerometer: Bool = false
+    public var hasHaptics: Bool = false
+    public var hasAdaptiveTriggers: Bool = false
+    
+    public init(name: String, vendorName: String? = nil, productCategory: String? = nil) {
+        self.name = name
+        self.vendorName = vendorName
+        self.productCategory = productCategory
+    }
     
     /// Identify controller type for display purposes
-    var controllerType: ControllerType {
+    public var controllerType: ControllerType {
         guard let vendorName = vendorName?.lowercased() ?? productCategory?.lowercased() else {
             return .generic
         }
@@ -40,7 +46,7 @@ struct ControllerCapabilityProfile: Sendable {
     }
     
     /// Create profile from a connected GCController
-    static func from(_ controller: GCController) -> ControllerCapabilityProfile {
+    public static func from(_ controller: GCController) -> ControllerCapabilityProfile {
         var profile = ControllerCapabilityProfile(
             name: controller.vendorName ?? "Unknown Controller",
             vendorName: controller.vendorName,
@@ -74,17 +80,16 @@ struct ControllerCapabilityProfile: Sendable {
         if controller.motion != nil {
             profile.hasGyroscope = true
             profile.hasAccelerometer = true
-            profile.hasMotion = true
         }
         
         return profile
     }
     
-    var hasMotion: Bool {
+    public var hasMotion: Bool {
         hasGyroscope || hasAccelerometer
     }
     
-    var capabilitySummary: String {
+    public var capabilitySummary: String {
         var caps: [String] = []
         if hasLeftStick { caps.append("L Stick") }
         if hasRightStick { caps.append("R Stick") }
@@ -101,30 +106,18 @@ struct ControllerCapabilityProfile: Sendable {
 }
 
 /// Controller hardware types
-enum ControllerType: String, Sendable {
+public enum ControllerType: String, Sendable {
     case dualSense = "DualSense"
     case dualShock4 = "DualShock 4"
     case xbox = "Xbox"
     case switchPro = "Switch Pro"
-    case guitarHero = "Guitar Hero"
-    case soundVoltex = "Sound Voltex"
-    case beatmaniaIIDX = "Beatmania IIDX"
-    case taikoDrum = "Taiko Drum"
-    case flightStick = "Flight HOTAS"
-    case racingWheel = "Racing Wheel"
-    case fightStick = "Arcade Fight Stick"
     case generic = "Gamepad"
     
-    var sfSymbol: String {
+    public var sfSymbol: String {
         switch self {
-        case .dualSense, .dualShock4, .xbox, .switchPro: return "gamecontroller.fill"
-        case .guitarHero: return "guitars.fill"
-        case .soundVoltex: return "dial.low.fill"
-        case .beatmaniaIIDX: return "opticaldisc.fill"
-        case .taikoDrum: return "circle.circle.fill"
-        case .flightStick: return "airplane"
-        case .racingWheel: return "steeringwheel"
-        case .fightStick: return "circle.grid.3x3.fill"
+        case .dualSense, .dualShock4: return "gamecontroller.fill"
+        case .xbox: return "gamecontroller.fill"
+        case .switchPro: return "gamecontroller.fill"
         case .generic: return "gamecontroller"
         }
     }

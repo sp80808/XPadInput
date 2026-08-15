@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 5.10
 import PackageDescription
 
 let package = Package(
@@ -47,67 +47,92 @@ let package = Package(
     targets: [
         .target(
             name: "XPadCore",
-            dependencies: []
+            dependencies: [],
+            path: "Sources/XPadCore"
         ),
         .target(
             name: "XPadTheory",
-            dependencies: ["XPadCore"]
+            dependencies: ["XPadCore"],
+            path: "Sources/XPadTheory"
         ),
         .target(
             name: "XPadController",
-            dependencies: ["XPadCore", "XPadTheory"]
+            dependencies: ["XPadCore", "XPadTheory"],
+            path: "Sources/XPadController"
         ),
         .target(
             name: "XPadMIDI",
-            dependencies: ["XPadCore", "XPadTheory"]
+            dependencies: ["XPadCore", "XPadTheory"],
+            path: "Sources/XPadMIDI"
         ),
         .target(
             name: "XPadAudio",
-            dependencies: ["XPadCore", "XPadTheory"]
+            dependencies: ["XPadCore", "XPadTheory"],
+            path: "Sources/XPadAudio"
         ),
         .target(
             name: "XPadSequencer",
-            dependencies: ["XPadCore", "XPadTheory", "XPadMIDI", "XPadAudio"]
+            dependencies: ["XPadCore", "XPadTheory", "XPadMIDI", "XPadAudio"],
+            path: "Sources/XPadSequencer"
         ),
         .target(
             name: "XPadUI",
-            dependencies: ["XPadCore", "XPadTheory", "XPadController", "XPadMIDI", "XPadAudio", "XPadSequencer"]
-        ),
-        .executableTarget(
-            name: "XPadInput",
             dependencies: [
                 "XPadCore",
                 "XPadTheory",
                 "XPadController",
                 "XPadMIDI",
                 "XPadAudio",
-                "XPadSequencer",
-                "XPadUI"
-            ]
+                "XPadSequencer"
+            ],
+            path: "Sources/XPadUI"
+        ),
+        .executableTarget(
+            name: "XPadInput",
+            dependencies: ["XPadUI"],
+            path: "Sources/XPadInput"
+        ),
+        .executableTarget(
+            name: "XPadTests",
+            dependencies: [
+                "XPadCore",
+                "XPadTheory",
+                "XPadController",
+                "XPadMIDI",
+                "XPadAudio",
+                "XPadSequencer"
+            ],
+            path: "Sources/XPadTests"
         ),
         .testTarget(
             name: "XPadCoreTests",
-            dependencies: ["XPadCore"]
+            dependencies: ["XPadCore"],
+            path: "Tests/XPadCoreTests"
         ),
         .testTarget(
             name: "XPadTheoryTests",
-            dependencies: ["XPadCore", "XPadTheory"]
+            dependencies: ["XPadCore", "XPadTheory"],
+            path: "Tests/XPadTheoryTests"
         ),
         .testTarget(
             name: "XPadControllerTests",
-            dependencies: ["XPadCore", "XPadTheory", "XPadController"]
+            dependencies: ["XPadCore", "XPadTheory", "XPadController"],
+            path: "Tests/XPadControllerTests"
         ),
         .testTarget(
             name: "XPadMIDITests",
-            dependencies: ["XPadCore", "XPadTheory", "XPadMIDI"]
+            dependencies: ["XPadCore", "XPadMIDI"],
+            path: "Tests/XPadMIDITests"
         ),
         .testTarget(
             name: "XPadAudioTests",
-            dependencies: ["XPadCore", "XPadTheory", "XPadAudio"]
+            dependencies: ["XPadCore", "XPadAudio"],
+            path: "Tests/XPadAudioTests"
         ),
         .testTarget(
             name: "XPadSequencerTests",
-            dependencies: ["XPadCore", "XPadTheory", "XPadMIDI", "XPadSequencer"]
+            dependencies: ["XPadCore", "XPadTheory", "XPadMIDI", "XPadSequencer"],
+            path: "Tests/XPadSequencerTests"
         )
     ]
 )

@@ -1,210 +1,254 @@
 import Foundation
 
-public enum ChordQuality: String, CaseIterable, Identifiable, Codable, Sendable {
-    case major = ""
-    case minor = "m"
+/// Chord quality determines the interval structure.
+public enum ChordQuality: String, CaseIterable, Codable, Sendable {
+    case major = "maj"
+    case minor = "min"
     case diminished = "dim"
     case augmented = "aug"
+    case sus2 = "sus2"
+    case sus4 = "sus4"
     case dominant7 = "7"
     case major7 = "maj7"
     case minor7 = "m7"
-    case minMaj7 = "m(maj7)"
-    case halfDiminished = "m7♭5"
     case diminished7 = "dim7"
-    case sus2 = "sus2"
-    case sus4 = "sus4"
+    case halfDiminished7 = "m7♭5"
+    case augmented7 = "aug7"
+    case minorMajor7 = "mMaj7"
     case add9 = "add9"
     case major9 = "maj9"
     case minor9 = "m9"
     case dominant9 = "9"
+    case sixth = "6"
+    case minorSixth = "m6"
     case dominant11 = "11"
-    case major13 = "maj13"
-    case minor11 = "m11"
-    case power5 = "5"
-
-    public var id: String { rawValue }
-
-    public var intervals: [Interval] {
+    case dominant13 = "13"
+    
+    /// Intervals (in semitones) that define this chord quality
+    public var intervals: [Int] {
         switch self {
-        case .major:
-            return [0, 4, 7].map { Interval(semitones: $0) }
-        case .minor:
-            return [0, 3, 7].map { Interval(semitones: $0) }
-        case .diminished:
-            return [0, 3, 6].map { Interval(semitones: $0) }
-        case .augmented:
-            return [0, 4, 8].map { Interval(semitones: $0) }
-        case .dominant7:
-            return [0, 4, 7, 10].map { Interval(semitones: $0) }
-        case .major7:
-            return [0, 4, 7, 11].map { Interval(semitones: $0) }
-        case .minor7:
-            return [0, 3, 7, 10].map { Interval(semitones: $0) }
-        case .minMaj7:
-            return [0, 3, 7, 11].map { Interval(semitones: $0) }
-        case .halfDiminished:
-            return [0, 3, 6, 10].map { Interval(semitones: $0) }
-        case .diminished7:
-            return [0, 3, 6, 9].map { Interval(semitones: $0) }
-        case .sus2:
-            return [0, 2, 7].map { Interval(semitones: $0) }
-        case .sus4:
-            return [0, 5, 7].map { Interval(semitones: $0) }
-        case .add9:
-            return [0, 4, 7, 14].map { Interval(semitones: $0) }
-        case .major9:
-            return [0, 4, 7, 11, 14].map { Interval(semitones: $0) }
-        case .minor9:
-            return [0, 3, 7, 10, 14].map { Interval(semitones: $0) }
-        case .dominant9:
-            return [0, 4, 7, 10, 14].map { Interval(semitones: $0) }
-        case .dominant11:
-            return [0, 4, 7, 10, 14, 17].map { Interval(semitones: $0) }
-        case .minor11:
-            return [0, 3, 7, 10, 14, 17].map { Interval(semitones: $0) }
-        case .major13:
-            return [0, 4, 7, 11, 14, 21].map { Interval(semitones: $0) }
-        case .power5:
-            return [0, 7].map { Interval(semitones: $0) }
+        case .major: return [0, 4, 7]
+        case .minor: return [0, 3, 7]
+        case .diminished: return [0, 3, 6]
+        case .augmented: return [0, 4, 8]
+        case .sus2: return [0, 2, 7]
+        case .sus4: return [0, 5, 7]
+        case .dominant7: return [0, 4, 7, 10]
+        case .major7: return [0, 4, 7, 11]
+        case .minor7: return [0, 3, 7, 10]
+        case .diminished7: return [0, 3, 6, 9]
+        case .halfDiminished7: return [0, 3, 6, 10]
+        case .augmented7: return [0, 4, 8, 10]
+        case .minorMajor7: return [0, 3, 7, 11]
+        case .add9: return [0, 4, 7, 14]
+        case .major9: return [0, 4, 7, 11, 14]
+        case .minor9: return [0, 3, 7, 10, 14]
+        case .dominant9: return [0, 4, 7, 10, 14]
+        case .sixth: return [0, 4, 7, 9]
+        case .minorSixth: return [0, 3, 7, 9]
+        case .dominant11: return [0, 4, 7, 10, 14, 17]
+        case .dominant13: return [0, 4, 7, 10, 14, 21]
+        }
+    }
+    
+    /// Display symbol for the chord quality
+    public var symbol: String {
+        switch self {
+        case .major: return ""
+        case .minor: return "m"
+        case .diminished: return "°"
+        case .augmented: return "+"
+        case .sus2: return "sus2"
+        case .sus4: return "sus4"
+        case .dominant7: return "7"
+        case .major7: return "maj7"
+        case .minor7: return "m7"
+        case .diminished7: return "°7"
+        case .halfDiminished7: return "ø7"
+        case .augmented7: return "+7"
+        case .minorMajor7: return "m(maj7)"
+        case .add9: return "add9"
+        case .major9: return "maj9"
+        case .minor9: return "m9"
+        case .dominant9: return "9"
+        case .sixth: return "6"
+        case .minorSixth: return "m6"
+        case .dominant11: return "11"
+        case .dominant13: return "13"
+        }
+    }
+    
+    /// Whether this is a basic triad
+    public var isTriad: Bool {
+        switch self {
+        case .major, .minor, .diminished, .augmented, .sus2, .sus4:
+            return true
+        default:
+            return false
         }
     }
 }
 
-public enum Inversion: Int, CaseIterable, Identifiable, Codable, Sendable {
-    case root = 0
-    case first = 1
-    case second = 2
-    case third = 3
-
-    public var id: Int { rawValue }
-
-    public var name: String {
-        switch self {
-        case .root: return "Root Position"
-        case .first: return "1st Inversion"
-        case .second: return "2nd Inversion"
-        case .third: return "3rd Inversion"
-        }
-    }
-}
-
-public enum VoicingStyle: String, CaseIterable, Identifiable, Codable, Sendable {
-    case close = "Close"
-    case drop2 = "Drop 2"
-    case openSpread = "Open Spread"
-    case guitarAcoustic = "Guitar Acoustic"
-    case shellJazz = "Shell (Jazz)"
-
-    public var id: String { rawValue }
-}
-
-/// Represents a chord with root, quality, optional slash bass, inversion, and voicing.
-public struct Chord: Identifiable, Hashable, Codable, Sendable {
-    public let id: UUID
+/// Represents a chord as root + quality.
+public struct Chord: Hashable, Codable, Sendable, Identifiable {
     public let root: PitchClass
     public let quality: ChordQuality
-    public let bassNote: PitchClass?
-    public var inversion: Inversion
-    public var voicingStyle: VoicingStyle
-    public var customName: String?
-
-    public init(
-        id: UUID = UUID(),
-        root: PitchClass,
-        quality: ChordQuality = .major,
-        bassNote: PitchClass? = nil,
-        inversion: Inversion = .root,
-        voicingStyle: VoicingStyle = .close,
-        customName: String? = nil
-    ) {
-        self.id = id
+    public var inversion: Int
+    
+    public init(root: PitchClass, quality: ChordQuality, inversion: Int = 0) {
         self.root = root
         self.quality = quality
-        self.bassNote = bassNote
         self.inversion = inversion
-        self.voicingStyle = voicingStyle
-        self.customName = customName
     }
-
-    public var symbol: String {
-        if let custom = customName { return custom }
-        let base = "\(root.standardName)\(quality.rawValue)"
-        if let bass = bassNote, bass != root {
-            return "\(base)/\(bass.standardName)"
-        }
-        return base
+    
+    public var id: String { "\(root.displayName)\(quality.symbol)_inv\(inversion)" }
+    
+    /// Display name (e.g. "Cm7")
+    public var displayName: String {
+        "\(root.displayName)\(quality.symbol)"
     }
-
-    public var pitchClasses: [PitchClass] {
-        quality.intervals.map { root.transposed(by: $0.semitones) }
-    }
-
-    /// Computes voiced concrete MIDI notes starting from a base octave (e.g. octave 3 or 4).
-    public func voicedNotes(baseOctave: Int = 3) -> [Note] {
-        var baseMidiNotes: [Int] = quality.intervals.map { interval in
-            let midi = (baseOctave + 1) * 12 + root.rawValue + interval.semitones
-            return midi
-        }
-
-        // Apply inversion by shifting lower notes up an octave
-        let count = baseMidiNotes.count
-        if count > 1 && inversion.rawValue > 0 {
-            let shiftCount = min(inversion.rawValue, count - 1)
-            for i in 0..<shiftCount {
-                baseMidiNotes[i] += 12
-            }
-            baseMidiNotes.sort()
-        }
-
-        // Apply Voicing Styles
-        switch voicingStyle {
-        case .close:
+    
+    /// Roman numeral in a given key/scale
+    public func romanNumeral(in key: PitchClass, scale: Scale) -> String? {
+        guard let deg = scale.degree(of: root, root: key) else { return nil }
+        let numerals = ["I", "II", "III", "IV", "V", "VI", "VII"]
+        guard deg >= 1 && deg <= numerals.count else { return nil }
+        var numeral = numerals[deg - 1]
+        
+        switch quality {
+        case .minor, .minor7, .minor9, .minorSixth, .minorMajor7:
+            numeral = numeral.lowercased()
+        case .diminished, .diminished7, .halfDiminished7:
+            numeral = numeral.lowercased()
+        default:
             break
-        case .drop2:
-            if baseMidiNotes.count >= 4 {
-                // Drop the second highest note down an octave
-                let secondHighestIndex = baseMidiNotes.count - 2
-                baseMidiNotes[secondHighestIndex] -= 12
-                baseMidiNotes.sort()
-            }
-        case .openSpread:
-            if baseMidiNotes.count >= 3 {
-                // Drop root down octave and lift soprano up
-                baseMidiNotes[0] -= 12
-                if let last = baseMidiNotes.last {
-                    baseMidiNotes[baseMidiNotes.count - 1] = last + 12
-                }
-                baseMidiNotes.sort()
-            }
-        case .guitarAcoustic:
-            // Standard 5 or 6 voice guitar-like spread: Root, 5th, Root+12, 3rd+12, 5th+12
-            let rMidi = (baseOctave) * 12 + root.rawValue
-            let fifth = rMidi + 7
-            let rOct = rMidi + 12
-            let third = rMidi + (quality.intervals.first(where: { $0.semitones == 3 || $0.semitones == 4 })?.semitones ?? 4) + 12
-            let topFifth = fifth + 12
-            baseMidiNotes = [rMidi, fifth, rOct, third, topFifth]
-        case .shellJazz:
-            // Root in bass, 3rd and 7th in middle, omit 5th
-            let rMidi = (baseOctave) * 12 + root.rawValue
-            var shell: [Int] = [rMidi]
-            if let thirdInterval = quality.intervals.first(where: { $0.semitones == 3 || $0.semitones == 4 }) {
-                shell.append(rMidi + 12 + thirdInterval.semitones)
-            }
-            if let seventhInterval = quality.intervals.first(where: { $0.semitones == 10 || $0.semitones == 11 || $0.semitones == 9 }) {
-                shell.append(rMidi + 12 + seventhInterval.semitones)
-            }
-            baseMidiNotes = shell.sorted()
         }
-
-        // Add slash bass note if specified
-        if let bass = bassNote, bass != root {
-            let bassMidi = (baseOctave) * 12 + bass.rawValue
-            if !baseMidiNotes.contains(bassMidi) {
-                baseMidiNotes.insert(bassMidi, at: 0)
-            }
+        
+        // Add quality markers
+        switch quality {
+        case .diminished: numeral += "°"
+        case .augmented: numeral += "+"
+        case .dominant7: numeral += "7"
+        case .major7: numeral += "maj7"
+        case .minor7: numeral += "7"
+        case .halfDiminished7: numeral += "ø7"
+        case .diminished7: numeral += "°7"
+        default: break
         }
-
-        return baseMidiNotes.map { Note(midiNumber: UInt8(clamping: max(0, min(127, $0)))) }
+        
+        return numeral
+    }
+    
+    /// Pitch classes in this chord
+    public var pitchClasses: [PitchClass] {
+        quality.intervals.map { root.transposed(by: $0 % 12) }
+    }
+    
+    /// Generate concrete voiced notes for this chord
+    public func voiced(baseOctave: Int = 3) -> [Note] {
+        var notes: [Note] = []
+        let intervals = quality.intervals
+        
+        for (i, interval) in intervals.enumerated() {
+            let pc = root.transposed(by: interval % 12)
+            let octaveOffset = interval / 12
+            var noteOctave = baseOctave + octaveOffset
+            
+            // Apply inversion: move first N notes up an octave
+            if i < inversion {
+                noteOctave += 1
+            }
+            
+            notes.append(Note(pitchClass: pc, octave: noteOctave))
+        }
+        
+        return notes.sorted()
+    }
+    
+    /// Voice-leading distance to another chord (sum of minimum semitone movements)
+    public func voiceLeadingDistance(to other: Chord) -> Int {
+        let myNotes = voiced()
+        let otherNotes = other.voiced()
+        
+        let maxCount = max(myNotes.count, otherNotes.count)
+        var totalDistance = 0
+        
+        for i in 0..<maxCount {
+            let myNote = myNotes[min(i, myNotes.count - 1)]
+            let otherNote = otherNotes[min(i, otherNotes.count - 1)]
+            totalDistance += abs(myNote.semitones(to: otherNote))
+        }
+        
+        return totalDistance
+    }
+    
+    /// Common tones with another chord
+    public func commonTones(with other: Chord) -> [PitchClass] {
+        PitchClass.commonTones(pitchClasses, other.pitchClasses)
+    }
+    
+    /// Harmonic tension score (0.0 = very stable, 1.0 = very tense)
+    public func tension(in key: PitchClass, scale: Scale) -> Double {
+        let scalePCs = Set(scale.pitchClasses(root: key))
+        let chordPCs = Set(pitchClasses)
+        
+        // Chromaticism penalty
+        let nonScaleTones = chordPCs.subtracting(scalePCs).count
+        let chromaticTension = Double(nonScaleTones) / Double(chordPCs.count) * 0.5
+        
+        // Interval tension
+        let intervalTension: Double
+        if let deg = scale.degree(of: root, root: key) {
+            switch deg {
+            case 1: intervalTension = 0.0   // Tonic - most stable
+            case 5: intervalTension = 0.3   // Dominant
+            case 4: intervalTension = 0.2   // Subdominant
+            case 6: intervalTension = 0.15  // vi
+            case 2: intervalTension = 0.25  // ii
+            case 3: intervalTension = 0.2   // iii
+            case 7: intervalTension = 0.6   // vii° - very tense
+            default: intervalTension = 0.4
+            }
+        } else {
+            intervalTension = 0.7 // Non-diatonic root
+        }
+        
+        // Extension tension
+        let extensionTension = quality.isTriad ? 0.0 : 0.1
+        
+        return min(1.0, chromaticTension + intervalTension + extensionTension)
+    }
+    
+    /// Generate diatonic chords for a scale
+    public static func diatonicChords(root: PitchClass, scale: Scale) -> [Chord] {
+        let pcs = scale.pitchClasses(root: root)
+        
+        return pcs.enumerated().map { (index, chordRoot) in
+            // Determine quality based on intervals from this degree
+            let third = pcs[(index + 2) % pcs.count]
+            let fifth = pcs[(index + 4) % pcs.count]
+            
+            let thirdInterval = chordRoot.interval(to: third)
+            let fifthInterval = chordRoot.interval(to: fifth)
+            
+            let quality: ChordQuality
+            if thirdInterval == 4 && fifthInterval == 7 {
+                quality = .major
+            } else if thirdInterval == 3 && fifthInterval == 7 {
+                quality = .minor
+            } else if thirdInterval == 3 && fifthInterval == 6 {
+                quality = .diminished
+            } else if thirdInterval == 4 && fifthInterval == 8 {
+                quality = .augmented
+            } else if thirdInterval == 4 {
+                quality = .major
+            } else if thirdInterval == 3 {
+                quality = .minor
+            } else {
+                quality = .major
+            }
+            
+            return Chord(root: chordRoot, quality: quality)
+        }
     }
 }

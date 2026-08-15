@@ -1,7 +1,8 @@
 import Foundation
 
-/// Represents the 12 chromatic pitch classes in 12-TET.
-public enum PitchClass: Int, CaseIterable, Identifiable, Codable, Sendable, Comparable {
+/// Represents one of the 12 pitch classes in equal temperament.
+/// Uses integer notation where C = 0, C♯/D♭ = 1, ... B = 11.
+public enum PitchClass: Int, CaseIterable, Codable, Hashable, Sendable {
     case c = 0
     case cSharp = 1
     case d = 2
@@ -14,9 +15,8 @@ public enum PitchClass: Int, CaseIterable, Identifiable, Codable, Sendable, Comp
     case a = 9
     case aSharp = 10
     case b = 11
-
-    public var id: Int { rawValue }
-
+    
+    /// Sharp name
     public var sharpName: String {
         switch self {
         case .c: return "C"
@@ -33,7 +33,8 @@ public enum PitchClass: Int, CaseIterable, Identifiable, Codable, Sendable, Comp
         case .b: return "B"
         }
     }
-
+    
+    /// Flat name
     public var flatName: String {
         switch self {
         case .c: return "C"
@@ -50,33 +51,31 @@ public enum PitchClass: Int, CaseIterable, Identifiable, Codable, Sendable, Comp
         case .b: return "B"
         }
     }
-
-    public var standardName: String {
+    
+    /// Display name using common convention (flats for certain keys)
+    public var displayName: String {
         switch self {
         case .cSharp, .dSharp, .gSharp, .aSharp:
-            return flatName // Prefer flats for common keys or context
+            return flatName
         default:
             return sharpName
         }
     }
-
-    /// Transposes the pitch class by a given semitone interval.
+    
+    /// Transpose by a number of semitones
     public func transposed(by semitones: Int) -> PitchClass {
-        let normalized = ((rawValue + semitones) % 12 + 12) % 12
-        return PitchClass(rawValue: normalized)!
+        let newValue = ((rawValue + semitones) % 12 + 12) % 12
+        return PitchClass(rawValue: newValue)!
     }
-
-    /// Semitone distance to another pitch class moving upward.
-    public func semitones(to target: PitchClass) -> Int {
-        return (target.rawValue - self.rawValue + 12) % 12
+    
+    /// Interval (in semitones) to another pitch class
+    public func interval(to other: PitchClass) -> Int {
+        return ((other.rawValue - rawValue) % 12 + 12) % 12
     }
-
-    /// Circle of fifths index (0 = C, 1 = G, 2 = D, ..., 11 = F).
-    public var circleOfFifthsIndex: Int {
-        return (rawValue * 7) % 12
-    }
-
-    public static func < (lhs: PitchClass, rhs: PitchClass) -> Bool {
-        lhs.rawValue < rhs.rawValue
+    
+    /// Common tones between two sets of pitch classes
+    public static func commonTones(_ set1: [PitchClass], _ set2: [PitchClass]) -> [PitchClass] {
+        let s1 = Set(set1)
+        return set2.filter { s1.contains($0) }
     }
 }

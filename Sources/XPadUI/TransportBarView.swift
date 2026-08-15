@@ -1,200 +1,177 @@
 import SwiftUI
 import XPadCore
-import XPadTheory
 import XPadController
 import XPadMIDI
 import XPadAudio
-import XPadSequencer
 
-public struct TransportBarView: View {
-    @ObservedObject var controllerManager: ControllerManager
-    @ObservedObject var sequencer: Sequencer
-    @Binding var currentScale: Scale
-    @Binding var isMPEEnabled: Bool
-    @Binding var activeTab: WorkspaceTab
+/// Persistent transport bar with playback, key/scale, BPM, and status indicators.
+struct TransportBar: View {
+    @Environment(AppState.self) private var appState
     
-    public init(
-        controllerManager: ControllerManager,
-        sequencer: Sequencer,
-        currentScale: Binding<Scale>,
-        isMPEEnabled: Binding<Bool>,
-        activeTab: Binding<WorkspaceTab>
-    ) {
-        self.controllerManager = controllerManager
-        self.sequencer = sequencer
-        self._currentScale = currentScale
-        self._isMPEEnabled = isMPEEnabled
-        self._activeTab = activeTab
-    }
-
-    public var body: some View {
+    var body: some View {
+        @Bindable var state = appState
+        
         HStack(spacing: 16) {
-            // Workspace Tabs
+            // Transport controls
+            HStack(spacing: 6) {
+                TransportButton(icon: "stop.fill", isActive: false) {
+                    appState.stopActiveNotes()
+                    appState.isPlaying = false
+                }
+                
+                TransportButton(icon: "play.fill", isActive: appState.isPlaying) {
+                    state.isPlaying.toggle()
+                }
+                
+                TransportButton(
+                    icon: "record.circle",
+                    isActive: appState.isRecording,
+                    activeColor: XTheme.recording
+                ) {
+                    state.isRecording.toggle()
+                }
+                
+                TransportButton(icon: "repeat", isActive: appState.isLooping) {
+                    state.isLooping.toggle()
+                }
+            }
+            
+            Divider()
+                .frame(height: 20)
+            
+            // BPM
             HStack(spacing: 4) {
-                ForEach(WorkspaceTab.allCases) { tab in
-                    Button {
-                        activeTab = tab
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: tab.iconName)
-                            Text(tab.rawValue)
-                                .fontWeight(activeTab == tab ? .semibold : .regular)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .background(
-                            activeTab == tab ?
-                            Color.accentColor.opacity(0.2) :
-                            Color.clear
-                        )
-                        .clipShape(Capsule())
+                Image(systemName: "metronome")
+                    .font(.system(size: 11))
+                    .foregroundColor(appState.metronomeEnabled ? XTheme.primary : XTheme.textTertiary)
+                    .onTapGesture {
+                        state.metronomeEnabled.toggle()
                     }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(activeTab == tab ? Color.accentColor : Color.secondary)
+                
+                Text("\(Int(appState.bpm))")
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundColor(XTheme.textPrimary)
+                    .frame(width: 32)
+                
+                Text("BPM")
+                    .font(.system(size: 9))
+                    .foregroundColor(XTheme.textTertiary)
+            }
+            
+            Divider()
+                .frame(height: 20)
+            
+            // Key selector
+            HStack(spacing: 6) {
+                Text("Key")
+                    .font(.system(size: 9))
+                    .foregroundColor(XTheme.textTertiary)
+                
+                Picker("Key", selection: $state.currentKey) {
+                    ForEach(PitchClass.allCases, id: \.self) { pc in
+                        Text(pc.displayName).tag(pc)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 55)
+                .onChange(of: appState.currentKey) { _, newKey in
+                    appState.setKey(newKey)
                 }
             }
-            .padding(4)
-            .background(Material.ultraThinMaterial)
-            .clipShape(Capsule())
-
+            
+            // Scale selector
+            HStack(spacing: 6) {
+                Picker("Scale", selection: Binding(
+                    get: { appState.currentScale.id },
+                    set: { id in
+                        if let scale = Scale.allScales.first(where: { $0.id == id }) {
+                            appState.setScale(scale)
+                        }
+                    }
+                )) {
+                    ForEach(Scale.allScales) { scale in
+                        Text(scale.name).tag(scale.id)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 140)
+            }
+            
+            Divider()
+                .frame(height: 20)
+            
+            // MIDI activity
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(appState.midiEngine.isMIDIActive ? XTheme.midiActivity : XTheme.textTertiary.opacity(0.3))
+                    .frame(width: 6, height: 6)
+                    .xGlow(isActive: appState.midiEngine.isMIDIActive, color: XTheme.midiActivity)
+                
+                Text("MIDI")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(appState.midiEngine.virtualMIDIEnabled ? XTheme.textPrimary : XTheme.textTertiary)
+                
+                Toggle("", isOn: $state.midiEngine.virtualMIDIEnabled)
+                    .toggleStyle(.switch)
+                    .scaleEffect(0.6)
+                    .frame(width: 30)
+            }
+            
+            Divider()
+                .frame(height: 20)
+            
+            // Controller status
+            HStack(spacing: 6) {
+                Image(systemName: appState.controllerManager.isConnected ? "gamecontroller.fill" : "gamecontroller")
+                    .font(.system(size: 11))
+                    .foregroundColor(appState.controllerManager.isConnected ? XTheme.controllerConnected : XTheme.controllerDisconnected)
+                
+                Text(appState.controllerManager.controllerName)
+                    .font(.system(size: 10))
+                    .foregroundColor(XTheme.textSecondary)
+                    .lineLimit(1)
+                    .frame(maxWidth: 120)
+            }
+            
             Spacer()
-
-            // Key & Scale Selector
-            HStack(spacing: 8) {
-                Menu {
-                    ForEach(PitchClass.allCases) { pc in
-                        Button(pc.standardName) {
-                            currentScale = Scale(root: pc, type: currentScale.type)
-                        }
-                    }
-                } label: {
-                    Text("Key: \(currentScale.root.standardName)")
-                        .fontWeight(.medium)
-                }
-                .menuStyle(.borderlessButton)
-
-                Menu {
-                    ForEach(ScaleType.allCases) { type in
-                        Button(type.rawValue) {
-                            currentScale = Scale(root: currentScale.root, type: type)
-                        }
-                    }
-                } label: {
-                    Text(currentScale.type.rawValue)
-                        .fontWeight(.medium)
-                }
-                .menuStyle(.borderlessButton)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Material.ultraThinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-
-            Divider().frame(height: 20)
-
-            // Transport Controls
-            HStack(spacing: 8) {
-                Button {
-                    if sequencer.transport.isPlaying {
-                        sequencer.stop()
-                    } else {
-                        sequencer.play()
-                    }
-                } label: {
-                    Image(systemName: sequencer.transport.isPlaying ? "stop.fill" : "play.fill")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(sequencer.transport.isPlaying ? .red : .green)
-                        .frame(width: 28, height: 28)
-                        .background(Material.ultraThinMaterial)
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    sequencer.toggleRecording()
-                } label: {
-                    Circle()
-                        .fill(sequencer.transport.isRecording ? Color.red : Color.gray.opacity(0.4))
-                        .frame(width: 14, height: 14)
-                        .padding(7)
-                        .background(Material.ultraThinMaterial)
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-
-                // BPM
-                HStack(spacing: 4) {
-                    Text("BPM")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    Text("\(Int(sequencer.transport.bpm))")
-                        .font(.system(.body, design: .monospaced))
-                        .fontWeight(.semibold)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Material.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-            }
-
-            Divider().frame(height: 20)
-
-            // Controller Status & Profile Selector Badge
-            Menu {
-                ForEach(ControllerCategory.allCases, id: \.self) { cat in
-                    Section(header: Text(cat.rawValue)) {
-                        ForEach(ControllerKind.allCases.filter { $0.category == cat }) { kind in
-                            Button(kind.rawValue) {
-                                controllerManager.selectControllerKind(kind)
-                            }
-                        }
-                    }
-                }
-            } label: {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(controllerManager.isHardwareConnected ? Color.green : Color.orange)
-                        .frame(width: 8, height: 8)
-                    Image(systemName: "gamecontroller.fill")
-                        .foregroundStyle(Color(hex: controllerManager.controllerKind.iconPack.brandAccentHex))
-                    Text(controllerManager.controllerKind.rawValue)
-                        .font(.caption)
-                        .lineLimit(1)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.white.opacity(0.1))
-                .clipShape(Capsule())
-            }
-            .menuStyle(.borderlessButton)
-
-            // MPE Mode Toggle
-            Toggle(isOn: $isMPEEnabled) {
-                Text("MPE")
-                    .font(.caption)
-                    .fontWeight(.bold)
-            }
-            .toggleStyle(.button)
-            .tint(.purple)
-
-            // Panic Button
+            
+            // Panic button
             Button {
-                MIDIManager.shared.panic()
-                AudioEngine.shared.panic()
+                appState.midiEngine.panic()
+                appState.audioEngine.allNotesOff()
+                appState.activeNotes.removeAll()
             } label: {
-                Text("PANIC")
-                    .font(.caption2)
-                    .fontWeight(.bold)
-                    .foregroundStyle(.red)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.red.opacity(0.15))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                Image(systemName: "exclamationmark.octagon")
+                    .font(.system(size: 12))
+                    .foregroundColor(XTheme.tense)
             }
             .buttonStyle(.plain)
+            .help("MIDI Panic — All Notes Off")
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(Material.bar)
+        .padding(.vertical, 8)
+        .frame(height: 40)
+        .background(XTheme.surface)
+    }
+}
+
+struct TransportButton: View {
+    let icon: String
+    let isActive: Bool
+    var activeColor: Color = XTheme.primary
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(isActive ? activeColor : XTheme.textSecondary)
+                .frame(width: 26, height: 26)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(isActive ? activeColor.opacity(0.15) : .clear)
+                )
+        }
+        .buttonStyle(.plain)
     }
 }

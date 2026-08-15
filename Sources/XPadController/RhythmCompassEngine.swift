@@ -36,8 +36,8 @@ public struct RhythmCompassEngine: Sendable {
             return (.sixteenth, 0.0, false)
         }
 
-        // Map angle (-pi to +pi) to 8 directional compass sectors
-        var angle = stick.angle + (.pi / 2.0) // Rotate so North is 0
+        // Map angle to clockwise compass sectors (North = 0, East = pi/2, South = pi, West = 3pi/2)
+        var angle = (.pi / 2.0) - stick.angle
         if angle < 0 { angle += 2.0 * .pi }
         if angle >= 2.0 * .pi { angle -= 2.0 * .pi }
 

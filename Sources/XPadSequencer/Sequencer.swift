@@ -117,8 +117,6 @@ public final class Sequencer: ObservableObject {
         transport.isPlaying = false
         stopClock()
         transport.currentTick = 0
-        MIDIManager.shared.panic()
-        AudioEngine.shared.panic()
     }
 
     public func toggleRecording() {

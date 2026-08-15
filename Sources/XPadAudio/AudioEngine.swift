@@ -1,307 +1,256 @@
 import Foundation
-import AVFAudio
-import XPadCore
+import AVFoundation
 
-public enum OscillatorType: String, CaseIterable, Codable, Sendable {
-    case sine = "Sine"
-    case triangle = "Triangle"
-    case saw = "Sawtooth"
-    case square = "Square"
-}
-
-public struct SynthPreset: Identifiable, Codable, Sendable {
-    public let id: String
-    public var name: String
-    public var osc1Type: OscillatorType
-    public var osc2Type: OscillatorType
-    public var osc2DetuneCents: Double
-    public var filterCutoffHz: Double
-    public var filterResonance: Double
-    public var attackSeconds: Double
-    public var decaySeconds: Double
-    public var sustainLevel: Double
-    public var releaseSeconds: Double
-
-    public static let polyLead = SynthPreset(
-        id: "poly_lead",
-        name: "Poly Lead & Synth",
-        osc1Type: .saw,
-        osc2Type: .square,
-        osc2DetuneCents: 8.0,
-        filterCutoffHz: 2800.0,
-        filterResonance: 0.3,
-        attackSeconds: 0.01,
-        decaySeconds: 0.2,
-        sustainLevel: 0.7,
-        releaseSeconds: 0.35
-    )
-
-    public static let rhodesEP = SynthPreset(
-        id: "rhodes_ep",
-        name: "Electric Piano (Rhodes)",
-        osc1Type: .sine,
-        osc2Type: .triangle,
-        osc2DetuneCents: 4.0,
-        filterCutoffHz: 3200.0,
-        filterResonance: 0.1,
-        attackSeconds: 0.005,
-        decaySeconds: 0.6,
-        sustainLevel: 0.4,
-        releaseSeconds: 0.4
-    )
-
-    public static let warmPad = SynthPreset(
-        id: "warm_pad",
-        name: "Lush Ambient Pad",
-        osc1Type: .saw,
-        osc2Type: .saw,
-        osc2DetuneCents: 12.0,
-        filterCutoffHz: 1200.0,
-        filterResonance: 0.25,
-        attackSeconds: 0.35,
-        decaySeconds: 0.5,
-        sustainLevel: 0.85,
-        releaseSeconds: 0.9
-    )
-
-    public static let pluck = SynthPreset(
-        id: "pluck",
-        name: "Acoustic Pluck",
-        osc1Type: .triangle,
-        osc2Type: .square,
-        osc2DetuneCents: 3.0,
-        filterCutoffHz: 4500.0,
-        filterResonance: 0.4,
-        attackSeconds: 0.002,
-        decaySeconds: 0.18,
-        sustainLevel: 0.1,
-        releaseSeconds: 0.15
-    )
-
-    public static let subBass = SynthPreset(
-        id: "sub_bass",
-        name: "Sub Bass",
-        osc1Type: .sine,
-        osc2Type: .triangle,
-        osc2DetuneCents: 0.0,
-        filterCutoffHz: 600.0,
-        filterResonance: 0.1,
-        attackSeconds: 0.01,
-        decaySeconds: 0.3,
-        sustainLevel: 0.8,
-        releaseSeconds: 0.2
-    )
-
-    public static let allPresets: [SynthPreset] = [polyLead, rhodesEP, warmPad, pluck, subBass]
-}
-
-public final class VoiceDSP: @unchecked Sendable {
-    public var note: UInt8 = 0
-    public var velocity: Float = 0.0
-    public var isKeyOn: Bool = false
-    public var phase1: Double = 0.0
-    public var phase2: Double = 0.0
-    public var envStage: Int = 0 // 0=idle, 1=attack, 2=decay, 3=sustain, 4=release
-    public var envLevel: Float = 0.0
-    public var filterState1: Float = 0.0
-    public var filterState2: Float = 0.0
-    public var currentPitchBendSemitones: Double = 0.0
-
-    public init() {}
-
-    public func noteOn(note: UInt8, velocity: UInt8) {
-        self.note = note
-        self.velocity = Float(velocity) / 127.0
-        self.isKeyOn = true
-        self.envStage = 1
-        self.phase1 = 0.0
-        self.phase2 = 0.0
-    }
-
-    public func noteOff() {
-        self.isKeyOn = false
-        self.envStage = 4
-    }
-
-    public var isActive: Bool {
-        envStage != 0
-    }
-}
-
+/// Simple polyphonic synthesizer using AVAudioEngine.
+@Observable
 public final class AudioEngine: @unchecked Sendable {
-    public static let shared = AudioEngine()
-
-    private let engine = AVAudioEngine()
-    private var sourceNode: AVAudioSourceNode?
-    private let sampleRate: Double = 44100.0
-    private let voiceCount: Int = 16
-    private var voices: [VoiceDSP] = []
-    private var currentPreset: SynthPreset = .polyLead
+    public var isRunning: Bool = false
+    public var volume: Float = 0.7
+    
+    private var engine: AVAudioEngine?
+    private var mixer: AVAudioMixerNode?
+    private var voices: [UInt8: SynthVoice] = [:]
     private let lock = NSLock()
-    private var isEngineRunning: Bool = false
-
+    private let sampleRate: Double = 44100
+    private let maxVoices = 16
+    
     public init() {
-        for _ in 0..<voiceCount {
-            voices.append(VoiceDSP())
-        }
-        setupAudioGraph()
+        setupEngine()
     }
-
-    private func setupAudioGraph() {
-        let outputFormat = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
-
-        sourceNode = AVAudioSourceNode(format: outputFormat) { [weak self] (_, _, frameCount, audioBufferList) -> OSStatus in
-            guard let self = self else { return noErr }
-            let abl = UnsafeMutableAudioBufferListPointer(audioBufferList)
-            guard abl.count >= 2,
-                  let leftBuffer = abl[0].mData?.assumingMemoryBound(to: Float.self),
-                  let rightBuffer = abl[1].mData?.assumingMemoryBound(to: Float.self) else {
-                return noErr
-            }
-
-            self.renderAudio(left: leftBuffer, right: rightBuffer, frameCount: Int(frameCount))
-            return noErr
-        }
-
-        if let sourceNode = sourceNode {
-            engine.attach(sourceNode)
-            engine.connect(sourceNode, to: engine.mainMixerNode, format: outputFormat)
-        }
-
-        startEngine()
+    
+    deinit {
+        stop()
     }
-
-    public func startEngine() {
-        guard !isEngineRunning else { return }
+    
+    private func setupEngine() {
+        let engine = AVAudioEngine()
+        let mixer = AVAudioMixerNode()
+        
+        engine.attach(mixer)
+        engine.connect(mixer, to: engine.mainMixerNode, format: nil)
+        
+        mixer.outputVolume = volume
+        
+        self.engine = engine
+        self.mixer = mixer
+    }
+    
+    public func start() {
+        guard let engine = engine, !isRunning else { return }
+        
         do {
             try engine.start()
-            isEngineRunning = true
+            isRunning = true
         } catch {
-            print("Failed to start AVAudioEngine: \(error)")
+            print("⚠️ Audio engine failed to start: \(error)")
         }
     }
-
-    public func setPreset(_ preset: SynthPreset) {
+    
+    public func stop() {
+        engine?.stop()
+        isRunning = false
+        
         lock.lock()
-        defer { lock.unlock() }
-        self.currentPreset = preset
-    }
-
-    public func noteOn(note: UInt8, velocity: UInt8) {
-        lock.lock()
-        defer { lock.unlock() }
-
-        // Find inactive voice or steal oldest
-        let voice = voices.first(where: { !$0.isActive }) ?? voices[0]
-        voice.noteOn(note: note, velocity: velocity)
-    }
-
-    public func noteOff(note: UInt8) {
-        lock.lock()
-        defer { lock.unlock() }
-
-        for voice in voices where voice.note == note && voice.isKeyOn {
-            voice.noteOff()
-        }
-    }
-
-    public func setPitchBend(for note: UInt8, semitones: Double) {
-        lock.lock()
-        defer { lock.unlock() }
-        for voice in voices where voice.note == note {
-            voice.currentPitchBendSemitones = semitones
-        }
-    }
-
-    public func panic() {
-        lock.lock()
-        defer { lock.unlock() }
-        for voice in voices {
-            voice.envStage = 0
-            voice.envLevel = 0.0
-            voice.isKeyOn = false
-        }
-    }
-
-    private func renderAudio(left: UnsafeMutablePointer<Float>, right: UnsafeMutablePointer<Float>, frameCount: Int) {
-        lock.lock()
-        let preset = self.currentPreset
+        voices.values.forEach { $0.stop() }
+        voices.removeAll()
         lock.unlock()
-
-        let dt = 1.0 / sampleRate
-        let attackRate = Float(dt / max(0.001, preset.attackSeconds))
-        let decayRate = Float(dt / max(0.001, preset.decaySeconds))
-        let releaseRate = Float(dt / max(0.001, preset.releaseSeconds))
-        let sustain = Float(preset.sustainLevel)
-
-        for frame in 0..<frameCount {
-            var mix: Float = 0.0
-
-            for voice in voices where voice.isActive {
-                // Envelope computation
-                switch voice.envStage {
-                case 1: // Attack
-                    voice.envLevel += attackRate
-                    if voice.envLevel >= 1.0 {
-                        voice.envLevel = 1.0
-                        voice.envStage = 2
-                    }
-                case 2: // Decay
-                    voice.envLevel -= decayRate
-                    if voice.envLevel <= sustain {
-                        voice.envLevel = sustain
-                        voice.envStage = 3
-                    }
-                case 3: // Sustain
-                    voice.envLevel = sustain
-                case 4: // Release
-                    voice.envLevel -= releaseRate
-                    if voice.envLevel <= 0.001 {
-                        voice.envLevel = 0.0
-                        voice.envStage = 0
-                    }
-                default:
-                    voice.envLevel = 0.0
-                }
-
-                guard voice.envLevel > 0.0 else { continue }
-
-                // Frequency calculation
-                let freq = 440.0 * pow(2.0, (Double(voice.note) + voice.currentPitchBendSemitones - 69.0) / 12.0)
-                let freq2 = freq * pow(2.0, preset.osc2DetuneCents / 1200.0)
-
-                let osc1Sample = renderOsc(type: preset.osc1Type, phase: voice.phase1)
-                let osc2Sample = renderOsc(type: preset.osc2Type, phase: voice.phase2)
-                let oscMix = (osc1Sample * 0.6) + (osc2Sample * 0.4)
-                let gain = voice.envLevel * voice.velocity
-                let sample = Float(oscMix) * gain
-
-                voice.phase1 += freq * dt
-                if voice.phase1 >= 1.0 { voice.phase1 -= 1.0 }
-
-                voice.phase2 += freq2 * dt
-                if voice.phase2 >= 1.0 { voice.phase2 -= 1.0 }
-
-                mix += sample
+    }
+    
+    public func noteOn(note: UInt8, velocity: UInt8) {
+        guard let engine = engine, let mixer = mixer else { return }
+        
+        if !isRunning {
+            start()
+        }
+        
+        lock.lock()
+        
+        // Stop existing voice on same note
+        if let existing = voices[note] {
+            existing.stop()
+            engine.detach(existing.sourceNode)
+            voices.removeValue(forKey: note)
+        }
+        
+        // Steal oldest voice if at max
+        if voices.count >= maxVoices {
+            if let oldest = voices.min(by: { $0.value.startTime < $1.value.startTime }) {
+                oldest.value.stop()
+                engine.detach(oldest.value.sourceNode)
+                voices.removeValue(forKey: oldest.key)
             }
-
-            // Simple soft-clipping limiter
-            let output = tanh(mix * 0.4)
-            left[frame] = output
-            right[frame] = output
+        }
+        
+        let voice = SynthVoice(
+            note: note,
+            velocity: velocity,
+            sampleRate: sampleRate
+        )
+        
+        let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
+        engine.attach(voice.sourceNode)
+        engine.connect(voice.sourceNode, to: mixer, format: format)
+        
+        voice.start()
+        voices[note] = voice
+        
+        lock.unlock()
+    }
+    
+    public func noteOff(note: UInt8) {
+        guard let engine = engine else { return }
+        
+        lock.lock()
+        if let voice = voices[note] {
+            voice.startRelease()
+            
+            // Remove after release time
+            let sourceNode = voice.sourceNode
+            let releaseTime = voice.releaseTime
+            voices.removeValue(forKey: note)
+            lock.unlock()
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + releaseTime) { [weak engine] in
+                voice.stop()
+                engine?.detach(sourceNode)
+            }
+        } else {
+            lock.unlock()
         }
     }
-
-    private func renderOsc(type: OscillatorType, phase: Double) -> Double {
-        switch type {
-        case .sine:
-            return sin(phase * 2.0 * .pi)
-        case .triangle:
-            return 2.0 * abs(2.0 * (phase - floor(phase + 0.5))) - 1.0
-        case .saw:
-            return 2.0 * (phase - floor(phase + 0.5))
-        case .square:
-            return phase < 0.5 ? 1.0 : -1.0
+    
+    public func allNotesOff() {
+        guard let engine = engine else { return }
+        
+        lock.lock()
+        for (_, voice) in voices {
+            voice.stop()
+            engine.detach(voice.sourceNode)
         }
+        voices.removeAll()
+        lock.unlock()
+    }
+    
+    public func setVolume(_ vol: Float) {
+        volume = max(0, min(1, vol))
+        mixer?.outputVolume = volume
+    }
+}
+
+/// Individual synth voice generating a single note.
+public final class SynthVoice: @unchecked Sendable {
+    public let sourceNode: AVAudioSourceNode
+    public let startTime: Date
+    public let releaseTime: Double = 0.4
+    
+    private var phase: Double = 0
+    private var frequency: Double
+    private var amplitude: Double
+    private var targetAmplitude: Double
+    private var isReleasing = false
+    private var isStopped = false
+    private let sampleRate: Double
+    
+    // Envelope
+    private var attackTime: Double = 0.01
+    private var decayTime: Double = 0.15
+    private var sustainLevel: Double = 0.6
+    private var envelopePhase: Double = 0
+    
+    public init(note: UInt8, velocity: UInt8, sampleRate: Double) {
+        self.sampleRate = sampleRate
+        self.frequency = 440.0 * pow(2.0, (Double(note) - 69.0) / 12.0)
+        self.amplitude = 0
+        self.targetAmplitude = Double(velocity) / 127.0
+        self.startTime = Date()
+        
+        // Create source node with render callback
+        var currentPhase = 0.0
+        var currentAmplitude = 0.0
+        var envPhase = 0.0
+        var releasing = false
+        var stopped = false
+        let freq = self.frequency
+        let attack = self.attackTime
+        let decay = self.decayTime
+        let sustain = self.sustainLevel
+        let target = self.targetAmplitude
+        let release = self.releaseTime
+        var releaseStartAmp = 0.0
+        
+        self.sourceNode = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
+            if stopped { return noErr }
+            
+            // Check if self has updated releasing/stopped
+            if let self = self {
+                releasing = self.isReleasing
+                stopped = self.isStopped
+            }
+            
+            let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
+            let buffer = ablPointer[0]
+            let ptr = buffer.mData!.assumingMemoryBound(to: Float.self)
+            
+            for frame in 0..<Int(frameCount) {
+                if stopped {
+                    ptr[frame] = 0
+                    continue
+                }
+                
+                // Envelope
+                let envValue: Double
+                if releasing {
+                    let releaseProgress = min(envPhase / release, 1.0)
+                    envValue = releaseStartAmp * (1.0 - releaseProgress)
+                    if releaseProgress >= 1.0 {
+                        stopped = true
+                    }
+                } else if envPhase < attack {
+                    envValue = (envPhase / attack) * target
+                } else if envPhase < attack + decay {
+                    let decayProgress = (envPhase - attack) / decay
+                    envValue = target - (target - target * sustain) * decayProgress
+                } else {
+                    envValue = target * sustain
+                }
+                
+                if !releasing {
+                    releaseStartAmp = envValue
+                }
+                
+                // Generate a warm tone: fundamental + harmonics with rolloff
+                var sample = sin(currentPhase * 2.0 * .pi)
+                sample += 0.5 * sin(currentPhase * 2.0 * .pi * 2.0)   // 2nd harmonic
+                sample += 0.25 * sin(currentPhase * 2.0 * .pi * 3.0)  // 3rd harmonic
+                sample += 0.12 * sin(currentPhase * 2.0 * .pi * 4.0)  // 4th harmonic
+                sample += 0.06 * sin(currentPhase * 2.0 * .pi * 5.0)  // 5th harmonic
+                sample *= 0.3 // Normalize
+                
+                currentAmplitude = envValue
+                ptr[frame] = Float(sample * currentAmplitude)
+                
+                currentPhase += freq / sampleRate
+                if currentPhase > 1.0 { currentPhase -= 1.0 }
+                envPhase += 1.0 / sampleRate
+            }
+            
+            if let self = self {
+                self.isStopped = stopped
+            }
+            
+            return noErr
+        }
+    }
+    
+    public func start() {
+        // Voice starts automatically via render callback
+    }
+    
+    public func startRelease() {
+        isReleasing = true
+    }
+    
+    public func stop() {
+        isStopped = true
     }
 }

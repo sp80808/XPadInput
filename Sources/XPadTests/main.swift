@@ -64,7 +64,7 @@ final class TestRunner {
     }
 
     func run() {
-        print("\n==================================================")
+        print("==================================================")
         print("🚀 Running Exhaustive Test Suites for XPadInput")
         print("==================================================")
 

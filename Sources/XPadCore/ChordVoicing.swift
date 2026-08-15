@@ -1,26 +1,31 @@
 import Foundation
 
 /// A specific voicing of a chord - concrete note assignment.
-struct ChordVoicing: Hashable, Codable, Sendable {
-    let chord: Chord
-    let notes: [Note]
+public struct ChordVoicing: Hashable, Codable, Sendable {
+    public let chord: Chord
+    public let notes: [Note]
+    
+    public init(chord: Chord, notes: [Note]) {
+        self.chord = chord
+        self.notes = notes
+    }
     
     /// Total interval span in semitones
-    var span: Int {
+    public var span: Int {
         guard let lowest = notes.min(), let highest = notes.max() else { return 0 }
         return lowest.semitones(to: highest)
     }
     
     /// The bass note
-    var bassNote: Note? { notes.min() }
+    public var bassNote: Note? { notes.min() }
     
     /// Create a close-position voicing
-    static func closePosition(chord: Chord, baseOctave: Int = 3) -> ChordVoicing {
+    public static func closePosition(chord: Chord, baseOctave: Int = 3) -> ChordVoicing {
         return ChordVoicing(chord: chord, notes: chord.voiced(baseOctave: baseOctave))
     }
     
     /// Create a voicing optimised for smooth voice leading from a previous voicing
-    static func voiceLed(chord: Chord, from previous: ChordVoicing) -> ChordVoicing {
+    public static func voiceLed(chord: Chord, from previous: ChordVoicing) -> ChordVoicing {
         let targetPCs = chord.pitchClasses
         var newNotes: [Note] = []
         let prevNotes = previous.notes
@@ -55,7 +60,7 @@ struct ChordVoicing: Hashable, Codable, Sendable {
     }
     
     /// Create a strummed voicing with a specific number of strings
-    static func strummed(chord: Chord, strings: Int = 6, baseOctave: Int = 3) -> ChordVoicing {
+    public static func strummed(chord: Chord, strings: Int = 6, baseOctave: Int = 3) -> ChordVoicing {
         let pcs = chord.pitchClasses
         var notes: [Note] = []
         

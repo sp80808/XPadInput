@@ -32,7 +32,7 @@ public enum RomanNumeral: String, Codable, Sendable {
 }
 
 public struct HarmonicDegree: Identifiable, Hashable, Codable, Sendable {
-    public var id: String { "\(romanNumeral.rawValue)_\(chord.symbol)" }
+    public var id: String { "\(romanNumeral.rawValue)_\(chord.displayName)" }
     public let romanNumeral: RomanNumeral
     public let chord: Chord
     public let harmonicFunction: String // "Tonic", "Subdominant", "Dominant", "Modal Interchange"
