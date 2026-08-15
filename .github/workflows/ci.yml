@@ -1,0 +1,60 @@
+name: macOS CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    name: Build, test and package executable
+    runs-on: macos-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Swift version
+        run: swift --version
+
+      - name: Resolve package
+        run: swift package resolve
+
+      - name: Debug build
+        run: swift build
+
+      - name: Test
+        run: swift test
+
+      - name: Release build
+        run: swift build -c release --product XPI
+
+      - name: Stage release executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN_PATH="$(swift build -c release --show-bin-path)"
+          mkdir -p artifacts
+          cp "$BIN_PATH/XPI" artifacts/XPI
+          chmod +x artifacts/XPI
+          shasum -a 256 artifacts/XPI | tee artifacts/XPI.sha256
+
+      - name: Upload release executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: XPI-${{ github.sha }}
+          path: |
+            artifacts/XPI
+            artifacts/XPI.sha256
+          if-no-files-found: error
+          retention-days: 14

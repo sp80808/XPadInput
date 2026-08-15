@@ -38,7 +38,7 @@ final class TheoryTests: XCTestCase {
         XCTAssertEqual(diatonicSectors[3].chord.symbol, "F")
         XCTAssertEqual(diatonicSectors[4].chord.symbol, "G")
         XCTAssertEqual(diatonicSectors[5].chord.symbol, "Am")
-        XCTAssertEqual(diatonicSectors[6].chord.symbol, "Bdim")
+        XCTAssertEqual(diatonicSectors[6].chord.symbol, "B°")
 
         let aMinorWheel = HarmonicWheel(scale: .aMinor)
         let minorDiatonic = aMinorWheel.sectorsByLayer[.diatonic] ?? []

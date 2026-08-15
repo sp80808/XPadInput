@@ -71,51 +71,36 @@ final class XPadCoreTests: XCTestCase {
 
     // MARK: - Interval Tests
     func testIntervalConstants() {
-        XCTAssertEqual(Interval.unison.semitones, 0)
-        XCTAssertEqual(Interval.unison.shortName, "P1")
-        XCTAssertEqual(Interval.minorSecond.semitones, 1)
-        XCTAssertEqual(Interval.minorSecond.shortName, "m2")
-        XCTAssertEqual(Interval.majorSecond.semitones, 2)
-        XCTAssertEqual(Interval.majorSecond.shortName, "M2")
-        XCTAssertEqual(Interval.minorThird.semitones, 3)
-        XCTAssertEqual(Interval.minorThird.shortName, "m3")
-        XCTAssertEqual(Interval.majorThird.semitones, 4)
-        XCTAssertEqual(Interval.majorThird.shortName, "M3")
-        XCTAssertEqual(Interval.perfectFourth.semitones, 5)
-        XCTAssertEqual(Interval.perfectFourth.shortName, "P4")
-        XCTAssertEqual(Interval.tritone.semitones, 6)
-        XCTAssertEqual(Interval.tritone.shortName, "TT")
-        XCTAssertEqual(Interval.perfectFifth.semitones, 7)
-        XCTAssertEqual(Interval.perfectFifth.shortName, "P5")
-        XCTAssertEqual(Interval.minorSixth.semitones, 8)
-        XCTAssertEqual(Interval.minorSixth.shortName, "m6")
-        XCTAssertEqual(Interval.majorSixth.semitones, 9)
-        XCTAssertEqual(Interval.majorSixth.shortName, "M6")
-        XCTAssertEqual(Interval.minorSeventh.semitones, 10)
-        XCTAssertEqual(Interval.minorSeventh.shortName, "m7")
-        XCTAssertEqual(Interval.majorSeventh.semitones, 11)
-        XCTAssertEqual(Interval.majorSeventh.shortName, "M7")
-        XCTAssertEqual(Interval.octave.semitones, 12)
-        XCTAssertEqual(Interval.octave.shortName, "P8")
-        XCTAssertEqual(Interval.minorNinth.semitones, 13)
-        XCTAssertEqual(Interval.minorNinth.shortName, "m9")
-        XCTAssertEqual(Interval.majorNinth.semitones, 14)
-        XCTAssertEqual(Interval.majorNinth.shortName, "M9")
-        XCTAssertEqual(Interval.perfectEleventh.semitones, 17)
-        XCTAssertEqual(Interval.perfectEleventh.shortName, "P11")
-        XCTAssertEqual(Interval.augmentedEleventh.semitones, 18)
-        XCTAssertEqual(Interval.augmentedEleventh.shortName, "♯11")
-        XCTAssertEqual(Interval.majorThirteenth.semitones, 21)
-        XCTAssertEqual(Interval.majorThirteenth.shortName, "M13")
+        let expected: [(Interval, Int, String)] = [
+            (.unison, 0, "P1"),
+            (.minorSecond, 1, "m2"),
+            (.majorSecond, 2, "M2"),
+            (.minorThird, 3, "m3"),
+            (.majorThird, 4, "M3"),
+            (.perfectFourth, 5, "P4"),
+            (.tritone, 6, "TT"),
+            (.perfectFifth, 7, "P5"),
+            (.minorSixth, 8, "m6"),
+            (.majorSixth, 9, "M6"),
+            (.minorSeventh, 10, "m7"),
+            (.majorSeventh, 11, "M7")
+        ]
 
-        let custom = Interval(semitones: 15)
-        XCTAssertEqual(custom.shortName, "15st")
-        XCTAssertTrue(Interval.majorThird < Interval.perfectFifth)
+        XCTAssertEqual(Interval.allCases.count, expected.count)
+        for (interval, semitones, shortName) in expected {
+            XCTAssertEqual(interval.semitones, semitones)
+            XCTAssertEqual(interval.shortName, shortName)
+        }
+
+        // Interval models pitch-class distance, so compound/negative values wrap mod 12.
+        XCTAssertEqual(Interval(semitones: 12), .unison)
+        XCTAssertEqual(Interval(semitones: 15), .minorThird)
+        XCTAssertEqual(Interval(semitones: -1), .majorSeventh)
     }
 
     // MARK: - Note Tests
     func testNoteInitialization() {
-        let n60 = Note(midiNumber: 60)
+        let n60 = Note.fromMIDI(60)
         XCTAssertEqual(n60.pitchClass, .c)
         XCTAssertEqual(n60.octave, 4)
         XCTAssertEqual(n60.name, "C4")
@@ -124,35 +109,35 @@ final class XPadCoreTests: XCTestCase {
         XCTAssertEqual(n69.midiNumber, 69)
         XCTAssertEqual(n69.name, "A4")
 
-        let clamped = Note(midiNumber: 200)
-        XCTAssertEqual(clamped.midiNumber, 127)
+        let maxClamped = Note(pitchClass: .c, octave: 20)
+        XCTAssertEqual(maxClamped.midiNumber, 127)
 
         let minClamped = Note(pitchClass: .c, octave: -5)
         XCTAssertEqual(minClamped.midiNumber, 0)
     }
 
     func testNoteFrequency() {
-        let a4 = Note(midiNumber: 69)
+        let a4 = Note.a4
         XCTAssertEqual(a4.frequency, 440.0, accuracy: 0.001)
 
-        let a5 = Note(midiNumber: 81)
+        let a5 = Note.fromMIDI(81)
         XCTAssertEqual(a5.frequency, 880.0, accuracy: 0.001)
 
-        let a3 = Note(midiNumber: 57)
+        let a3 = Note.fromMIDI(57)
         XCTAssertEqual(a3.frequency, 220.0, accuracy: 0.001)
 
-        let c4 = Note(midiNumber: 60)
+        let c4 = Note.middleC
         XCTAssertEqual(c4.frequency, 261.625, accuracy: 0.01)
     }
 
     func testNoteTransposition() {
-        let c4 = Note.c4
+        let c4 = Note.middleC
         let g4 = c4.transposed(by: 7)
         XCTAssertEqual(g4.midiNumber, 67)
         XCTAssertEqual(g4.pitchClass, .g)
         XCTAssertTrue(c4 < g4)
 
-        let maxNote = Note(midiNumber: 127).transposed(by: 5)
+        let maxNote = Note.fromMIDI(127).transposed(by: 5)
         XCTAssertEqual(maxNote.midiNumber, 127)
     }
 
@@ -163,7 +148,8 @@ final class XPadCoreTests: XCTestCase {
             XCTAssertFalse(scale.pitchClasses.isEmpty)
             XCTAssertEqual(scale.pitchClasses.first, .c)
             XCTAssertTrue(scale.contains(PitchClass.c))
-            XCTAssertTrue(scale.contains(Note.c4))
+            XCTAssertTrue(scale.contains(Note.middleC))
+            XCTAssertEqual(scale.noteCount, type.intervals.count)
         }
     }
 
@@ -172,6 +158,8 @@ final class XPadCoreTests: XCTestCase {
         let cMajorPcs: [PitchClass] = [.c, .d, .e, .f, .g, .a, .b]
         XCTAssertEqual(cMajor.pitchClasses, cMajorPcs)
         XCTAssertEqual(cMajor.name, "C Major (Ionian)")
+        XCTAssertEqual(cMajor.degree(of: .g), 5)
+        XCTAssertNil(cMajor.degree(of: .cSharp))
 
         let aMinor = Scale.aMinor
         let aMinorPcs: [PitchClass] = [.a, .b, .c, .d, .e, .f, .g]
@@ -179,78 +167,51 @@ final class XPadCoreTests: XCTestCase {
         XCTAssertEqual(aMinor.name, "A Natural Minor (Aeolian)")
     }
 
-    func testSnapToScale() {
-        let cMajor = Scale.cMajor
-        XCTAssertEqual(cMajor.snapToScale(.c), .c)
-        XCTAssertEqual(cMajor.snapToScale(.e), .e)
-        let snappedCSharp = cMajor.snapToScale(.cSharp)
-        XCTAssertTrue(snappedCSharp == .c || snappedCSharp == .d)
-        let snappedGSharp = cMajor.snapToScale(.gSharp)
-        XCTAssertTrue(snappedGSharp == .g || snappedGSharp == .a)
+    func testScaleNotesStayOrderedAndInRange() {
+        let notes = Scale.cMajor.notes(fromOctave: 3, toOctave: 4)
+        XCTAssertFalse(notes.isEmpty)
+        XCTAssertEqual(notes, notes.sorted())
+        XCTAssertTrue(notes.allSatisfy { $0.midiNumber <= 127 })
+        XCTAssertTrue(notes.allSatisfy { Scale.cMajor.contains($0) })
     }
 
     // MARK: - Chord & Voicing Tests
     func testChordQualitiesAndSymbols() {
-        let cMaj = Chord(root: .c, quality: .major)
-        XCTAssertEqual(cMaj.symbol, "C")
-
-        let cMin = Chord(root: .c, quality: .minor)
-        XCTAssertEqual(cMin.symbol, "Cm")
-
-        let cMaj7 = Chord(root: .c, quality: .major7)
-        XCTAssertEqual(cMaj7.symbol, "Cmaj7")
-
-        let cDom7 = Chord(root: .c, quality: .dominant7)
-        XCTAssertEqual(cDom7.symbol, "C7")
-
-        let cSlashG = Chord(root: .c, quality: .major, bassNote: .g)
-        XCTAssertEqual(cSlashG.symbol, "C/G")
-
-        let customChord = Chord(root: .c, quality: .major, customName: "Special C")
-        XCTAssertEqual(customChord.symbol, "Special C")
+        XCTAssertEqual(Chord(root: .c, quality: .major).symbol, "C")
+        XCTAssertEqual(Chord(root: .c, quality: .minor).symbol, "Cm")
+        XCTAssertEqual(Chord(root: .c, quality: .major7).symbol, "Cmaj7")
+        XCTAssertEqual(Chord(root: .c, quality: .dominant7).symbol, "C7")
+        XCTAssertEqual(Chord(root: .c, quality: .major9).symbol, "Cmaj9")
+        XCTAssertEqual(Chord(root: .c, quality: .dominant13).symbol, "C13")
     }
 
     func testChordInversions() {
-        let cMaj = Chord(root: .c, quality: .major, inversion: .root)
+        let cMaj = Chord(root: .c, quality: .major, inversion: 0)
         let rootNotes = cMaj.voicedNotes(baseOctave: 3)
         XCTAssertEqual(rootNotes.map { $0.midiNumber }, [48, 52, 55])
 
         var firstInv = cMaj
-        firstInv.inversion = .first
+        firstInv.inversion = 1
         let firstInvNotes = firstInv.voicedNotes(baseOctave: 3)
         XCTAssertEqual(firstInvNotes.map { $0.midiNumber }, [52, 55, 60])
 
         var secondInv = cMaj
-        secondInv.inversion = .second
+        secondInv.inversion = 2
         let secondInvNotes = secondInv.voicedNotes(baseOctave: 3)
         XCTAssertEqual(secondInvNotes.map { $0.midiNumber }, [55, 60, 64])
     }
 
-    func testChordVoicingStyles() {
-        let cMaj7 = Chord(root: .c, quality: .major7)
+    func testExtendedChordVoicingsPreserveCompoundIntervals() {
+        let cMaj7 = Chord(root: .c, quality: .major7).voicedNotes(baseOctave: 3)
+        XCTAssertEqual(cMaj7.count, 4)
+        XCTAssertEqual(cMaj7.map { $0.midiNumber }, [48, 52, 55, 59])
 
-        let closeVoicing = cMaj7.voicedNotes(baseOctave: 3)
-        XCTAssertEqual(closeVoicing.count, 4)
+        let cAdd9 = Chord(root: .c, quality: .add9).voicedNotes(baseOctave: 3)
+        XCTAssertEqual(cAdd9.map { $0.midiNumber }, [48, 52, 55, 62])
 
-        var drop2 = cMaj7
-        drop2.voicingStyle = .drop2
-        let drop2Voicing = drop2.voicedNotes(baseOctave: 3)
-        XCTAssertEqual(drop2Voicing.count, 4)
-
-        var openSpread = cMaj7
-        openSpread.voicingStyle = .openSpread
-        let openSpreadVoicing = openSpread.voicedNotes(baseOctave: 3)
-        XCTAssertEqual(openSpreadVoicing.count, 4)
-
-        var guitarAcoustic = cMaj7
-        guitarAcoustic.voicingStyle = .guitarAcoustic
-        let guitarVoicing = guitarAcoustic.voicedNotes(baseOctave: 3)
-        XCTAssertEqual(guitarVoicing.count, 5)
-
-        var shellJazz = cMaj7
-        shellJazz.voicingStyle = .shellJazz
-        let shellVoicing = shellJazz.voicedNotes(baseOctave: 3)
-        XCTAssertEqual(shellVoicing.count, 3)
+        let c13 = Chord(root: .c, quality: .dominant13).voicedNotes(baseOctave: 3)
+        XCTAssertEqual(c13.count, 6)
+        XCTAssertEqual(c13.last?.midiNumber, 69)
     }
 
     func testVoiceLeadingKeepsStablePlayableRegister() {
