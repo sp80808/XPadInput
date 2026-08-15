@@ -1,10 +1,14 @@
 # ROADMAP.md — XPI: Game Controller MIDI Development & Innovation Roadmap
 
+> **Status:** Living document. Checked items are implemented in source; automated proof and manual DAW/hardware certification are tracked separately in module specs.
+
 This document outlines the multi-phase vision, milestones, and technical trajectory of **XPI: Game Controller MIDI** from MVP standalone instrument to an industry-standard expressive performance ecosystem.
 
 ---
 
 ## Phase 1: Core Engine & Standalone macOS Workstation (Current)
+**Status:** Source-complete. Automated tests green. Manual DAW/hardware proof ongoing.
+
 - [x] Pure Swift 12-TET Theory Engine (`PitchClass`, `Interval`, `Note`, `Scale`, `Chord`).
 - [x] Multi-tier Harmonic Wheel with 5 layers (Diatonic, Colour, Borrowed, Tension, Mediant).
 - [x] Real-time voice leading optimization across multiple strategies (Smooth, SATB, Bass Anchored, Cinematic).
@@ -17,6 +21,18 @@ This document outlines the multi-phase vision, milestones, and technical traject
 - [x] 960 PPQN multi-track timeline sequencer with scene management and SMF (.mid) export.
 - [x] Native macOS liquid interface with 5 dedicated workspaces (`PLAY`, `HARMONY`, `SEQUENCE`, `MAP`, `LIBRARY`).
 - [x] Exhaustive automated test suites and agentic documentation.
+- [ ] Manual DAW certification (Ableton Live, Logic Pro, Bitwig) — in progress.
+- [ ] Controller ergonomics proof across all supported hardware — in progress.
+
+### Phase 1 Milestones
+| Milestone | Target | Status |
+| :--- | :--- | :--- |
+| Core theory engine | Q4 2025 | ✅ Complete |
+| MPE routing & CoreMIDI | Q4 2025 | ✅ Complete |
+| Built-in synth & DSP | Q1 2026 | ✅ Complete |
+| 5-workspace UI shell | Q1 2026 | ✅ Complete |
+| Automated test gate | Q1 2026 | ✅ Complete |
+| DAW certification | Q2 2026 | 🔄 In progress |
 
 ---
 

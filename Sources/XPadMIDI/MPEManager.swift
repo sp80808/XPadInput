@@ -23,8 +23,7 @@ public struct MPEVoice: Equatable, Sendable {
         currentTimbre: UInt8 = 64,
         attackVelocity: UInt8 = 80,
         technique: MusicalTechnique = .normal,
-        legatoSource: UInt8? = nil,
-        currentPitchBendValue: UInt16 = 8192
+        legatoSource: UInt8? = nil
     ) {
         self.note = note
         self.channel = channel
@@ -35,7 +34,7 @@ public struct MPEVoice: Equatable, Sendable {
         self.attackVelocity = min(127, attackVelocity)
         self.technique = technique
         self.legatoSource = legatoSource
-        self.currentPitchBendValue = min(16_383, currentPitchBendValue)
+        self.currentPitchBendValue = 8192
     }
 }
 
