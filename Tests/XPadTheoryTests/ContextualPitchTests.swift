@@ -16,8 +16,20 @@ final class ContextualPitchTests: XCTestCase {
             context: context,
             allowDownward: true
         )
-        XCTAssertTrue(targets.contains(where: { $0.note.pitchClass == .f && abs($0.semitones - 1) < 0.01 }))
-        XCTAssertTrue(targets.contains(where: { $0.note.pitchClass == .g && abs($0.semitones - 2) < 0.01 }))
+
+        // E→F is +1 semitone and lands on a D-minor scale/chord tone.
+        XCTAssertTrue(targets.contains(where: {
+            $0.note.pitchClass == .f && abs($0.semitones - 1) < 0.01 && $0.isScaleTone
+        }))
+
+        // The stylistic +2 bend from E is F♯, not G (which is +3 semitones
+        // and therefore outside this configured bend range).
+        XCTAssertTrue(targets.contains(where: {
+            $0.note.pitchClass == .fSharp && abs($0.semitones - 2) < 0.01
+        }))
+        XCTAssertFalse(targets.contains(where: {
+            $0.note.pitchClass == .g && $0.semitones > 0
+        }))
         XCTAssertTrue(targets.contains(where: { $0.isChordTone || $0.isScaleTone }))
     }
 
