@@ -15,6 +15,13 @@ public enum Interval: Int, CaseIterable, Codable, Hashable, Sendable {
     case minorSeventh = 10
     case majorSeventh = 11
     
+    public init(semitones: Int) {
+        let normalized = ((semitones % 12) + 12) % 12
+        self = Interval(rawValue: normalized) ?? .unison
+    }
+    
+    public var semitones: Int { rawValue }
+    
     public var name: String {
         switch self {
         case .unison: return "P1"

@@ -47,6 +47,11 @@ public struct ModulationEngine: Sendable {
     public init() {}
 
     /// Finds smooth modulation pathways from source scale to target scale.
+    public func pathways(from source: Scale, to target: Scale) -> [ModulationPath] {
+        pathways(from: source.root, sourceScale: source, to: target.root, targetScale: target)
+    }
+
+    /// Finds smooth modulation pathways from source scale to target scale.
     public func pathways(
         from sourceRoot: PitchClass,
         sourceScale: Scale,

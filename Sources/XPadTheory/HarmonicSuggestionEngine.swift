@@ -40,6 +40,11 @@ public struct ChordSuggestion: Identifiable, Codable, Sendable {
 public struct HarmonicSuggestionEngine: Sendable {
     public init() {}
 
+    /// Generates ranked next chord suggestions given the current chord and the scale.
+    public func suggestions(for currentChord: Chord, in scale: Scale) -> [ChordSuggestion] {
+        suggestions(for: currentChord, in: scale.root, scale: scale)
+    }
+
     /// Generates ranked next chord suggestions given the current chord, the scale, and voice leading context.
     public func suggestions(for currentChord: Chord, in key: PitchClass, scale: Scale) -> [ChordSuggestion] {
         var results: [ChordSuggestion] = []

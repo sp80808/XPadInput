@@ -40,15 +40,14 @@ public final class VirtualStrummer: @unchecked Sendable {
 
     /// Processes a new stick coordinate and emits strum events when virtual string boundaries are crossed.
     public func processStick(
-        x: Double,
-        y: Double,
+        stick: ProcessedStickState,
         triggerMute: Double,
         chordNotes: [Note],
         timestamp: TimeInterval = ProcessInfo.processInfo.systemUptime
     ) -> StrumResult? {
-        let dt = max(0.001, timestamp - previousTimestamp)
+        let y = Double(stick.y)
         let dy = y - previousY
-        let speed = abs(dy) / dt // Units per second
+        let speed = abs(Double(stick.yVelocity))
 
         defer {
             previousY = y
@@ -95,5 +94,12 @@ public final class VirtualStrummer: @unchecked Sendable {
             velocity: finalVelocity,
             duration: Double(chordNotes.count) * spreadIntervalMs / 1000.0
         )
+    }
+
+    public func processStrum(stick: ProcessedStickState, notes: [Note]) -> [StrummedNote] {
+        guard let result = processStick(stick: stick, triggerMute: 0.0, chordNotes: notes) else {
+            return notes.enumerated().map { StrummedNote(note: $0.element, velocity: 80, delayMs: Double($0.offset * 10), stringIndex: $0.offset) }
+        }
+        return result.notes
     }
 }

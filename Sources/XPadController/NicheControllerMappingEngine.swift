@@ -169,7 +169,7 @@ public final class NicheControllerMappingEngine: Sendable {
         actions.append(.masterDynamic(value: state.throttle))
 
         // Stick Y (Pitch) -> Filter Cutoff
-        let pitchCutoff = (state.leftStick.y + 1.0) / 2.0
+        let pitchCutoff = Double(state.leftStick.y + 1.0) / 2.0
         actions.append(.timbreCutoff(value: pitchCutoff))
 
         // Rudder Z-Twist -> MPE Pitch Bend
@@ -177,9 +177,9 @@ public final class NicheControllerMappingEngine: Sendable {
         actions.append(.pitchBend(cents: twistBend))
 
         // Trigger -> Fire Chord Strum
-        if state.rightTrigger > 0.7 || state.buttonA {
+        if state.rightTrigger.value > 0.7 || state.buttonA {
             let chord = Chord(root: scale.root, quality: .major7)
-            actions.append(.chordStrum(notes: chord.voicedNotes(baseOctave: currentBaseOctave), velocity: UInt8(state.rightTrigger * 127), direction: .down))
+            actions.append(.chordStrum(notes: chord.voicedNotes(baseOctave: currentBaseOctave), velocity: UInt8(state.rightTrigger.value * 127), direction: .down))
         }
 
         return actions

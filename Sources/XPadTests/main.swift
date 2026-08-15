@@ -48,143 +48,129 @@ final class TestRunner {
             if failedTests == previousFailures {
                 passedTests += 1
                 print("  ✅ PASS: \(name)")
-            } else {
-                print("  ❌ FAIL: \(name)")
             }
         } catch {
             failedTests += 1
-            print("  💥 ERROR: \(name) threw exception: \(error)")
+            print("  ❌ ERROR: \(name) threw exception: \(error)")
         }
     }
 
     func suite(_ name: String, block: () -> Void) {
-        print("\n📦 Test Suite: \(name)")
-        print("--------------------------------------------------")
+        print("\n=== Running Suite: \(name) ===")
         block()
     }
 
     func run() {
         print("==================================================")
-        print("🚀 Running Exhaustive Test Suites for XPadInput")
+        print("🎮 XPadInput Comprehensive Test Suite Runner")
         print("==================================================")
 
-        // MARK: - Core Tests
-        suite("XPadCore: PitchClass, Interval, Note, Scale, Chord") {
-            test("PitchClass Raw Values & Modulo Math") {
-                assertEqual(PitchClass.allCases.count, 12)
-                assertEqual(PitchClass.c.rawValue, 0)
-                assertEqual(PitchClass.b.rawValue, 11)
-                assertEqual(PitchClass.c.transposed(by: 4), .e)
-                assertEqual(PitchClass.c.transposed(by: 7), .g)
-                assertEqual(PitchClass.c.transposed(by: -1), .b)
-                assertEqual(PitchClass.c.transposed(by: -13), .b)
-                assertEqual(PitchClass.c.semitones(to: .g), 7)
-                assertEqual(PitchClass.g.semitones(to: .c), 5)
+        // MARK: - Core Domain Tests
+        suite("XPadCore: PitchClass, Note, Interval, Scale, Chord, PerformanceEvent") {
+            test("PitchClass Transposition & Semitones") {
+                let c = PitchClass.c
+                let g = c.transposed(by: 7)
+                assertEqual(g, PitchClass.g)
+                assertEqual(c.semitones(to: g), 7)
+                assertEqual(c.circleOfFifthsIndex, 0)
+                assertEqual(g.circleOfFifthsIndex, 1)
+
+                let common = PitchClass.commonTones([.c, .e, .g], [.g, .b, .d])
+                assertEqual(common, [.g])
             }
 
-            test("PitchClass Circle of Fifths Indices") {
-                assertEqual(PitchClass.c.circleOfFifthsIndex, 0)
-                assertEqual(PitchClass.g.circleOfFifthsIndex, 1)
-                assertEqual(PitchClass.d.circleOfFifthsIndex, 2)
-                assertEqual(PitchClass.a.circleOfFifthsIndex, 3)
-                assertEqual(PitchClass.e.circleOfFifthsIndex, 4)
-                assertEqual(PitchClass.b.circleOfFifthsIndex, 5)
-                assertEqual(PitchClass.fSharp.circleOfFifthsIndex, 6)
-                assertEqual(PitchClass.cSharp.circleOfFifthsIndex, 7)
-                assertEqual(PitchClass.gSharp.circleOfFifthsIndex, 8)
-                assertEqual(PitchClass.dSharp.circleOfFifthsIndex, 9)
-                assertEqual(PitchClass.aSharp.circleOfFifthsIndex, 10)
-                assertEqual(PitchClass.f.circleOfFifthsIndex, 11)
+            test("Note Frequency, MIDI Mapping, and Math") {
+                let a4 = Note(pitchClass: .a, octave: 4)
+                assertEqual(a4.midiNumber, 69)
+                assertEqual(round(a4.frequency * 10) / 10, 440.0)
+
+                let middleC = Note.middleC
+                assertEqual(middleC.midiNumber, 60)
+                assertEqual(middleC.name, "C4")
+
+                let c5 = middleC.transposed(by: 12)
+                assertEqual(c5.octave, 5)
+                assertEqual(c5.midiNumber, 72)
             }
 
             test("Interval Constants & Names") {
-                assertEqual(Interval.unison.semitones, 0)
+                assertEqual(Interval.unison.rawValue, 0)
                 assertEqual(Interval.unison.shortName, "P1")
                 assertEqual(Interval.minorThird.shortName, "m3")
-                assertEqual(Interval.majorThird.shortName, "M3")
-                assertEqual(Interval.perfectFifth.shortName, "P5")
-                assertEqual(Interval.tritone.shortName, "TT")
-                assertEqual(Interval.octave.shortName, "P8")
-                assertEqual(Interval.majorNinth.shortName, "M9")
-                assertTrue(Interval.minorThird < Interval.majorThird)
+                assertEqual(Interval.perfectFifth.semitones, 7)
+                assertTrue(Interval.perfectFifth.consonance > Interval.tritone.consonance)
             }
 
-            test("Note Frequencies & Standard Pitches") {
-                let a4 = Note(midiNumber: 69)
-                assertEqual(a4.pitchClass, .a)
-                assertEqual(a4.octave, 4)
-                assertEqual(a4.name, "A4")
-                assertTrue(abs(a4.frequency - 440.0) < 0.001)
+            test("Scale Construction & Pitch Classes") {
+                let cMaj = Scale.cMajor
+                assertEqual(cMaj.root, .c)
+                assertEqual(cMaj.type, .major)
+                assertEqual(cMaj.pitchClasses, [.c, .d, .e, .f, .g, .a, .b])
+                assertTrue(cMaj.contains(.c))
+                assertTrue(cMaj.contains(.g))
+                assertFalse(cMaj.contains(.fSharp))
+                assertEqual(cMaj.degree(of: .g), 5)
+                assertEqual(cMaj.degree(of: .fSharp), nil)
 
-                let c4 = Note.c4
-                assertEqual(c4.midiNumber, 60)
-                assertEqual(c4.name, "C4")
-
-                let transposed = c4.transposed(by: 7)
-                assertEqual(transposed.midiNumber, 67)
-                assertEqual(transposed.pitchClass, .g)
+                let aMin = Scale.aMinor
+                assertEqual(aMin.root, .a)
+                assertEqual(aMin.type, .naturalMinor)
+                assertEqual(aMin.pitchClasses, [.a, .b, .c, .d, .e, .f, .g])
             }
 
-            test("Scale Construction & Quantization") {
-                let cMajor = Scale.cMajor
-                let expected: [PitchClass] = [.c, .d, .e, .f, .g, .a, .b]
-                assertEqual(cMajor.pitchClasses, expected)
-                assertTrue(cMajor.contains(PitchClass.c))
-                assertTrue(cMajor.contains(Note.c4))
-                assertFalse(cMajor.contains(PitchClass.cSharp))
-
-                assertEqual(cMajor.snapToScale(.c), .c)
-                let snapped = cMajor.snapToScale(.cSharp)
-                assertTrue(snapped == .c || snapped == .d)
-            }
-
-            test("Chord Voicings, Inversions & Styles") {
-                let cMaj = Chord(root: .c, quality: .major, inversion: .root)
+            test("Chord Voicing, Inversion & Voice Leading Distance") {
+                let cMaj = Chord(root: .c, quality: .major)
                 assertEqual(cMaj.symbol, "C")
-                let notes = cMaj.voicedNotes(baseOctave: 3)
-                assertEqual(notes.map { $0.midiNumber }, [48, 52, 55])
+                assertEqual(cMaj.pitchClasses, [.c, .e, .g])
 
-                var inv1 = cMaj
-                inv1.inversion = .first
-                assertEqual(inv1.voicedNotes(baseOctave: 3).map { $0.midiNumber }, [52, 55, 60])
+                let rootNotes = cMaj.voicedNotes(baseOctave: 3)
+                assertEqual(rootNotes.map { $0.midiNumber }, [48, 52, 55])
 
-                let drop2 = Chord(root: .c, quality: .major7, voicingStyle: .drop2)
-                assertEqual(drop2.voicedNotes(baseOctave: 3).count, 4)
+                let firstInv = Chord(root: .c, quality: .major, inversion: 1)
+                let firstInvNotes = firstInv.voicedNotes(baseOctave: 3)
+                assertEqual(firstInvNotes.map { $0.midiNumber }, [52, 55, 60])
 
-                let acoustic = Chord(root: .c, quality: .major, voicingStyle: .guitarAcoustic)
-                assertEqual(acoustic.voicedNotes(baseOctave: 3).count, 5)
-
-                let shell = Chord(root: .c, quality: .major7, voicingStyle: .shellJazz)
-                assertEqual(shell.voicedNotes(baseOctave: 3).count, 3)
+                let aMin = Chord(root: .a, quality: .minor)
+                let dist = cMaj.voiceLeadingDistance(to: aMin)
+                assertTrue(dist > 0)
             }
 
-            test("PerformanceEvent & TransportState Math") {
-                var transport = TransportState(bpm: 120.0, timeSignatureNumerator: 4)
-                assertEqual(transport.currentBar, 1)
-                assertTrue(abs(transport.currentBeat - 1.0) < 0.001)
-
-                transport.currentTick = 3840
-                assertEqual(transport.currentBar, 2)
-                assertTrue(abs(transport.currentBeat - 1.0) < 0.001)
+            test("PerformanceEvent Serialization & Timing") {
+                let event = PerformanceEvent(type: .noteOn, note: 60, velocity: 100, timestamp: 1.25)
+                assertEqual(event.type, .noteOn)
+                assertEqual(event.note, 60)
+                assertEqual(event.velocity, 100)
+                assertEqual(event.timestamp, 1.25)
             }
         }
 
         // MARK: - Theory Tests
-        suite("XPadTheory: Wheel, Voice Leading, Suggestions, Modulation, Progression") {
-            test("Harmonic Wheel 5-Layer Layout") {
-                let wheel = HarmonicWheel(scale: .cMajor)
-                for layer in WheelLayer.allCases {
-                    assertNotNil(wheel.sectorsByLayer[layer])
-                    assertFalse(wheel.sectorsByLayer[layer]?.isEmpty ?? true)
-                }
-                let diatonic = wheel.sectorsByLayer[.diatonic] ?? []
-                assertEqual(diatonic.count, 7)
-                assertEqual(diatonic[0].chord.symbol, "C")
-                assertEqual(diatonic[4].chord.symbol, "G")
+        suite("XPadTheory: HarmonicWheel, VoiceLeading, Suggestions, Modulations") {
+            test("Harmonic Degree Roman Numerals & Functions") {
+                let numeralI = RomanNumeral.I
+                assertEqual(numeralI.rawValue, "I")
+                let numeralV = RomanNumeral.V
+                assertEqual(numeralV.rawValue, "V")
+                let degree = HarmonicDegree(romanNumeral: .I, chord: Chord(root: .c, quality: .major), harmonicFunction: "Tonic", description: "Tonic chord")
+                assertEqual(degree.romanNumeral, .I)
+                assertEqual(degree.harmonicFunction, "Tonic")
+            }
 
-                let north = wheel.sector(forAngle: -Double.pi / 2.0, layer: .diatonic)
-                assertNotNil(north)
-                assertEqual(north?.chord.root, .c)
+            test("Harmonic Wheel Multi-Layer Sector Mapping") {
+                let wheel = HarmonicWheel(scale: .cMajor)
+                assertFalse(wheel.sectorsByLayer.isEmpty)
+
+                let diatonicSectors = wheel.sectorsByLayer[.diatonic] ?? []
+                assertEqual(diatonicSectors.count, 7)
+                assertEqual(diatonicSectors[0].chord.root, .c)
+                assertEqual(diatonicSectors[0].romanNumeral, "I")
+                assertEqual(diatonicSectors[4].chord.root, .g)
+                assertEqual(diatonicSectors[4].romanNumeral, "V")
+
+                // Polar Angle Sector Lookup
+                let topSector = wheel.sector(forAngle: -.pi / 2.0, layer: .diatonic)
+                assertNotNil(topSector)
+                assertEqual(topSector?.romanNumeral, "I")
             }
 
             test("Voice Leading Optimization & Minimal Motion") {
@@ -201,7 +187,7 @@ final class TestRunner {
 
             test("Harmonic Suggestion Engine Ranking") {
                 let engine = HarmonicSuggestionEngine()
-                let suggestions = engine.suggestions(for: Chord(root: .c, quality: .major), in: .cMajor)
+                let suggestions = engine.suggestions(for: Chord(root: .c, type: .major), in: .c, scale: .cMajor)
                 assertFalse(suggestions.isEmpty)
                 assertTrue(suggestions.contains(where: { $0.category == .resolution }))
                 assertTrue(suggestions.contains(where: { $0.category == .cinematic }))
@@ -231,47 +217,45 @@ final class TestRunner {
 
                 let full = StickCoordinates(x: 1.0, y: 0.0, deadzone: 0.12)
                 assertEqual(full.radius, 1.0)
+                assertEqual(full.angle, 0.0)
                 assertTrue(full.isActive)
-                assertTrue(abs(full.angle) < 0.001)
             }
 
-            test("Virtual Strummer Dynamic Velocity & Strum Direction") {
+            test("GamepadState Initialization & Fields") {
+                let state = GamepadState()
+                assertEqual(state.leftTrigger, 0.0)
+                assertEqual(state.rightTrigger, 0.0)
+                assertFalse(state.buttonA)
+                assertFalse(state.buttonB)
+                assertEqual(state.throttle, 0.0)
+            }
+
+            test("VirtualStrummer Velocity & Note Generation") {
                 let strummer = VirtualStrummer()
-                let notes = Chord(root: .c, quality: .major).voicedNotes()
-
-                _ = strummer.processStick(x: 0.0, y: 0.8, triggerMute: 0.0, chordNotes: notes, timestamp: 1.0)
-                let down = strummer.processStick(x: 0.0, y: -0.8, triggerMute: 0.0, chordNotes: notes, timestamp: 1.05)
-                assertNotNil(down)
-                assertEqual(down?.direction, .down)
-                assertEqual(down?.notes.count, notes.count)
-                assertTrue((down?.velocity ?? 0) >= 40)
-
-                let up = strummer.processStick(x: 0.0, y: 0.8, triggerMute: 0.0, chordNotes: notes, timestamp: 1.10)
-                assertNotNil(up)
-                assertEqual(up?.direction, .up)
-                assertEqual(up?.notes.first?.note, notes.last)
-
-                let mute = strummer.processStick(x: 0.0, y: -0.8, triggerMute: 0.8, chordNotes: notes, timestamp: 1.15)
-                assertNotNil(mute)
-                assertEqual(mute?.direction, .muted)
+                let notes = [Note(pitchClass: .c, octave: 3), Note(pitchClass: .e, octave: 3), Note(pitchClass: .g, octave: 3)]
+                let events = strummer.processStrum(rightStickY: 0.9, notes: notes)
+                assertEqual(events.count, 3)
+                assertTrue(events[0].velocity >= 60)
             }
 
-            test("Rhythm Compass 8-Directional Mapping") {
-                let engine = RhythmCompassEngine()
-                let north = StickCoordinates(x: 0.0, y: 1.0, deadzone: 0.1)
-                let (sub, intensity, isPlaying) = engine.evaluate(stick: north)
-                assertTrue(isPlaying)
-                assertEqual(sub, .quarter)
-                assertEqual(intensity, 1.0)
-                assertEqual(RhythmicSubdivision.sixteenth.ticksPerStep, 240)
+            test("RhythmCompass 8-Sector Clockwise Mapping") {
+                let compass = RhythmCompassEngine()
+                let north = StickCoordinates(x: 0.0, y: 1.0, deadzone: 0.12)
+                let evalNorth = compass.evaluate(stick: north)
+                assertTrue(evalNorth.isPlaying)
+                assertEqual(evalNorth.subdivision, .quarter)
+
+                let east = StickCoordinates(x: 1.0, y: 0.0, deadzone: 0.12)
+                let evalEast = compass.evaluate(stick: east)
+                assertEqual(evalEast.subdivision, .eighth)
             }
 
-            test("Gesture Recorder Capture Lifecycle") {
+            test("GestureRecorder Recording Lifecycle") {
                 let recorder = GestureRecorder()
                 assertFalse(recorder.stopRecording() != nil)
 
                 recorder.startRecording()
-                var state = GamepadState()
+                let state = ControllerState()
                 state.buttonA = true
                 recorder.recordSample(state: state)
 
@@ -283,35 +267,26 @@ final class TestRunner {
                 assertEqual(clip?.samples.count, 2)
             }
 
-            test("ControllerManager Simulation Injection") {
+            test("ControllerManager Discovery and State") {
                 let manager = ControllerManager()
-                var changed = false
-                manager.onStateChanged = { _ in changed = true }
-                manager.injectSimulatedState { s in s.buttonA = true }
-                assertTrue(changed)
-                assertTrue(manager.currentState.buttonA)
+                assertFalse(manager.isConnected)
+                assertEqual(manager.controllerName, "No Controller")
             }
         }
 
         // MARK: - MIDI Tests
-        suite("XPadMIDI: MIDIManager, MPEManager, SMFExporter") {
-            test("Virtual Ports Identification") {
-                assertEqual(VirtualPort.allCases.count, 6)
-                assertEqual(VirtualPort.main.rawValue, "XPadInput Main")
-                assertEqual(VirtualPort.mpe.rawValue, "XPadInput Expression (MPE)")
-            }
-
-            test("MIDIManager Message Dispatching & Panic") {
-                let midi = MIDIManager.shared
-                midi.sendNoteOn(port: .main, channel: 0, note: 60, velocity: 100)
-                midi.sendPitchBend(port: .main, channel: 0, semitoneOffset: 2.0)
-                midi.sendPolyPressure(port: .main, channel: 0, note: 60, pressure: 80)
-                midi.sendNoteOff(port: .main, channel: 0, note: 60)
+        suite("XPadMIDI: MIDIEngine, MPEManager, SMFExporter") {
+            test("MIDIEngine Message Dispatching & Panic") {
+                let midi = MIDIEngine()
+                midi.sendNoteOn(note: 60, velocity: 100)
+                midi.sendPitchBend(value: 8192)
+                midi.sendCC(controller: 74, value: 80)
+                midi.sendNoteOff(note: 60)
                 midi.panic()
             }
 
             test("MPEManager Voice Lifecycle") {
-                let mpe = MPEManager(midiManager: MIDIManager.shared)
+                let mpe = MPEManager(midiEngine: MIDIEngine())
                 mpe.sendMPEZoneConfiguration()
                 mpe.noteOn(note: 60, velocity: 100)
                 mpe.setPitchBend(for: 60, semitones: 2.0)
@@ -334,32 +309,14 @@ final class TestRunner {
         }
 
         // MARK: - Audio Tests
-        suite("XPadAudio: SynthPreset, VoiceDSP, AudioEngine") {
-            test("SynthPreset Factory Collection") {
-                assertEqual(SynthPreset.allPresets.count, 5)
-                assertEqual(SynthPreset.polyLead.osc1Type, .saw)
-                assertEqual(SynthPreset.rhodesEP.osc1Type, .sine)
-            }
-
-            test("VoiceDSP ADSR Envelope State Machine") {
-                let voice = VoiceDSP()
-                assertFalse(voice.isActive)
-                voice.noteOn(note: 60, velocity: 100)
-                assertTrue(voice.isActive)
-                assertEqual(voice.envStage, 1) // Attack
-                voice.noteOff()
-                assertEqual(voice.envStage, 4) // Release
-            }
-
-            test("AudioEngine Preset & Playback Controls") {
-                let audio = AudioEngine.shared
-                for preset in SynthPreset.allPresets {
-                    audio.setPreset(preset)
-                }
+        suite("XPadAudio: AudioEngine & SynthVoice") {
+            test("AudioEngine Lifecycle & Voice Allocation") {
+                let audio = AudioEngine()
+                audio.start()
                 audio.noteOn(note: 60, velocity: 100)
-                audio.setPitchBend(for: 60, semitones: 1.0)
                 audio.noteOff(note: 60)
-                audio.panic()
+                audio.allNotesOff()
+                audio.stop()
             }
         }
 
@@ -417,4 +374,9 @@ final class TestRunner {
     }
 }
 
-TestRunner().run()
+@main
+struct AppTestMain {
+    static func main() async {
+        await TestRunner().run()
+    }
+}

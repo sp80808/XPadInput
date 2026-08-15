@@ -193,6 +193,6 @@ public final class MIDIEngine: @unchecked Sendable {
         
         packet = MIDIEventListAdd(&eventList, 1024, packet, mach_absolute_time(), words.count, words)
         
-        MIDIReceived(endpoint, &eventList)
+        MIDIReceivedEventList(endpoint, &eventList)
     }
 }

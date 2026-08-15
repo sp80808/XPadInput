@@ -1,133 +1,126 @@
 import Foundation
 
-/// Represents a musical scale/mode with its interval pattern.
+public enum ScaleType: String, CaseIterable, Identifiable, Codable, Sendable {
+    case major = "Major (Ionian)"
+    case naturalMinor = "Natural Minor (Aeolian)"
+    case harmonicMinor = "Harmonic Minor"
+    case melodicMinor = "Melodic Minor"
+    case dorian = "Dorian"
+    case phrygian = "Phrygian"
+    case lydian = "Lydian"
+    case mixolydian = "Mixolydian"
+    case locrian = "Locrian"
+    case pentatonicMajor = "Major Pentatonic"
+    case pentatonicMinor = "Minor Pentatonic"
+    case blues = "Blues"
+    case chromatic = "Chromatic"
+
+    public var id: String { rawValue }
+
+    public var intervals: [Int] {
+        switch self {
+        case .major: return [0, 2, 4, 5, 7, 9, 11]
+        case .naturalMinor: return [0, 2, 3, 5, 7, 8, 10]
+        case .harmonicMinor: return [0, 2, 3, 5, 7, 8, 11]
+        case .melodicMinor: return [0, 2, 3, 5, 7, 9, 11]
+        case .dorian: return [0, 2, 3, 5, 7, 9, 10]
+        case .phrygian: return [0, 1, 3, 5, 7, 8, 10]
+        case .lydian: return [0, 2, 4, 6, 7, 9, 11]
+        case .mixolydian: return [0, 2, 4, 5, 7, 9, 10]
+        case .locrian: return [0, 1, 3, 5, 6, 8, 10]
+        case .pentatonicMajor: return [0, 2, 4, 7, 9]
+        case .pentatonicMinor: return [0, 3, 5, 7, 10]
+        case .blues: return [0, 3, 5, 6, 7, 10]
+        case .chromatic: return Array(0...11)
+        }
+    }
+}
+
+/// Represents a musical scale/mode with its root and interval pattern.
 public struct Scale: Hashable, Codable, Sendable, Identifiable {
     public let id: String
     public let name: String
-    public let intervals: [Int] // Semitone offsets from root
-    
-    public init(id: String, name: String, intervals: [Int]) {
+    public let root: PitchClass
+    public let type: ScaleType
+    public let intervals: [Int]
+
+    public init(root: PitchClass = .c, type: ScaleType = .major) {
+        self.root = root
+        self.type = type
+        self.id = "\(root.standardName)_\(type.rawValue)"
+        self.name = "\(root.standardName) \(type.rawValue)"
+        self.intervals = type.intervals
+    }
+
+    public init(id: String, name: String, intervals: [Int], root: PitchClass = .c, type: ScaleType = .major) {
         self.id = id
         self.name = name
         self.intervals = intervals
+        self.root = root
+        self.type = type
     }
-    
-    /// Generate pitch classes for this scale with a given root
+
+    public var pitchClasses: [PitchClass] {
+        intervals.map { root.transposed(by: $0) }
+    }
+
     public func pitchClasses(root: PitchClass) -> [PitchClass] {
         intervals.map { root.transposed(by: $0) }
     }
-    
-    /// Generate concrete notes for this scale in a given octave range
-    public func notes(root: PitchClass, fromOctave: Int = 3, toOctave: Int = 5) -> [Note] {
+
+    public func notes(fromOctave: Int = 3, toOctave: Int = 5) -> [Note] {
         var result: [Note] = []
         for octave in fromOctave...toOctave {
             for interval in intervals {
                 let pc = root.transposed(by: interval)
                 let note = Note(pitchClass: pc, octave: octave)
-                if note.midiNote <= 127 {
+                if note.midiNumber <= 127 {
                     result.append(note)
                 }
             }
         }
         return result.sorted()
     }
-    
-    /// Check if a pitch class belongs to this scale
-    public func contains(_ pitchClass: PitchClass, root: PitchClass) -> Bool {
-        pitchClasses(root: root).contains(pitchClass)
+
+    public func contains(_ pitchClass: PitchClass) -> Bool {
+        pitchClasses.contains(pitchClass)
     }
-    
-    /// Degree of a pitch class in this scale (1-based, nil if not in scale)
+
+    public func contains(_ note: Note) -> Bool {
+        pitchClasses.contains(note.pitchClass)
+    }
+
+    public func degree(of pitchClass: PitchClass) -> Int? {
+        let pcs = pitchClasses
+        guard let idx = pcs.firstIndex(of: pitchClass) else { return nil }
+        return idx + 1
+    }
+
     public func degree(of pitchClass: PitchClass, root: PitchClass) -> Int? {
         let pcs = pitchClasses(root: root)
         guard let idx = pcs.firstIndex(of: pitchClass) else { return nil }
         return idx + 1
     }
-    
-    /// The number of notes in the scale
+
     public var noteCount: Int { intervals.count }
-    
+
     // MARK: - Common Scales
-    
-    public static let major = Scale(
-        id: "major",
-        name: "Major (Ionian)",
-        intervals: [0, 2, 4, 5, 7, 9, 11]
-    )
-    
-    public static let naturalMinor = Scale(
-        id: "natural_minor",
-        name: "Natural Minor (Aeolian)",
-        intervals: [0, 2, 3, 5, 7, 8, 10]
-    )
-    
-    public static let harmonicMinor = Scale(
-        id: "harmonic_minor",
-        name: "Harmonic Minor",
-        intervals: [0, 2, 3, 5, 7, 8, 11]
-    )
-    
-    public static let melodicMinor = Scale(
-        id: "melodic_minor",
-        name: "Melodic Minor",
-        intervals: [0, 2, 3, 5, 7, 9, 11]
-    )
-    
-    public static let dorian = Scale(
-        id: "dorian",
-        name: "Dorian",
-        intervals: [0, 2, 3, 5, 7, 9, 10]
-    )
-    
-    public static let phrygian = Scale(
-        id: "phrygian",
-        name: "Phrygian",
-        intervals: [0, 1, 3, 5, 7, 8, 10]
-    )
-    
-    public static let lydian = Scale(
-        id: "lydian",
-        name: "Lydian",
-        intervals: [0, 2, 4, 6, 7, 9, 11]
-    )
-    
-    public static let mixolydian = Scale(
-        id: "mixolydian",
-        name: "Mixolydian",
-        intervals: [0, 2, 4, 5, 7, 9, 10]
-    )
-    
-    public static let locrian = Scale(
-        id: "locrian",
-        name: "Locrian",
-        intervals: [0, 1, 3, 5, 6, 8, 10]
-    )
-    
-    public static let pentatonicMajor = Scale(
-        id: "pentatonic_major",
-        name: "Major Pentatonic",
-        intervals: [0, 2, 4, 7, 9]
-    )
-    
-    public static let pentatonicMinor = Scale(
-        id: "pentatonic_minor",
-        name: "Minor Pentatonic",
-        intervals: [0, 3, 5, 7, 10]
-    )
-    
-    public static let blues = Scale(
-        id: "blues",
-        name: "Blues",
-        intervals: [0, 3, 5, 6, 7, 10]
-    )
-    
-    public static let chromatic = Scale(
-        id: "chromatic",
-        name: "Chromatic",
-        intervals: Array(0...11)
-    )
-    
-    /// All available scales for UI display
+    public static let cMajor = Scale(root: .c, type: .major)
+    public static let aMinor = Scale(root: .a, type: .naturalMinor)
+    public static let major = Scale(root: .c, type: .major)
+    public static let naturalMinor = Scale(root: .a, type: .naturalMinor)
+    public static let harmonicMinor = Scale(root: .a, type: .harmonicMinor)
+    public static let melodicMinor = Scale(root: .a, type: .melodicMinor)
+    public static let dorian = Scale(root: .d, type: .dorian)
+    public static let phrygian = Scale(root: .e, type: .phrygian)
+    public static let lydian = Scale(root: .f, type: .lydian)
+    public static let mixolydian = Scale(root: .g, type: .mixolydian)
+    public static let locrian = Scale(root: .b, type: .locrian)
+    public static let pentatonicMajor = Scale(root: .c, type: .pentatonicMajor)
+    public static let pentatonicMinor = Scale(root: .a, type: .pentatonicMinor)
+    public static let blues = Scale(root: .a, type: .blues)
+    public static let chromatic = Scale(root: .c, type: .chromatic)
+
     public static let allScales: [Scale] = [
         .major, .naturalMinor, .harmonicMinor, .melodicMinor,
         .dorian, .phrygian, .lydian, .mixolydian, .locrian,

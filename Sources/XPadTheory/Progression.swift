@@ -89,6 +89,11 @@ public struct Progression: Identifiable, Codable, Sendable {
     }
 
     /// Factory template progressions across modern genres
+    public static func factoryPresets(for scale: Scale) -> [Progression] {
+        factoryPresets(root: scale.root, scale: scale)
+    }
+
+    /// Factory template progressions across modern genres
     public static func factoryPresets(root: PitchClass, scale: Scale) -> [Progression] {
         let r = root
         let isMinor = scale.id.contains("minor")

@@ -95,8 +95,8 @@ public struct HarmonicWheel: Codable, Sendable {
         // 2. COLOUR LAYER (Rich 7ths, 9ths, sus chords on diatonic roots)
         var colourSectors: [WheelSector] = []
         let colourQualities: [ChordQuality] = isMinor ?
-            [.minor7, .halfDiminished, .major7, .minor7, .dominant7, .major7, .dominant7] :
-            [.major7, .minor7, .minor7, .major7, .dominant7, .minor7, .halfDiminished]
+            [.minor7, .halfDiminished7, .major7, .minor7, .dominant7, .major7, .dominant7] :
+            [.major7, .minor7, .minor7, .major7, .dominant7, .minor7, .halfDiminished7]
 
         for i in 0..<count {
             let angle = (Double(i) / Double(count)) * 2.0 * .pi - (.pi / 2.0)
@@ -209,7 +209,6 @@ public struct HarmonicWheel: Codable, Sendable {
     public func sector(forAngle stickAngle: Double, layer: WheelLayer = .diatonic) -> WheelSector? {
         guard let sectors = sectorsByLayer[layer], !sectors.isEmpty else { return nil }
 
-        // Normalize angle to [0, 2*pi)
         var norm = stickAngle
         while norm < 0 { norm += 2.0 * .pi }
         while norm >= 2.0 * .pi { norm -= 2.0 * .pi }

@@ -10,8 +10,11 @@ public final class ControllerManager: @unchecked Sendable {
     public var isConnected: Bool = false
     public var controllerName: String = "No Controller"
     
-    // Deadzone for sticks
-    public var stickDeadzone: Float = 0.15
+    // Input Processors
+    public var leftStickProcessor = StickProcessor(profile: .expressive)
+    public var rightStickProcessor = StickProcessor(profile: .expressive)
+    public var leftTriggerProcessor = TriggerProcessor()
+    public var rightTriggerProcessor = TriggerProcessor()
     
     // Input callbacks
     public var onStateChanged: ((ControllerState) -> Void)?
@@ -84,14 +87,7 @@ public final class ControllerManager: @unchecked Sendable {
         controllerState = ControllerState()
     }
     
-    private func applyDeadzone(_ value: Float) -> Float {
-        if abs(value) < stickDeadzone {
-            return 0
-        }
-        // Remap deadzone to full range
-        let sign: Float = value < 0 ? -1 : 1
-        return sign * (abs(value) - stickDeadzone) / (1.0 - stickDeadzone)
-    }
+    // applyDeadzone removed in favor of input processors
     
     private func setupInputHandlers(_ controller: GCController) {
         guard let gamepad = controller.extendedGamepad else { return }
@@ -102,17 +98,31 @@ public final class ControllerManager: @unchecked Sendable {
             // Update state on main thread for UI, but capture values immediately
             let state = self.controllerState
             
+            let timestamp = ProcessInfo.processInfo.systemUptime
+            
             // Left stick
-            state.leftStickX = self.applyDeadzone(gamepad.leftThumbstick.xAxis.value)
-            state.leftStickY = self.applyDeadzone(gamepad.leftThumbstick.yAxis.value)
+            state.leftStick = self.leftStickProcessor.process(
+                rawX: gamepad.leftThumbstick.xAxis.value,
+                rawY: gamepad.leftThumbstick.yAxis.value,
+                timestamp: timestamp
+            )
             
             // Right stick
-            state.rightStickX = self.applyDeadzone(gamepad.rightThumbstick.xAxis.value)
-            state.rightStickY = self.applyDeadzone(gamepad.rightThumbstick.yAxis.value)
+            state.rightStick = self.rightStickProcessor.process(
+                rawX: gamepad.rightThumbstick.xAxis.value,
+                rawY: gamepad.rightThumbstick.yAxis.value,
+                timestamp: timestamp
+            )
             
             // Triggers
-            state.leftTrigger = gamepad.leftTrigger.value
-            state.rightTrigger = gamepad.rightTrigger.value
+            state.leftTrigger = self.leftTriggerProcessor.process(
+                rawValue: gamepad.leftTrigger.value,
+                timestamp: timestamp
+            )
+            state.rightTrigger = self.rightTriggerProcessor.process(
+                rawValue: gamepad.rightTrigger.value,
+                timestamp: timestamp
+            )
             
             // Shoulders
             state.leftShoulder = gamepad.leftShoulder.isPressed

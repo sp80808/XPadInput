@@ -1,11 +1,55 @@
 import Foundation
 import AVFoundation
 
+public enum OscillatorType: String, CaseIterable, Codable, Sendable {
+    case sine = "Sine"
+    case saw = "Sawtooth"
+    case square = "Square"
+    case triangle = "Triangle"
+}
+
+public struct SynthPreset: Identifiable, Codable, Sendable {
+    public let id: String
+    public let name: String
+    public let osc1Type: OscillatorType
+    public let osc2Type: OscillatorType
+    public let attack: Double
+    public let decay: Double
+    public let sustain: Double
+    public let release: Double
+
+    public init(id: String, name: String, osc1Type: OscillatorType, osc2Type: OscillatorType, attack: Double = 0.01, decay: Double = 0.1, sustain: Double = 0.8, release: Double = 0.2) {
+        self.id = id
+        self.name = name
+        self.osc1Type = osc1Type
+        self.osc2Type = osc2Type
+        self.attack = attack
+        self.decay = decay
+        self.sustain = sustain
+        self.release = release
+    }
+
+    public static let polyLead = SynthPreset(id: "polyLead", name: "Poly Lead", osc1Type: .saw, osc2Type: .square, attack: 0.01, decay: 0.1, sustain: 0.7, release: 0.15)
+    public static let rhodesEP = SynthPreset(id: "rhodesEP", name: "Rhodes EP", osc1Type: .sine, osc2Type: .triangle, attack: 0.005, decay: 0.4, sustain: 0.5, release: 0.3)
+    public static let ambientPad = SynthPreset(id: "ambientPad", name: "Ambient Pad", osc1Type: .saw, osc2Type: .sine, attack: 0.3, decay: 0.5, sustain: 0.9, release: 0.8)
+    public static let pluck = SynthPreset(id: "pluck", name: "Acoustic Pluck", osc1Type: .triangle, osc2Type: .saw, attack: 0.002, decay: 0.2, sustain: 0.2, release: 0.1)
+    public static let subBass = SynthPreset(id: "subBass", name: "Sub Bass", osc1Type: .sine, osc2Type: .sine, attack: 0.01, decay: 0.1, sustain: 0.9, release: 0.1)
+
+    public static let allPresets: [SynthPreset] = [.polyLead, .rhodesEP, .ambientPad, .pluck, .subBass]
+}
+
 /// Simple polyphonic synthesizer using AVAudioEngine.
 @Observable
 public final class AudioEngine: @unchecked Sendable {
+    public static let shared = AudioEngine()
+    
     public var isRunning: Bool = false
     public var volume: Float = 0.7
+    public var currentPreset: SynthPreset = .polyLead
+
+    public func setPreset(_ preset: SynthPreset) {
+        self.currentPreset = preset
+    }
     
     private var engine: AVAudioEngine?
     private var mixer: AVAudioMixerNode?
@@ -137,62 +181,59 @@ public final class AudioEngine: @unchecked Sendable {
     }
 }
 
+private final class VoiceControlState: @unchecked Sendable {
+    var isReleasing = false
+    var isStopped = false
+}
+
 /// Individual synth voice generating a single note.
 public final class SynthVoice: @unchecked Sendable {
+    public let note: UInt8
     public let sourceNode: AVAudioSourceNode
     public let startTime: Date
     public let releaseTime: Double = 0.4
     
-    private var phase: Double = 0
     private var frequency: Double
-    private var amplitude: Double
     private var targetAmplitude: Double
-    private var isReleasing = false
-    private var isStopped = false
+    private let controlState = VoiceControlState()
     private let sampleRate: Double
     
     // Envelope
     private var attackTime: Double = 0.01
     private var decayTime: Double = 0.15
     private var sustainLevel: Double = 0.6
-    private var envelopePhase: Double = 0
     
     public init(note: UInt8, velocity: UInt8, sampleRate: Double) {
+        self.note = note
         self.sampleRate = sampleRate
         self.frequency = 440.0 * pow(2.0, (Double(note) - 69.0) / 12.0)
-        self.amplitude = 0
         self.targetAmplitude = Double(velocity) / 127.0
         self.startTime = Date()
         
-        // Create source node with render callback
-        var currentPhase = 0.0
-        var currentAmplitude = 0.0
-        var envPhase = 0.0
-        var releasing = false
-        var stopped = false
+        let control = self.controlState
         let freq = self.frequency
         let attack = self.attackTime
         let decay = self.decayTime
         let sustain = self.sustainLevel
         let target = self.targetAmplitude
         let release = self.releaseTime
+        
+        var currentPhase = 0.0
+        var envPhase = 0.0
         var releaseStartAmp = 0.0
         
-        self.sourceNode = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
-            if stopped { return noErr }
+        self.sourceNode = AVAudioSourceNode { _, _, frameCount, audioBufferList -> OSStatus in
+            if control.isStopped { return noErr }
             
-            // Check if self has updated releasing/stopped
-            if let self = self {
-                releasing = self.isReleasing
-                stopped = self.isStopped
-            }
+            let releasing = control.isReleasing
             
             let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
             let buffer = ablPointer[0]
-            let ptr = buffer.mData!.assumingMemoryBound(to: Float.self)
+            guard let rawPtr = buffer.mData else { return noErr }
+            let ptr = rawPtr.assumingMemoryBound(to: Float.self)
             
             for frame in 0..<Int(frameCount) {
-                if stopped {
+                if control.isStopped {
                     ptr[frame] = 0
                     continue
                 }
@@ -203,7 +244,7 @@ public final class SynthVoice: @unchecked Sendable {
                     let releaseProgress = min(envPhase / release, 1.0)
                     envValue = releaseStartAmp * (1.0 - releaseProgress)
                     if releaseProgress >= 1.0 {
-                        stopped = true
+                        control.isStopped = true
                     }
                 } else if envPhase < attack {
                     envValue = (envPhase / attack) * target
@@ -226,20 +267,16 @@ public final class SynthVoice: @unchecked Sendable {
                 sample += 0.06 * sin(currentPhase * 2.0 * .pi * 5.0)  // 5th harmonic
                 sample *= 0.3 // Normalize
                 
-                currentAmplitude = envValue
-                ptr[frame] = Float(sample * currentAmplitude)
+                ptr[frame] = Float(sample * envValue)
                 
                 currentPhase += freq / sampleRate
                 if currentPhase > 1.0 { currentPhase -= 1.0 }
                 envPhase += 1.0 / sampleRate
             }
             
-            if let self = self {
-                self.isStopped = stopped
-            }
-            
             return noErr
         }
+        self.sourceNode = source
     }
     
     public func start() {
@@ -247,10 +284,18 @@ public final class SynthVoice: @unchecked Sendable {
     }
     
     public func startRelease() {
-        isReleasing = true
+        controlState.isReleasing = true
     }
     
     public func stop() {
-        isStopped = true
+        controlState.isStopped = true
+    }
+    
+    public var isReleasing: Bool {
+        controlState.isReleasing
+    }
+    
+    public var isStopped: Bool {
+        controlState.isStopped
     }
 }

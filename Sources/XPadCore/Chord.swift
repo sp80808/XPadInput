@@ -107,6 +107,11 @@ public struct Chord: Hashable, Codable, Sendable, Identifiable {
     public var displayName: String {
         "\(root.displayName)\(quality.symbol)"
     }
+
+    /// Symbol alias
+    public var symbol: String {
+        displayName
+    }
     
     /// Roman numeral in a given key/scale
     public func romanNumeral(in key: PitchClass, scale: Scale) -> String? {
@@ -163,6 +168,11 @@ public struct Chord: Hashable, Codable, Sendable, Identifiable {
         }
         
         return notes.sorted()
+    }
+
+    /// Voiced notes alias
+    public func voicedNotes(baseOctave: Int = 3) -> [Note] {
+        voiced(baseOctave: baseOctave)
     }
     
     /// Voice-leading distance to another chord (sum of minimum semitone movements)

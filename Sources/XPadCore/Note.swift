@@ -15,6 +15,9 @@ public struct Note: Hashable, Codable, Sendable, Comparable {
         let value = (octave + 1) * 12 + pitchClass.rawValue
         return UInt8(max(0, min(127, value)))
     }
+
+    /// MIDI note number alias
+    public var midiNumber: UInt8 { midiNote }
     
     /// Frequency in Hz (A4 = 440Hz)
     public var frequency: Double {
@@ -25,6 +28,9 @@ public struct Note: Hashable, Codable, Sendable, Comparable {
     public var displayName: String {
         "\(pitchClass.displayName)\(octave)"
     }
+
+    /// Short name alias
+    public var name: String { displayName }
     
     /// Create from MIDI note number
     public static func fromMIDI(_ noteNumber: UInt8) -> Note {
