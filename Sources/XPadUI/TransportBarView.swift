@@ -68,41 +68,10 @@ struct TransportBar: View {
             
             Divider()
                 .frame(height: 20)
-            
-            // Key selector
-            HStack(spacing: 6) {
-                Text("Key")
-                    .font(.system(size: 9))
-                    .foregroundColor(XTheme.textTertiary)
-                
-                Picker("Key", selection: $state.currentKey) {
-                    ForEach(PitchClass.allCases, id: \.self) { pc in
-                        Text(pc.displayName).tag(pc)
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(width: 55)
-                .onChange(of: appState.currentKey) { _, newKey in
-                    appState.setKey(newKey)
-                }
-            }
-            
-            // Scale selector
-            HStack(spacing: 6) {
-                Picker("Scale", selection: Binding(
-                    get: { appState.currentScale.id },
-                    set: { id in
-                        if let scale = Scale.allScales.first(where: { $0.id == id }) {
-                            appState.setScale(scale)
-                        }
-                    }
-                )) {
-                    ForEach(Scale.allScales) { scale in
-                        Text(scale.name).tag(scale.id)
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(width: 140)
+
+            HStack(spacing: 8) {
+                KeySelectorView()
+                ScaleSelectorView()
             }
             
             Divider()
