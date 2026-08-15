@@ -108,23 +108,10 @@ struct TransportBar: View {
             Divider()
                 .frame(height: 20)
 
-            Picker("Instrument", selection: Binding(
-                get: { appState.instrumentProfile.family },
-                set: { family in
-                    appState.setInstrument(InstrumentProfile.profile(for: family))
-                }
-            )) {
-                ForEach(InstrumentProfile.playableProfiles, id: \.family) { profile in
-                    Text(profile.family.shortName).tag(profile.family)
-                }
+            HStack(spacing: 8) {
+                InstrumentSelectorView(minWidth: 92)
+                ActiveTechniqueStatusView(compact: true)
             }
-            .pickerStyle(.menu)
-            .frame(width: 88)
-
-            Text(appState.instrumentStatusLabel)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(XTheme.accent)
-                .frame(minWidth: 90, alignment: .leading)
 
             Divider()
                 .frame(height: 20)
