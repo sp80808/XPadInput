@@ -85,16 +85,41 @@ struct TransportBar: View {
             Divider()
                 .frame(height: 20)
             
-            // MIDI activity
+            // MIDI activity and wire protocol. MIDI 1 remains the alpha default;
+            // MIDI 2 switches the same musical event pipeline onto native UMP.
             HStack(spacing: 6) {
                 Circle()
                     .fill(appState.midiEngine.isMIDIActive ? XTheme.midiActivity : XTheme.textTertiary.opacity(0.3))
                     .frame(width: 6, height: 6)
                     .xGlow(isActive: appState.midiEngine.isMIDIActive, color: XTheme.midiActivity)
-                
-                Text("MIDI")
-                    .font(.system(size: 10, weight: .medium))
+
+                Menu {
+                    ForEach(MIDITransportProtocol.allCases) { transport in
+                        Button {
+                            state.midiEngine.transportProtocol = transport
+                        } label: {
+                            HStack {
+                                Text(transport.rawValue)
+                                if appState.midiEngine.transportProtocol == transport {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Text(appState.midiEngine.transportProtocol.shortLabel)
+                            .font(.system(size: 10, weight: .medium))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 7, weight: .semibold))
+                    }
                     .foregroundColor(appState.midiEngine.virtualMIDIEnabled ? XTheme.textPrimary : XTheme.textTertiary)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("CoreMIDI virtual-source protocol")
+                .accessibilityLabel("MIDI transport protocol")
+                .accessibilityValue(appState.midiEngine.transportProtocol.rawValue)
                 
                 Toggle("", isOn: $state.midiEngine.virtualMIDIEnabled)
                     .toggleStyle(.switch)

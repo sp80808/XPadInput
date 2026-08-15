@@ -14,7 +14,12 @@ public enum VirtualPort: String, CaseIterable, Identifiable, Hashable, Sendable 
     public var id: String { rawValue }
 }
 
-/// A test/diagnostic copy of a MIDI 1.0 channel message before it reaches CoreMIDI.
+/// A test/diagnostic copy of a MIDI channel message before it reaches CoreMIDI.
+///
+/// The byte representation intentionally remains MIDI 1-shaped even when the
+/// selected wire transport is MIDI 2.0. This keeps diagnostics stable and makes
+/// the transport conversion an implementation detail rather than a second
+/// musical-event model.
 public struct MIDIMessageRecord: Equatable, Sendable {
     public let port: VirtualPort
     public let bytes: [UInt8]
@@ -48,6 +53,24 @@ public final class MIDIEngine: @unchecked Sendable {
             onVirtualMIDIChanged?(virtualMIDIEnabled)
         }
     }
+
+    /// CoreMIDI wire protocol advertised by the public virtual sources.
+    /// MIDI 1.0 remains the compatibility default for the alpha.
+    public var transportProtocol: MIDITransportProtocol = .midi1 {
+        willSet {
+            guard newValue != transportProtocol, virtualMIDIEnabled else { return }
+            // Cleanly close all voices before replacing endpoints with a different
+            // protocol. This prevents a receiver retaining expression or notes
+            // from the source that is about to disappear.
+            prepareForVirtualSourceDisposal()
+        }
+        didSet {
+            guard oldValue != transportProtocol, virtualMIDIEnabled else { return }
+            disposeVirtualSources()
+            createVirtualSources()
+        }
+    }
+
     public var onVirtualMIDIChanged: ((Bool) -> Void)?
 
     public private(set) var lastSentNotes: [UInt8] = []
@@ -148,6 +171,7 @@ public final class MIDIEngine: @unchecked Sendable {
 
     private func createVirtualSources() {
         guard midiClient != 0 else { return }
+        let protocolID = transportProtocol.coreMIDIProtocol
 
         for port in VirtualPort.allCases {
             lock.lock()
@@ -159,7 +183,7 @@ public final class MIDIEngine: @unchecked Sendable {
             let status = MIDISourceCreateWithProtocol(
                 midiClient,
                 port.rawValue as CFString,
-                ._1_0,
+                protocolID,
                 &endpoint
             )
             if status == noErr {
@@ -226,8 +250,9 @@ public final class MIDIEngine: @unchecked Sendable {
         if lastSentNotes.count > 12 { lastSentNotes.removeFirst() }
         lock.unlock()
 
-        // MIDI 1.0 cannot disambiguate stacked identical notes on one channel.
-        // Close an existing voice first so one later Note Off is deterministic.
+        // The semantic layer cannot disambiguate stacked identical notes on one
+        // channel yet. Close an existing voice first so one later Note Off is
+        // deterministic on both transports.
         if wasAlreadyActive {
             emit([0x80 | safeChannel, safeNote, 0], to: port)
         }
@@ -455,10 +480,11 @@ public final class MIDIEngine: @unchecked Sendable {
         }
         midiActivityTimestamp = Date()
         let endpoint = virtualMIDIEnabled ? outputs[port] : nil
+        let protocolID = transportProtocol
         lock.unlock()
 
         guard let endpoint, endpoint != 0 else { return }
-        sendMIDIMessage(bytes, endpoint: endpoint)
+        sendMIDIMessage(bytes, endpoint: endpoint, protocolID: protocolID)
     }
 
     private func emitChannelCleanup(to port: VirtualPort, channel: UInt8) {
@@ -477,9 +503,22 @@ public final class MIDIEngine: @unchecked Sendable {
         emit([0xB0 | safeChannel, 120, 0], to: port) // All Sound Off
     }
 
-    private func sendMIDIMessage(_ bytes: [UInt8], endpoint: MIDIEndpointRef) {
+    private func sendMIDIMessage(
+        _ bytes: [UInt8],
+        endpoint: MIDIEndpointRef,
+        protocolID: MIDITransportProtocol
+    ) {
         guard endpoint != 0 else { return }
 
+        switch protocolID {
+        case .midi1:
+            sendMIDI1Message(bytes, endpoint: endpoint)
+        case .midi2:
+            sendMIDI2Message(bytes, endpoint: endpoint)
+        }
+    }
+
+    private func sendMIDI1Message(_ bytes: [UInt8], endpoint: MIDIEndpointRef) {
         var eventList = MIDIEventList()
         var packet = MIDIEventListInit(&eventList, ._1_0)
         let word: UInt32
@@ -506,6 +545,25 @@ public final class MIDIEngine: @unchecked Sendable {
             words.count,
             words
         )
+        guard packet != nil else { return }
+        MIDIReceivedEventList(endpoint, &eventList)
+    }
+
+    private func sendMIDI2Message(_ bytes: [UInt8], endpoint: MIDIEndpointRef) {
+        guard let message = MIDI2UMPEncoder.message(from: bytes) else { return }
+
+        var eventList = MIDIEventList()
+        var packet = MIDIEventListInit(&eventList, ._2_0)
+        let words = [message.word0, message.word1]
+        packet = MIDIEventListAdd(
+            &eventList,
+            1024,
+            packet,
+            mach_absolute_time(),
+            words.count,
+            words
+        )
+        guard packet != nil else { return }
         MIDIReceivedEventList(endpoint, &eventList)
     }
 }
