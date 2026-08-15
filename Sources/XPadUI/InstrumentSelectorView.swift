@@ -8,6 +8,8 @@ import XPadCore
 /// title inline, which clashes with XPI's compact custom control language.
 struct InstrumentSelectorView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering = false
 
     var minWidth: CGFloat = 92
 
@@ -35,23 +37,29 @@ struct InstrumentSelectorView: View {
 
                 Image(systemName: "chevron.down")
                     .font(.system(size: 9, weight: .bold))
-                    .foregroundColor(XTheme.textTertiary)
+                    .foregroundColor(isHovering ? XTheme.textSecondary : XTheme.textTertiary)
             }
             .padding(.horizontal, 10)
             .frame(minWidth: minWidth, minHeight: 28, maxHeight: 28)
             .background(
                 RoundedRectangle(cornerRadius: XTheme.radiusSmall)
-                    .fill(XTheme.controlGradient)
+                    .fill(isHovering ? AnyShapeStyle(XTheme.surfaceHover) : AnyShapeStyle(XTheme.controlGradient))
                     .overlay(
                         RoundedRectangle(cornerRadius: XTheme.radiusSmall)
-                            .stroke(Color.white.opacity(0.10), lineWidth: XTheme.strokeSubtle)
+                            .stroke(
+                                isHovering ? XTheme.borderActive.opacity(0.55) : Color.white.opacity(0.10),
+                                lineWidth: XTheme.strokeSubtle
+                            )
                     )
                     .shadow(color: Color.black.opacity(0.20), radius: 3, y: 2)
             )
             .contentShape(RoundedRectangle(cornerRadius: XTheme.radiusSmall))
         }
         .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
         .fixedSize(horizontal: true, vertical: false)
+        .onHover { isHovering = $0 }
+        .animation(reduceMotion ? nil : XTheme.quickAnimation, value: isHovering)
         .help("Choose performance instrument")
         .accessibilityLabel("Instrument")
         .accessibilityValue(appState.instrumentProfile.family.shortName)
@@ -72,6 +80,7 @@ struct ActiveTechniqueStatusView: View {
                 .font(.system(size: compact ? 9 : 11, weight: .semibold, design: .rounded))
                 .foregroundColor(XTheme.accent)
                 .lineLimit(1)
+                .truncationMode(.tail)
                 .padding(.horizontal, compact ? 6 : 8)
                 .padding(.vertical, compact ? 2 : 3)
                 .background(
