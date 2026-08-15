@@ -2,11 +2,11 @@
 
 > **Status:** Canonical wire and lifecycle contract for the implemented contextual-expression slice.
 >
-> This specification distinguishes source implementation from automated and manual proof. It is not a declaration that every DAW or instrument has been certified.
+> This specification distinguishes source implementation from automated and manual proof. It is not a declaration that every DAW or instrument has been certified. Experimental MIDI 2.0 UMP transport is explicitly separated from formal MIDI 2.0 / MIDI-CI compatibility claims.
 
 ## 1. Public CoreMIDI Sources
 
-When virtual MIDI is enabled, the XPI CoreMIDI client creates these six MIDI 1.0 virtual sources:
+When virtual MIDI is enabled, the XPI CoreMIDI client creates these six virtual sources:
 
 1. `XPI Main`
 2. `XPI Chords`
@@ -18,6 +18,21 @@ When virtual MIDI is enabled, the XPI CoreMIDI client creates these six MIDI 1.0
 `VirtualPort` is the source of truth for these public names. Swift package, target, and module identifiers remain `XPadInput` / `XPad*`.
 
 The first five ports provide role-oriented routing. Per-note expression and lower-zone MPE traffic use `XPI Expression (MPE)`.
+
+### Wire protocol
+
+`MIDITransportProtocol` controls the CoreMIDI protocol advertised by all six sources:
+
+- **MIDI 1.0** — default and current compatibility baseline;
+- **MIDI 2.0** — experimental native MIDI 2 Channel Voice UMP transport.
+
+Changing protocol while virtual MIDI is live must first release active notes/expression, dispose the old endpoints, and recreate the six sources under the new `MIDIProtocolID`.
+
+The first MIDI 2 implementation is deliberately a transport adapter. The musical/technique layers continue to generate the same semantic events, and diagnostic `MIDIMessageRecord` values retain their established MIDI-1-shaped byte representation. The adapter expands supported events to MIDI 2 UMP at the CoreMIDI boundary.
+
+This means the first MIDI 2 slice improves protocol interoperability and wire resolution, but does **not** yet provide native high-resolution data end-to-end when a value was already quantized earlier in the pipeline. See `MIDI2_ROADMAP.md`.
+
+Do not describe this implementation as formal MIDI 2.0 certification or MIDI-CI support.
 
 ## 2. Channel Numbering and Zone
 
@@ -42,12 +57,14 @@ All per-note pitch, pressure, timbre, note-on, and note-off messages for an MPE 
 
 The destination must receive this configuration before relying on lower-zone semantics.
 
+Under the experimental MIDI 2 transport, the existing MPE setup messages are translated at the transport boundary for continuity with the current expression engine. Native MIDI 2 per-note expression is a later phase, not a reason to duplicate the MPE allocator immediately.
+
 ## 3. Bend-Range Contract
 
 The musical range and destination range are separate:
 
 - the **instrument range** limits the gesture in musically meaningful semitones; Guitar defaults to ±2;
-- the **destination range** determines 14-bit pitch-bend encoding and the RPN range advertised to the receiver; Generic MPE and the internal synth default to ±48.
+- the **destination range** determines pitch-bend encoding and the range advertised to the receiver; Generic MPE and the internal synth default to ±48.
 
 Changing the configured MPE bend range re-sends Pitch Bend Sensitivity RPN `0,0` on every member channel:
 
@@ -59,7 +76,9 @@ Changing the configured MPE bend range re-sends Pitch Bend Sensitivity RPN `0,0`
 
 The pitch engine, translator, MPE manager, and destination instrument must agree on the destination range. A Guitar bend of +2 semitones inside a ±48 destination range is encoded as a small offset from centre, not as full-scale bend.
 
-## 4. 14-Bit Pitch Bend
+## 4. Pitch Bend Encoding
+
+### MIDI 1.0
 
 Pitch bend is encoded as two 7-bit data bytes:
 
@@ -78,7 +97,17 @@ MSB        = (value >> 7) & 0x7F
 
 Zero or invalid range resolves to centre. Out-of-range bend input clamps safely at the destination limit.
 
-Pitch assist operates before this encoding. It provides soft attraction to a target but never converts continuous bend into discrete note snapping.
+### Experimental MIDI 2 transport
+
+The current adapter maps the established 14-bit semantic bend value into MIDI 2's 32-bit pitch-bend field with exact anchors:
+
+- `0` → `0x00000000`;
+- `8192` → `0x80000000`;
+- `16383` → `0xFFFFFFFF`.
+
+The conversion is piecewise around centre so the asymmetric MIDI 1 positive/negative range cannot shift the neutral position.
+
+Pitch assist operates before either encoding. It provides soft attraction to a target but never converts continuous bend into discrete note snapping.
 
 ## 5. Member-Voice Lifecycle
 
@@ -88,7 +117,7 @@ Pitch assist operates before this encoding. It provides soft attraction to a tar
 
 Before every member-channel `NoteOn`, send neutral expression on the allocated channel in this order:
 
-1. Pitch Bend = `8192`;
+1. Pitch Bend = centre;
 2. Channel Pressure = `0`;
 3. CC74 Timbre = `64`;
 4. `NoteOn` for the new note.
@@ -111,12 +140,14 @@ Each active voice retains:
 On note release:
 
 1. send `NoteOff` on the allocated member channel;
-2. reset Pitch Bend to `8192`;
+2. reset Pitch Bend to centre;
 3. reset Channel Pressure to `0`;
 4. reset CC74 Timbre to `64`;
 5. only then make the channel available for reuse.
 
-`stopAllNotes()` releases active voices in deterministic channel order. The global MIDI panic additionally sends tracked note-offs and `CC123 All Notes Off` on all sixteen channels of every public virtual port.
+`stopAllNotes()` releases active voices in deterministic channel order. The global MIDI panic additionally sends tracked note-offs and channel cleanup on all sixteen channels of every public virtual port.
+
+The lifecycle contract is transport-independent: protocol switching must use the same cleanup guarantees before endpoint replacement.
 
 ## 6. Pressure
 
@@ -133,7 +164,7 @@ Capability-driven fallback is:
 | Channel Pressure | MPE Pressure → CC11 |
 | CC11 | CC11 |
 
-Normalized pressure is converted to `0...127`. Release/channel reuse resets MPE Channel Pressure to `0`.
+Normalized pressure is currently converted to `0...127` before the transport boundary. MIDI 2 transport expands that value to the full 32-bit pressure field, but true end-to-end high-resolution pressure requires a future semantic-layer change. Release/channel reuse resets MPE Channel Pressure to `0`.
 
 Any fallback description must be retained in `MIDITranslationResult` and shown in MAP/diagnostics rather than silently changing musical behaviour.
 
@@ -141,9 +172,11 @@ Any fallback description must be retained in `MIDITranslationResult` and shown i
 
 Per-note timbre is CC74 on the active member channel:
 
-- normalized semantic timbre maps to `0...127`;
+- normalized semantic timbre currently maps to `0...127`;
 - `64` is the neutral allocation/release value;
 - a non-neutral value is sent only when the destination advertises CC74 support.
+
+Under MIDI 2 transport, CC74 is encoded as a MIDI 2 Control Change with a 32-bit value expanded from the current semantic 7-bit value. Native higher-resolution timbre is planned after host interoperability is proven.
 
 If CC74 is unavailable, harmonic/articulation translation falls back to a velocity/filter approximation. If a requested keyswitch is unavailable but CC74 exists, the translator falls back to MPE timbre and reports that decision.
 
@@ -169,9 +202,11 @@ Pitch bend is channel-wide outside MPE. An independent bend is permitted only wh
 
 If multiple conventional-MIDI voices share a channel, the translator blocks the per-note bend and reports the conflict. It must not bend an unintended chord silently.
 
+The transport selector does not change this musical safety rule. Native MIDI 2 per-note pitch is a future capability that must be introduced explicitly at the destination/technique layer rather than inferred merely from choosing MIDI 2 transport.
+
 ## 9. Recording and Export Boundary
 
-The semantic recorder retains technique-level events and note durations before MIDI flattening. `SMFExporter.encodeTechniques` writes a Type 0 file containing:
+The semantic recorder retains technique-level events and note durations before MIDI flattening. `SMFExporter.encodeTechniques` writes a Type 0 Standard MIDI File containing:
 
 - tempo;
 - pitch-bend sensitivity RPN (`CC101/100 = 0`, `CC6` = destination range);
@@ -179,12 +214,15 @@ The semantic recorder retains technique-level events and note durations before M
 - pitch-bend, channel pressure, and CC74 when those dimensions are active;
 - a return-to-centre pitch-bend at note-off.
 
+The live MIDI 2 UMP transport does not silently change SMF export format. MIDI Clip / UMP file support is a separate future decision.
+
 Complete curve editing and DAW import proof remain planned. Byte-level tests currently verify header structure and the presence of pitch-bend status bytes.
 
 ## 10. Diagnostics
 
 MAP diagnostics should identify:
 
+- selected transport (`MIDI 1` / `MIDI 2`);
 - technique and note;
 - one-based MIDI channel;
 - velocity;
@@ -193,7 +231,7 @@ MAP diagnostics should identify:
 - strategy used;
 - any capability fallback or blocked unsafe bend.
 
-PLAY must not expose packet numbers or channel bookkeeping during normal performance.
+PLAY must not expose packet numbers or channel bookkeeping during normal performance. The transport selector belongs with MIDI connection state rather than becoming a new workspace.
 
 ## 11. Delivery and Proof Status
 
@@ -201,6 +239,8 @@ PLAY must not expose packet numbers or channel bookkeeping during normal perform
 
 - all six branded `VirtualPort` cases and dynamic CoreMIDI source creation;
 - MIDI 1.0 note, CC, poly-pressure, channel-pressure, CC74, and 14-bit bend encoding;
+- optional experimental MIDI 2.0 Channel Voice UMP transport for those same semantic messages;
+- protocol-aware virtual-source recreation with cleanup when switching transport;
 - lower-zone configuration for master Channel 1 and members Channels 2...15;
 - deterministic allocation, voice stealing, pre-note reset, release reset, stop-all, and panic paths;
 - configurable member-channel bend-range RPN messages;
@@ -209,20 +249,33 @@ PLAY must not expose packet numbers or channel bookkeeping during normal perform
 
 ### Automated proof boundary
 
-Focused tests cover the six port names, member-channel isolation, pre-note pitch reset, note-off/reset lifecycle, bend centre/endpoints, pressure fallback, unsafe conventional-chord bend blocking, and basic SMF structure. Full byte-order coverage for every reset dimension and RPN message is still desirable. A green `swift test` result must be reported separately; this specification does not convert source presence into a passing release gate.
+Focused tests cover the six port names, member-channel isolation, pre-note pitch reset, note-off/reset lifecycle, bend centre/endpoints, pressure fallback, unsafe conventional-chord bend blocking, and basic SMF structure. MIDI 2 tests additionally cover transport defaults, 7-bit expansion endpoints, exact 32-bit pitch-bend anchors, supported MIDI 2 Channel Voice UMP creation, malformed-message rejection, and semantic-log stability across transport selection.
+
+A green repository CI result must be reported separately; this specification does not convert source presence into a passing release gate.
 
 ### Manual proof still required
 
-- six sources appearing correctly in macOS Audio MIDI Setup and each supported DAW;
-- host recognition of the lower MPE zone and advertised bend range;
+- six sources appearing correctly in macOS Audio MIDI Setup and each supported DAW under MIDI 1;
+- six sources appearing correctly when experimental MIDI 2 transport is selected;
+- a real MIDI-2-aware destination receiving note, CC, pressure and bend UMP correctly;
+- CoreMIDI protocol conversion observed with at least one MIDI-1-only destination rather than assumed;
+- host recognition of the lower MPE zone and advertised bend range on the established MIDI 1 path;
 - active-controller bend return without audible stepping or stuck notes;
 - correct pressure and CC74 response in real destination instruments;
+- protocol switching under live use without stuck notes or retained expression;
 - haptic detent delivery and ergonomic feel;
 - repeated allocation/voice-steal stress under live performance.
 
 ### Planned compatibility work
 
+- carry genuinely high-resolution expression through semantic events before MIDI 2 encoding;
+- evaluate native MIDI 2 per-note pitch/controllers where they improve instrument techniques;
+- UMP Endpoint and Function Block discovery/topology;
+- MIDI-CI capability discovery using CoreMIDI's current APIs, not Apple's deprecated session/responder path;
+- Profile Configuration or Property Exchange only for concrete interoperability use cases;
 - destination profiles for specific instruments and sample libraries;
 - configurable keyswitch/CC articulation maps;
 - host-specific setup presets and compatibility certification;
 - complete technique-aware SMF export and import round-trip tests.
+
+See `MIDI2_ROADMAP.md` for the staged MIDI 2.0 / MIDI-CI plan and compliance-language boundary.
