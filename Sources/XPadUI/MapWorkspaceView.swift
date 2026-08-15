@@ -13,90 +13,190 @@ public struct MapWorkspaceView: View {
         controllerManager.currentState
     }
 
+    private var iconPack: ControllerIconPack {
+        controllerManager.controllerKind.iconPack
+    }
+
     public var body: some View {
         HSplitView {
             // Left: Controller Visualizer & HUD
-            VStack(spacing: 20) {
-                HStack {
+            VStack(spacing: 16) {
+                // Top Header & Controller Switcher
+                HStack(spacing: 12) {
                     Image(systemName: "gamecontroller.fill")
                         .font(.title2)
-                    Text(controllerManager.controllerKind.rawValue)
-                        .font(.headline)
+                        .foregroundStyle(Color(hex: iconPack.brandAccentHex))
+
+                    // Controller Kind Picker
+                    Picker("Active Hardware Profile", selection: Binding(
+                        get: { controllerManager.controllerKind },
+                        set: { controllerManager.selectControllerKind($0) }
+                    )) {
+                        ForEach(ControllerCategory.allCases, id: \.self) { cat in
+                            Section(header: Text(cat.rawValue)) {
+                                ForEach(ControllerKind.allCases.filter { $0.category == cat }) { kind in
+                                    Text(kind.rawValue).tag(kind)
+                                }
+                            }
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: 260)
+
                     Spacer()
-                    Text(controllerManager.isHardwareConnected ? "Hardware Connected" : "Simulated Fallback")
-                        .font(.caption)
+
+                    Text(controllerManager.isHardwareConnected ? "Hardware Connected" : "Interactive Simulation")
+                        .font(.caption2.bold())
                         .foregroundStyle(controllerManager.isHardwareConnected ? .green : .orange)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Material.ultraThinMaterial)
+                        .background(Color.white.opacity(0.1))
                         .clipShape(Capsule())
                 }
 
-                // Controller Diagram Card
-                ZStack {
-                    RoundedRectangle(cornerRadius: 24)
-                        .fill(Color.black.opacity(0.35))
-                        .frame(height: 280)
-                        .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.white.opacity(0.1), lineWidth: 1))
-
-                    HStack(spacing: 40) {
-                        // Left Stick & D-Pad
-                        VStack(spacing: 16) {
-                            stickVisualizer(label: "Left Stick (Harmonic Wheel)", stick: state.leftStick)
-                            dpadVisualizer
-                        }
-
-                        // Center Gyro / IMU Status
-                        VStack(spacing: 10) {
-                            Text("6-Axis IMU Motion")
-                                .font(.caption2.bold())
-                                .foregroundStyle(.secondary)
-                            Text("Pitch: \(String(format: "%.2f", state.gyroPitch))")
-                                .font(.caption.monospaced())
-                            Text("Roll: \(String(format: "%.2f", state.gyroRoll))")
-                                .font(.caption.monospaced())
-                            Text("Yaw: \(String(format: "%.2f", state.gyroYaw))")
-                                .font(.caption.monospaced())
-                        }
-                        .padding()
-                        .background(Color.white.opacity(0.05))
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-
-                        // Right Stick & Face Buttons
-                        VStack(spacing: 16) {
-                            faceButtonsVisualizer
-                            stickVisualizer(label: "Right Stick (Strum)", stick: state.rightStick)
-                        }
+                // Dedicated Controller Visualizer based on Kind
+                Group {
+                    switch controllerManager.controllerKind {
+                    case .guitarHero:
+                        GuitarHeroVisualizerView(state: state)
+                    case .soundVoltex:
+                        SoundVoltexVisualizerView(state: state)
+                    case .beatmaniaIIDX:
+                        BeatmaniaVisualizerView(state: state)
+                    case .taikoDrum:
+                        TaikoDrumVisualizerView(state: state)
+                    case .danceMat:
+                        DanceMatVisualizerView(state: state)
+                    case .flightStick:
+                        FlightStickVisualizerView(state: state)
+                    case .racingWheel:
+                        RacingWheelVisualizerView(state: state)
+                    case .fightStick:
+                        FightStickVisualizerView(state: state)
+                    default:
+                        standardGamepadVisualizerCard
                     }
                 }
 
-                // Triggers & Shoulders Gauges
-                HStack(spacing: 20) {
-                    triggerGauge(label: "Left Trigger (L2 / Mute)", value: state.leftTrigger)
-                    triggerGauge(label: "Right Trigger (R2 / Expression)", value: state.rightTrigger)
+                // Triggers & Shoulders Gauges (if standard)
+                if controllerManager.controllerKind.category == .standard {
+                    HStack(spacing: 20) {
+                        triggerGauge(label: "Left Trigger (L2 / Mute)", value: state.leftTrigger)
+                        triggerGauge(label: "Right Trigger (R2 / Expression)", value: state.rightTrigger)
+                    }
                 }
             }
             .padding()
-            .frame(minWidth: 440)
+            .frame(minWidth: 460)
 
-            // Right: Gesture-to-Music Modulation Matrix
+            // Right: Gesture-to-Music Modulation Matrix with Vector Glyphs
             VStack(alignment: .leading, spacing: 16) {
-                Text("Modulation & Gesture Matrix")
-                    .font(.headline)
+                HStack {
+                    Text("Modulation & Gesture Matrix")
+                        .font(.headline)
+                    Spacer()
+                    Text(iconPack.name)
+                        .font(.caption2.bold())
+                        .foregroundStyle(Color(hex: iconPack.brandAccentHex))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color(hex: iconPack.brandAccentHex).opacity(0.15))
+                        .clipShape(Capsule())
+                }
 
                 ScrollView {
-                    VStack(spacing: 12) {
-                        modulationRow(source: "Left Stick Angle", dest: "Harmonic Wheel Sector", amount: "100%")
-                        modulationRow(source: "Left Stick Radius", dest: "Harmonic Risk / Extensions", amount: "75%")
-                        modulationRow(source: "Right Stick Velocity", dest: "Strum Dynamics & Velocity", amount: "100%")
-                        modulationRow(source: "Left Trigger (L2)", dest: "Palm Mute & Filter Decay", amount: "100%")
-                        modulationRow(source: "Motion Gyro Tilt", dest: "MPE Pitch Bend (±48 Semitones)", amount: "50%")
-                        modulationRow(source: "Touchpad Y-Axis", dest: "MPE Timbre (CC 74)", amount: "80%")
+                    VStack(spacing: 10) {
+                        switch controllerManager.controllerKind {
+                        case .guitarHero:
+                            modulationRowWithGlyph(glyph: .guitarStrumDown, source: "Strum Bar Down", dest: "Voiced Chord Strum (Down)", amount: "100%")
+                            modulationRowWithGlyph(glyph: .guitarStrumUp, source: "Strum Bar Up", dest: "Voiced Chord Strum (Up)", amount: "100%")
+                            modulationRowWithGlyph(glyph: .guitarWhammy, source: "Whammy Bar", dest: "MPE Pitch Dive & Timbre Swell", amount: "100%")
+                            modulationRowWithGlyph(glyph: .guitarTilt, source: "Tilt Sensor", dest: "Star Power Arpeggiator Burst", amount: "100%")
+                            modulationRowWithGlyph(glyph: .guitarGreenFret, source: "Green Fret (1)", dest: "Tonic (I) / Scale Degree 1", amount: "Select")
+                            modulationRowWithGlyph(glyph: .guitarRedFret, source: "Red Fret (2)", dest: "Supertonic (ii) / Degree 2", amount: "Select")
+                            modulationRowWithGlyph(glyph: .guitarBlueFret, source: "Blue Fret (4)", dest: "Subdominant (IV) / Degree 4", amount: "Select")
+                            modulationRowWithGlyph(glyph: .guitarOrangeFret, source: "Orange Fret (5)", dest: "Dominant (V) / Degree 5", amount: "Select")
+
+                        case .soundVoltex:
+                            modulationRowWithGlyph(glyph: .sdvxVolL, source: "VOL-L Rotary Knob", dest: "MPE Timbre Filter Cutoff (CC74)", amount: "100%")
+                            modulationRowWithGlyph(glyph: .sdvxVolR, source: "VOL-R Rotary Knob", dest: "Pitch Modulation / Resonance", amount: "100%")
+                            modulationRowWithGlyph(glyph: .sdvxBtA, source: "BT-A Button", dest: "Progression Chord Voicing 1", amount: "100%")
+                            modulationRowWithGlyph(glyph: .sdvxBtB, source: "BT-B Button", dest: "Progression Chord Voicing 2", amount: "100%")
+                            modulationRowWithGlyph(glyph: .sdvxFxL, source: "FX-L Long Button", dest: "Sub-Bass Drop (-1 Octave)", amount: "100%")
+                            modulationRowWithGlyph(glyph: .sdvxFxR, source: "FX-R Long Button", dest: "Echo / Delay Swell", amount: "100%")
+
+                        case .beatmaniaIIDX:
+                            modulationRowWithGlyph(glyph: .beatmaniaTurntable, source: "Optical Turntable", dest: "Scratch Scrub & Tape Stop Pitch", amount: "100%")
+                            modulationRowWithGlyph(glyph: .beatmaniaKey1, source: "Key 1 (White)", dest: "Diatonic Degree 1 (C)", amount: "100%")
+                            modulationRowWithGlyph(glyph: .beatmaniaKey2, source: "Key 2 (Black)", dest: "Chromatic Degree 2b (C#)", amount: "100%")
+                            modulationRowWithGlyph(glyph: .beatmaniaKey3, source: "Key 3 (White)", dest: "Diatonic Degree 2 (D)", amount: "100%")
+
+                        case .flightStick:
+                            modulationRowWithGlyph(glyph: .flightThrottle, source: "Throttle Lever", dest: "Master Dynamic Swell (CC11)", amount: "100%")
+                            modulationRowWithGlyph(glyph: .flightStickPitch, source: "Stick Pitch (Y)", dest: "Filter Cutoff Brightness", amount: "100%")
+                            modulationRowWithGlyph(glyph: .flightStickTwist, source: "Z-Twist Rudder", dest: "MPE Per-Note Pitch Bend", amount: "100%")
+                            modulationRowWithGlyph(glyph: .flightTrigger, source: "Dual-Stage Trigger", dest: "Chord Strum Strike", amount: "100%")
+
+                        case .racingWheel:
+                            modulationRowWithGlyph(glyph: .wheelSteering, source: "900° Wheel Angle", dest: "Continuous Harmonic Wheel Degree", amount: "100%")
+                            modulationRowWithGlyph(glyph: .pedalThrottle, source: "Gas Pedal", dest: "Chord Strum Velocity Dynamics", amount: "100%")
+                            modulationRowWithGlyph(glyph: .pedalBrake, source: "Brake Pedal", dest: "Palm Mute Damping & Decay", amount: "100%")
+                            modulationRowWithGlyph(glyph: .wheelPaddleL, source: "Left Paddle Shifter", dest: "Octave Down (-1)", amount: "Step")
+                            modulationRowWithGlyph(glyph: .wheelPaddleR, source: "Right Paddle Shifter", dest: "Octave Up (+1)", amount: "Step")
+
+                        default:
+                            modulationRowWithGlyph(glyph: .leftStick, source: "Left Stick Angle", dest: "Harmonic Wheel Sector", amount: "100%")
+                            modulationRowWithGlyph(glyph: .leftStick, source: "Left Stick Radius", dest: "Harmonic Risk / Extensions", amount: "75%")
+                            modulationRowWithGlyph(glyph: .rightStick, source: "Right Stick Velocity", dest: "Strum Dynamics & Velocity", amount: "100%")
+                            modulationRowWithGlyph(glyph: .psL2, source: "Left Trigger (L2)", dest: "Palm Mute & Filter Decay", amount: "100%")
+                            modulationRowWithGlyph(glyph: .psR2, source: "Right Trigger (R2)", dest: "MPE Timbre Expression (CC74)", amount: "100%")
+                            modulationRowWithGlyph(glyph: .psTouchpad, source: "Touchpad Surface", dest: "2D Filter & Resonance Sweep", amount: "80%")
+                        }
                     }
                 }
             }
             .padding()
-            .frame(minWidth: 340)
+            .frame(minWidth: 360)
+        }
+    }
+
+    // MARK: - Standard Gamepad Visualizer Card
+    private var standardGamepadVisualizerCard: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 24)
+                .fill(Color.black.opacity(0.35))
+                .frame(height: 280)
+                .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.white.opacity(0.1), lineWidth: 1))
+
+            HStack(spacing: 40) {
+                // Left Stick & D-Pad
+                VStack(spacing: 16) {
+                    stickVisualizer(label: "Left Stick (Harmonic Wheel)", stick: state.leftStick)
+                    dpadVisualizer
+                }
+
+                // Center Gyro / IMU Status
+                VStack(spacing: 10) {
+                    Text("6-Axis IMU Motion")
+                        .font(.caption2.bold())
+                        .foregroundStyle(.secondary)
+                    Text("Pitch: \(String(format: "%.2f", state.gyroPitch))")
+                        .font(.caption.monospaced())
+                    Text("Roll: \(String(format: "%.2f", state.gyroRoll))")
+                        .font(.caption.monospaced())
+                    Text("Yaw: \(String(format: "%.2f", state.gyroYaw))")
+                        .font(.caption.monospaced())
+                }
+                .padding()
+                .background(Color.white.opacity(0.05))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                // Right Stick & Face Buttons
+                VStack(spacing: 16) {
+                    faceButtonsVisualizer
+                    stickVisualizer(label: "Right Stick (Strum)", stick: state.rightStick)
+                }
+            }
         }
     }
 
@@ -113,7 +213,7 @@ public struct MapWorkspaceView: View {
                     .stroke(Color.cyan.opacity(0.3), lineWidth: 1)
                     .frame(width: 70 * CGFloat(stick.deadzone), height: 70 * CGFloat(stick.deadzone))
                 Circle()
-                    .fill(Color.accentColor)
+                    .fill(Color(hex: iconPack.brandAccentHex))
                     .frame(width: 18, height: 18)
                     .offset(x: CGFloat(stick.x) * 26, y: -CGFloat(stick.y) * 26)
             }
@@ -122,33 +222,24 @@ public struct MapWorkspaceView: View {
 
     private var dpadVisualizer: some View {
         VStack(spacing: 2) {
-            Circle().fill(state.dpadUp ? Color.green : Color.white.opacity(0.2)).frame(width: 8, height: 8)
-            HStack(spacing: 8) {
-                Circle().fill(state.dpadLeft ? Color.green : Color.white.opacity(0.2)).frame(width: 8, height: 8)
-                Circle().fill(state.dpadRight ? Color.green : Color.white.opacity(0.2)).frame(width: 8, height: 8)
+            ControllerGlyphView(key: .dpadUp, iconPack: iconPack, isPressed: state.dpadUp, size: .mini)
+            HStack(spacing: 6) {
+                ControllerGlyphView(key: .dpadLeft, iconPack: iconPack, isPressed: state.dpadLeft, size: .mini)
+                ControllerGlyphView(key: .dpadRight, iconPack: iconPack, isPressed: state.dpadRight, size: .mini)
             }
-            Circle().fill(state.dpadDown ? Color.green : Color.white.opacity(0.2)).frame(width: 8, height: 8)
+            ControllerGlyphView(key: .dpadDown, iconPack: iconPack, isPressed: state.dpadDown, size: .mini)
         }
     }
 
     private var faceButtonsVisualizer: some View {
         VStack(spacing: 2) {
-            buttonIndicator(label: "△", isPressed: state.buttonY)
-            HStack(spacing: 12) {
-                buttonIndicator(label: "□", isPressed: state.buttonX)
-                buttonIndicator(label: "○", isPressed: state.buttonB)
+            ControllerGlyphView(key: .psTriangle, iconPack: iconPack, isPressed: state.buttonY, size: .regular)
+            HStack(spacing: 10) {
+                ControllerGlyphView(key: .psSquare, iconPack: iconPack, isPressed: state.buttonX, size: .regular)
+                ControllerGlyphView(key: .psCircle, iconPack: iconPack, isPressed: state.buttonB, size: .regular)
             }
-            buttonIndicator(label: "✕", isPressed: state.buttonA)
+            ControllerGlyphView(key: .psCross, iconPack: iconPack, isPressed: state.buttonA, size: .regular)
         }
-    }
-
-    private func buttonIndicator(label: String, isPressed: Bool) -> some View {
-        Text(label)
-            .font(.caption.bold())
-            .frame(width: 22, height: 22)
-            .background(isPressed ? Color.green : Color.white.opacity(0.15))
-            .foregroundStyle(isPressed ? Color.black : Color.white)
-            .clipShape(Circle())
     }
 
     private func triggerGauge(label: String, value: Double) -> some View {
@@ -157,22 +248,24 @@ public struct MapWorkspaceView: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             ProgressView(value: value, total: 1.0)
-                .tint(.accentColor)
+                .tint(Color(hex: iconPack.brandAccentHex))
         }
         .padding(10)
-        .background(Material.ultraThinMaterial)
+        .background(Color.black.opacity(0.2))
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    private func modulationRow(source: String, dest: String, amount: String) -> some View {
-        HStack {
+    private func modulationRowWithGlyph(glyph: GlyphKey, source: String, dest: String, amount: String) -> some View {
+        HStack(spacing: 12) {
+            ControllerGlyphView(key: glyph, iconPack: iconPack, isPressed: false, size: .regular)
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(source)
                     .font(.subheadline)
                     .fontWeight(.semibold)
                 Text("→ \(dest)")
                     .font(.caption)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(Color(hex: iconPack.brandAccentHex))
             }
             Spacer()
             Text(amount)
@@ -183,7 +276,7 @@ public struct MapWorkspaceView: View {
                 .clipShape(Capsule())
         }
         .padding(10)
-        .background(Material.ultraThinMaterial)
+        .background(Color.black.opacity(0.25))
         .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 }

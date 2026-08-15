@@ -18,7 +18,7 @@ public struct LibraryWorkspaceView: View {
                         .font(.headline)
 
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 180))], spacing: 12) {
-                        ForEach(SynthPreset.allPresets) { preset in
+                        ForEach(SynthPreset.allPresets, id: \.id) { preset in
                             PresetCard(
                                 preset: preset,
                                 isSelected: selectedPreset.id == preset.id,

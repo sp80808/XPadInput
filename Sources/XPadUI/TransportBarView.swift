@@ -139,20 +139,34 @@ public struct TransportBarView: View {
 
             Divider().frame(height: 20)
 
-            // Controller Status Badge
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(controllerManager.isHardwareConnected ? Color.green : Color.orange)
-                    .frame(width: 8, height: 8)
-                Image(systemName: "gamecontroller")
-                Text(controllerManager.controllerKind.rawValue)
-                    .font(.caption)
-                    .lineLimit(1)
+            // Controller Status & Profile Selector Badge
+            Menu {
+                ForEach(ControllerCategory.allCases, id: \.self) { cat in
+                    Section(header: Text(cat.rawValue)) {
+                        ForEach(ControllerKind.allCases.filter { $0.category == cat }) { kind in
+                            Button(kind.rawValue) {
+                                controllerManager.selectControllerKind(kind)
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(controllerManager.isHardwareConnected ? Color.green : Color.orange)
+                        .frame(width: 8, height: 8)
+                    Image(systemName: "gamecontroller.fill")
+                        .foregroundStyle(Color(hex: controllerManager.controllerKind.iconPack.brandAccentHex))
+                    Text(controllerManager.controllerKind.rawValue)
+                        .font(.caption)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.white.opacity(0.1))
+                .clipShape(Capsule())
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Material.ultraThinMaterial)
-            .clipShape(Capsule())
+            .menuStyle(.borderlessButton)
 
             // MPE Mode Toggle
             Toggle(isOn: $isMPEEnabled) {

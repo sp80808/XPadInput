@@ -106,13 +106,25 @@ enum ControllerType: String, Sendable {
     case dualShock4 = "DualShock 4"
     case xbox = "Xbox"
     case switchPro = "Switch Pro"
+    case guitarHero = "Guitar Hero"
+    case soundVoltex = "Sound Voltex"
+    case beatmaniaIIDX = "Beatmania IIDX"
+    case taikoDrum = "Taiko Drum"
+    case flightStick = "Flight HOTAS"
+    case racingWheel = "Racing Wheel"
+    case fightStick = "Arcade Fight Stick"
     case generic = "Gamepad"
     
     var sfSymbol: String {
         switch self {
-        case .dualSense, .dualShock4: return "gamecontroller.fill"
-        case .xbox: return "gamecontroller.fill"
-        case .switchPro: return "gamecontroller.fill"
+        case .dualSense, .dualShock4, .xbox, .switchPro: return "gamecontroller.fill"
+        case .guitarHero: return "guitars.fill"
+        case .soundVoltex: return "dial.low.fill"
+        case .beatmaniaIIDX: return "opticaldisc.fill"
+        case .taikoDrum: return "circle.circle.fill"
+        case .flightStick: return "airplane"
+        case .racingWheel: return "steeringwheel"
+        case .fightStick: return "circle.grid.3x3.fill"
         case .generic: return "gamecontroller"
         }
     }

@@ -312,7 +312,40 @@ public struct PlayWorkspaceView: View {
     }
 
     // MARK: - Gamepad State Processing
+    private let nicheEngine = NicheControllerMappingEngine()
+
     private func handleGamepadState(_ state: GamepadState) {
+        // Check for niche / rhythm controller processing
+        switch controllerManager.controllerKind {
+        case .guitarHero:
+            let actions = nicheEngine.processGuitarHero(state: state, scale: currentScale)
+            dispatchNicheActions(actions)
+            return
+        case .soundVoltex:
+            let actions = nicheEngine.processSoundVoltex(state: state, scale: currentScale)
+            dispatchNicheActions(actions)
+            return
+        case .beatmaniaIIDX:
+            let actions = nicheEngine.processBeatmania(state: state, scale: currentScale)
+            dispatchNicheActions(actions)
+            return
+        case .taikoDrum:
+            let actions = nicheEngine.processTaikoDrum(state: state, scale: currentScale)
+            dispatchNicheActions(actions)
+            return
+        case .flightStick:
+            let actions = nicheEngine.processFlightHOTAS(state: state, scale: currentScale)
+            dispatchNicheActions(actions)
+            return
+        case .racingWheel:
+            let actions = nicheEngine.processRacingWheel(state: state, scale: currentScale)
+            dispatchNicheActions(actions)
+            return
+        default:
+            break
+        }
+
+        // Standard Gamepad processing
         // 1. Left Stick selects chord from wheel
         if state.leftStick.isActive {
             if let sector = wheel.sector(forAngle: state.leftStick.angle, layer: activeWheelLayer) {
@@ -344,6 +377,42 @@ public struct PlayWorkspaceView: View {
             lastStrumDirection = strum.direction
             strumVelocityDisplay = strum.velocity
             playStrummedNotes(strum.notes)
+        }
+    }
+
+    private func dispatchNicheActions(_ actions: [NicheMusicalAction]) {
+        for action in actions {
+            switch action {
+            case .chordStrum(let notes, let velocity, let direction):
+                lastStrumDirection = direction
+                strumVelocityDisplay = velocity
+                let strummedNotes = notes.enumerated().map { index, note in
+                    StrummedNote(note: note, velocity: velocity, delayMs: Double(index) * 15.0, stringIndex: index)
+                }
+                playStrummedNotes(strummedNotes)
+            case .singleNoteOn(let note, let velocity):
+                AudioEngine.shared.noteOn(note: note, velocity: velocity)
+                MIDIManager.shared.sendNoteOn(port: .melody, channel: 0, note: note, velocity: velocity)
+            case .singleNoteOff(let note):
+                AudioEngine.shared.noteOff(note: note)
+                MIDIManager.shared.sendNoteOff(port: .melody, channel: 0, note: note)
+            case .pitchBend(let cents):
+                MIDIManager.shared.sendPitchBend(port: .main, channel: 0, semitoneOffset: cents / 100.0)
+            case .timbreCutoff(let value):
+                MIDIManager.shared.sendCC(port: .mpe, channel: 0, controller: 74, value: UInt8(value * 127))
+            case .masterDynamic(let value):
+                MIDIManager.shared.sendCC(port: .main, channel: 0, controller: 11, value: UInt8(value * 127))
+            case .drumHit(let type, let velocity):
+                let drumNote: UInt8 = (type == .kick) ? 36 : 38
+                AudioEngine.shared.noteOn(note: drumNote, velocity: velocity)
+                MIDIManager.shared.sendNoteOn(port: .drums, channel: 9, note: drumNote, velocity: velocity)
+            case .arpeggioTrigger(_, let root):
+                let chord = Chord(root: root.pitchClass, quality: .major7)
+                let strummedNotes = chord.voicedNotes().enumerated().map { index, note in
+                    StrummedNote(note: note, velocity: 110, delayMs: Double(index) * 40.0, stringIndex: index)
+                }
+                playStrummedNotes(strummedNotes)
+            }
         }
     }
 

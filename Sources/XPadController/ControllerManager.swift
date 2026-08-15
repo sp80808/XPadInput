@@ -6,8 +6,8 @@ import XPadCore
 public final class ControllerManager: ObservableObject {
     @Published public var connectedControllers: [GCController] = []
     @Published public var activeController: GCController?
-    @Published public var controllerKind: ControllerKind = .simulated
-    @Published public var capabilityProfile: ControllerCapabilityProfile = .generic
+    @Published public var controllerKind: ControllerKind = .dualSense
+    @Published public var capabilityProfile: ControllerCapabilityProfile = .dualSense
     @Published public var currentState: GamepadState = GamepadState()
     @Published public var isHardwareConnected: Bool = false
     
@@ -15,8 +15,6 @@ public final class ControllerManager: ObservableObject {
     public var onStateChanged: ((GamepadState) -> Void)?
     public var onButtonDown: ((String) -> Void)?
     public var onButtonUp: ((String) -> Void)?
-
-    private var pollTimer: Timer?
 
     public init() {
         setupDiscovery()
@@ -43,8 +41,7 @@ public final class ControllerManager: ObservableObject {
             activate(controller: first)
         } else {
             // Simulated fallback active
-            self.controllerKind = .simulated
-            self.capabilityProfile = .dualSense
+            selectControllerKind(.dualSense)
             self.isHardwareConnected = false
         }
     }
@@ -65,9 +62,43 @@ public final class ControllerManager: ObservableObject {
                 activate(controller: next)
             } else {
                 activeController = nil
-                controllerKind = .simulated
+                selectControllerKind(.dualSense)
                 isHardwareConnected = false
             }
+        }
+    }
+
+    public func selectControllerKind(_ kind: ControllerKind) {
+        self.controllerKind = kind
+        switch kind {
+        case .dualSense, .dualShock4:
+            self.capabilityProfile = .dualSense
+        case .xbox:
+            self.capabilityProfile = .xbox
+        case .switchPro:
+            self.capabilityProfile = .switchPro
+        case .steamDeck:
+            self.capabilityProfile = .steamDeck
+        case .guitarHero:
+            self.capabilityProfile = .guitarHero
+        case .soundVoltex:
+            self.capabilityProfile = .soundVoltex
+        case .beatmaniaIIDX:
+            self.capabilityProfile = .beatmaniaIIDX
+        case .popnMusic:
+            self.capabilityProfile = .popnMusic
+        case .taikoDrum:
+            self.capabilityProfile = .taikoDrum
+        case .danceMat:
+            self.capabilityProfile = .danceMat
+        case .flightStick:
+            self.capabilityProfile = .flightStick
+        case .racingWheel:
+            self.capabilityProfile = .racingWheel
+        case .fightStick:
+            self.capabilityProfile = .fightStick
+        case .generic, .simulated:
+            self.capabilityProfile = .generic
         }
     }
 
@@ -75,23 +106,41 @@ public final class ControllerManager: ObservableObject {
         self.activeController = controller
         self.isHardwareConnected = true
 
-        // Identify kind
-        let vendor = controller.vendorName ?? ""
-        if vendor.localizedCaseInsensitiveContains("dualsense") || vendor.localizedCaseInsensitiveContains("ps5") {
-            self.controllerKind = .dualSense
-            self.capabilityProfile = .dualSense
-        } else if vendor.localizedCaseInsensitiveContains("dualshock") || vendor.localizedCaseInsensitiveContains("ps4") {
-            self.controllerKind = .dualShock4
-            self.capabilityProfile = .dualSense
-        } else if vendor.localizedCaseInsensitiveContains("xbox") {
-            self.controllerKind = .xbox
-            self.capabilityProfile = .xbox
-        } else if vendor.localizedCaseInsensitiveContains("switch") || vendor.localizedCaseInsensitiveContains("pro controller") {
-            self.controllerKind = .switchPro
-            self.capabilityProfile = .switchPro
+        // Identify kind with extended rhythm & niche heuristics
+        let vendor = (controller.vendorName ?? "").lowercased()
+        let product = (controller.productCategory ?? "").lowercased()
+        let combined = "\(vendor) \(product)"
+
+        if combined.contains("guitar") || combined.contains("fret") || combined.contains("rock band") || combined.contains("hero") {
+            selectControllerKind(.guitarHero)
+        } else if combined.contains("sdvx") || combined.contains("voltex") || combined.contains("yuancon") || combined.contains("faucetwo") {
+            selectControllerKind(.soundVoltex)
+        } else if combined.contains("beatmania") || combined.contains("iidx") || combined.contains("djdao") || combined.contains("phoenixwan") {
+            selectControllerKind(.beatmaniaIIDX)
+        } else if combined.contains("popn") || combined.contains("pop'n") {
+            selectControllerKind(.popnMusic)
+        } else if combined.contains("taiko") || combined.contains("tatacon") {
+            selectControllerKind(.taikoDrum)
+        } else if combined.contains("dance") || combined.contains("ddr") || combined.contains("stepmania") {
+            selectControllerKind(.danceMat)
+        } else if combined.contains("hotas") || combined.contains("flight") || combined.contains("t.16000m") || combined.contains("warthog") || combined.contains("gladiator") {
+            selectControllerKind(.flightStick)
+        } else if combined.contains("wheel") || combined.contains("g29") || combined.contains("g923") || combined.contains("fanatec") || combined.contains("thrustmaster t") {
+            selectControllerKind(.racingWheel)
+        } else if combined.contains("arcade") || combined.contains("fight") || combined.contains("hitbox") || combined.contains("snackbox") || combined.contains("qanba") {
+            selectControllerKind(.fightStick)
+        } else if combined.contains("dualsense") || combined.contains("ps5") {
+            selectControllerKind(.dualSense)
+        } else if combined.contains("dualshock") || combined.contains("ps4") {
+            selectControllerKind(.dualShock4)
+        } else if combined.contains("xbox") {
+            selectControllerKind(.xbox)
+        } else if combined.contains("switch") || combined.contains("pro controller") {
+            selectControllerKind(.switchPro)
+        } else if combined.contains("steam") {
+            selectControllerKind(.steamDeck)
         } else {
-            self.controllerKind = .generic
-            self.capabilityProfile = .generic
+            selectControllerKind(.generic)
         }
 
         // Attach GameController handlers
@@ -109,7 +158,6 @@ public final class ControllerManager: ObservableObject {
             motion.valueChangedHandler = { [weak self] motion in
                 guard let self = self else { return }
                 let q = motion.attitude
-                // Convert quaternion (x, y, z, w) to Euler angles in radians
                 let sinp = 2.0 * (q.w * q.y - q.z * q.x)
                 let pitch = abs(sinp) >= 1.0 ? copysign(.pi / 2.0, sinp) : asin(sinp)
                 let roll = atan2(2.0 * (q.w * q.x + q.y * q.z), 1.0 - 2.0 * (q.x * q.x + q.y * q.y))
@@ -126,7 +174,7 @@ public final class ControllerManager: ObservableObject {
     }
 
     private func updateFromExtendedGamepad(_ gamepad: GCExtendedGamepad) {
-        var state = GamepadState()
+        var state = self.currentState
 
         state.leftStick = StickCoordinates(
             x: Double(gamepad.leftThumbstick.xAxis.value),
@@ -154,6 +202,16 @@ public final class ControllerManager: ObservableObject {
 
         state.leftStickClick = gamepad.leftThumbstickButton?.isPressed ?? false
         state.rightStickClick = gamepad.rightThumbstickButton?.isPressed ?? false
+
+        // Map extended trigger & stick values to rhythm / niche fields
+        state.whammy = state.rightTrigger
+        state.throttle = state.leftTrigger
+        state.encoderL = state.leftStick.x
+        state.encoderR = state.rightStick.x
+        state.rudderTwist = state.rightStick.x
+        state.wheelAngle = state.leftStick.x
+        state.pedalGas = state.rightTrigger
+        state.pedalBrake = state.leftTrigger
 
         self.currentState = state
         self.onStateChanged?(state)
