@@ -84,22 +84,9 @@ struct ChordDisplayView: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 6) {
-                Picker("Instrument", selection: Binding(
-                    get: { appState.instrumentProfile.family },
-                    set: { family in
-                        appState.setInstrument(InstrumentProfile.profile(for: family))
-                    }
-                )) {
-                    ForEach(InstrumentProfile.playableProfiles, id: \.family) { profile in
-                        Text(profile.family.shortName).tag(profile.family)
-                    }
-                }
-                .pickerStyle(.menu)
-                .frame(width: 110)
+                InstrumentSelectorView(minWidth: 104)
 
-                Text(appState.instrumentStatusLabel)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundColor(appState.activeTechniqueLabel == nil ? XTheme.textSecondary : XTheme.accent)
+                ActiveTechniqueStatusView()
 
                 Text("\(appState.currentKey.displayName) \(appState.currentScale.name)")
                     .font(.system(size: 12, weight: .medium))
