@@ -66,7 +66,8 @@ final class InputPipelineTests: XCTestCase {
         let rotating = tracker.update(x: -1, y: 0, timestamp: 1.2)
 
         XCTAssertEqual(leavingCentre.angularVelocity, 0)
-        XCTAssertEqual(rotating.angularVelocity, Float.pi / 0.1, accuracy: 0.001)
+        // (0, 1) → (-1, 0) is a quarter turn (π/2) over 0.1 seconds.
+        XCTAssertEqual(rotating.angularVelocity, (Float.pi / 2) / 0.1, accuracy: 0.001)
     }
 
     func testLinearVelocityTrackerRejectsInvalidTimeWithoutLosingHistory() {
