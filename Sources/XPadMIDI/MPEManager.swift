@@ -13,6 +13,7 @@ public struct MPEVoice: Equatable, Sendable {
     public var technique: MusicalTechnique
     public var legatoSource: UInt8?
     var currentPitchBendValue: UInt16
+    var currentMIDI2PitchBendValue: UInt32
 
     public init(
         note: UInt8,
@@ -35,6 +36,7 @@ public struct MPEVoice: Equatable, Sendable {
         self.technique = technique
         self.legatoSource = legatoSource
         self.currentPitchBendValue = 8192
+        self.currentMIDI2PitchBendValue = MIDI2UMPEncoder.pitchBendCentre
     }
 }
 
@@ -195,23 +197,36 @@ public final class MPEManager: @unchecked Sendable {
         guard var voice = activeVoices[note] else { return }
         let clamped = max(
             -configuredBendRangeSemitones,
-            min(configuredBendRangeSemitones, semitones)
+            min(configuredBendRangeSemitones, semitones.isFinite ? semitones : 0)
         )
         let bendValue = MIDIEngine.pitchBendValue(
             semitoneOffset: clamped,
             bendRangeSemitones: configuredBendRangeSemitones
         )
-        voice.currentPitchBend = clamped
-        guard voice.currentPitchBendValue != bendValue else {
-            activeVoices[note] = voice
-            return
+        let midi2BendValue = MIDI2UMPEncoder.pitchBend32(
+            semitoneOffset: clamped,
+            bendRangeSemitones: configuredBendRangeSemitones
+        )
+
+        let wireValueUnchanged: Bool
+        switch midiEngine.transportProtocol {
+        case .midi1:
+            wireValueUnchanged = voice.currentPitchBendValue == bendValue
+        case .midi2:
+            wireValueUnchanged = voice.currentMIDI2PitchBendValue == midi2BendValue
         }
+
+        voice.currentPitchBend = clamped
         voice.currentPitchBendValue = bendValue
+        voice.currentMIDI2PitchBendValue = midi2BendValue
         activeVoices[note] = voice
+        guard !wireValueUnchanged else { return }
+
         midiEngine.sendPitchBend(
             port: .mpe,
             channel: voice.channel,
-            value: bendValue
+            semitoneOffset: clamped,
+            bendRangeSemitones: configuredBendRangeSemitones
         )
     }
 
