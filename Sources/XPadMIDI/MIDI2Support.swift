@@ -27,12 +27,13 @@ public enum MIDITransportProtocol: String, CaseIterable, Identifiable, Sendable 
     }
 }
 
-/// Translates XPI's existing channel-message semantics into native MIDI 2.0
-/// Channel Voice UMP. This is deliberately a transport adapter: the higher
-/// layers keep working in musical units and can gain native high-resolution
-/// values incrementally without duplicating the technique/MPE engine.
+/// Translates XPI channel-message semantics into native MIDI 2.0 Channel Voice
+/// UMP. Legacy byte-shaped events remain supported, while normalized/high-
+/// resolution helpers allow expressive values to bypass unnecessary 7/14-bit
+/// quantization when the selected transport is MIDI 2.0.
 enum MIDI2UMPEncoder {
     static let group: UInt8 = 0
+    static let pitchBendCentre: UInt32 = 0x8000_0000
 
     static func message(from bytes: [UInt8]) -> MIDIMessage_64? {
         guard bytes.count == 2 || bytes.count == 3 else { return nil }
@@ -105,6 +106,58 @@ enum MIDI2UMPEncoder {
         }
     }
 
+    static func pitchBendMessage(
+        channel: UInt8,
+        semitoneOffset: Double,
+        bendRangeSemitones: Double
+    ) -> MIDIMessage_64 {
+        MIDI2PitchBend(
+            group,
+            min(15, channel),
+            pitchBend32(
+                semitoneOffset: semitoneOffset,
+                bendRangeSemitones: bendRangeSemitones
+            )
+        )
+    }
+
+    static func channelPressureMessage(
+        channel: UInt8,
+        normalizedPressure: Double
+    ) -> MIDIMessage_64 {
+        MIDI2ChannelPressure(
+            group,
+            min(15, channel),
+            scaleNormalizedTo32(normalizedPressure)
+        )
+    }
+
+    static func polyPressureMessage(
+        channel: UInt8,
+        note: UInt8,
+        normalizedPressure: Double
+    ) -> MIDIMessage_64 {
+        MIDI2PolyPressure(
+            group,
+            min(15, channel),
+            min(127, note),
+            scaleNormalizedTo32(normalizedPressure)
+        )
+    }
+
+    static func controlChangeMessage(
+        channel: UInt8,
+        controller: UInt8,
+        normalizedValue: Double
+    ) -> MIDIMessage_64 {
+        MIDI2ControlChange(
+            group,
+            min(15, channel),
+            min(127, controller),
+            scaleNormalizedTo32(normalizedValue)
+        )
+    }
+
     /// Full-range conversion that preserves 0 and 127 exactly.
     static func scale7To16(_ value: UInt8) -> UInt16 {
         let clamped = UInt32(min(127, value))
@@ -117,20 +170,62 @@ enum MIDI2UMPEncoder {
         return UInt32((clamped * UInt64(UInt32.max) + 63) / 127)
     }
 
+    static func scaleNormalizedTo16(_ value: Double) -> UInt16 {
+        guard value.isFinite else { return 0 }
+        let normalized = min(1.0, max(0.0, value))
+        return UInt16((normalized * Double(UInt16.max)).rounded())
+    }
+
+    static func scaleNormalizedTo32(_ value: Double) -> UInt32 {
+        guard value.isFinite else { return 0 }
+        let normalized = min(1.0, max(0.0, value))
+        return UInt32((normalized * Double(UInt32.max)).rounded())
+    }
+
+    /// Maps a musical bend directly into MIDI 2's 32-bit pitch-bend field.
+    /// This deliberately avoids a 14-bit intermediate so subtle vibrato/slide
+    /// motion can remain distinct on MIDI 2 destinations.
+    static func pitchBend32(
+        semitoneOffset: Double,
+        bendRangeSemitones: Double
+    ) -> UInt32 {
+        guard semitoneOffset.isFinite,
+              bendRangeSemitones.isFinite,
+              bendRangeSemitones > 0 else {
+            return pitchBendCentre
+        }
+
+        let normalized = min(1.0, max(-1.0, semitoneOffset / bendRangeSemitones))
+        if normalized == 0 { return pitchBendCentre }
+
+        if normalized < 0 {
+            let magnitude = UInt64(
+                (-normalized * Double(UInt64(pitchBendCentre))).rounded()
+            )
+            return UInt32(UInt64(pitchBendCentre) - magnitude)
+        }
+
+        let positiveRange = UInt64(UInt32.max) - UInt64(pitchBendCentre)
+        let magnitude = UInt64((normalized * Double(positiveRange)).rounded())
+        return UInt32(UInt64(pitchBendCentre) + magnitude)
+    }
+
     /// Maps MIDI 1's asymmetric 14-bit pitch-bend range to MIDI 2's 32-bit
     /// range while preserving the musically critical centre point exactly.
     static func scale14BitPitchBendTo32(_ value: UInt16) -> UInt32 {
         let clamped = min(UInt16(16_383), value)
-        if clamped == 8_192 { return 0x8000_0000 }
+        if clamped == 8_192 { return pitchBendCentre }
 
         if clamped < 8_192 {
             return UInt32(
-                UInt64(clamped) * UInt64(0x8000_0000) / UInt64(8_192)
+                UInt64(clamped) * UInt64(pitchBendCentre) / UInt64(8_192)
             )
         }
 
-        return 0x8000_0000 + UInt32(
-            UInt64(clamped - 8_192) * UInt64(0x7FFF_FFFF) / UInt64(8_191)
+        return pitchBendCentre + UInt32(
+            UInt64(clamped - 8_192)
+                * UInt64(UInt32.max - pitchBendCentre)
+                / UInt64(8_191)
         )
     }
 }
