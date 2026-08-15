@@ -12,6 +12,7 @@ public struct MPEVoice: Equatable, Sendable {
     public var attackVelocity: UInt8
     public var technique: MusicalTechnique
     public var legatoSource: UInt8?
+    var currentPitchBendValue: UInt16
 
     public init(
         note: UInt8,
@@ -22,7 +23,8 @@ public struct MPEVoice: Equatable, Sendable {
         currentTimbre: UInt8 = 64,
         attackVelocity: UInt8 = 80,
         technique: MusicalTechnique = .normal,
-        legatoSource: UInt8? = nil
+        legatoSource: UInt8? = nil,
+        currentPitchBendValue: UInt16 = 8192
     ) {
         self.note = note
         self.channel = channel
@@ -33,6 +35,7 @@ public struct MPEVoice: Equatable, Sendable {
         self.attackVelocity = min(127, attackVelocity)
         self.technique = technique
         self.legatoSource = legatoSource
+        self.currentPitchBendValue = min(16_383, currentPitchBendValue)
     }
 }
 
@@ -137,19 +140,24 @@ public final class MPEManager: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
-        let channel = memberChannels[nextChannelIndex % memberChannels.count]
-        nextChannelIndex = (nextChannelIndex + 1) % memberChannels.count
+        let channel: UInt8
         var channelAlreadyReset = false
 
         if let existing = activeVoices.removeValue(forKey: note) {
+            // A retrigger is the same logical pitch voice. Reusing its member
+            // channel avoids stealing an unrelated note when all 14 are busy.
+            channel = existing.channel
             release(existing)
-            channelAlreadyReset = existing.channel == channel
-        }
-
-        if let occupied = activeVoices.first(where: { $0.value.channel == channel }) {
-            activeVoices.removeValue(forKey: occupied.key)
-            release(occupied.value)
             channelAlreadyReset = true
+        } else {
+            channel = memberChannels[nextChannelIndex % memberChannels.count]
+            nextChannelIndex = (nextChannelIndex + 1) % memberChannels.count
+
+            if let occupied = activeVoices.first(where: { $0.value.channel == channel }) {
+                activeVoices.removeValue(forKey: occupied.key)
+                release(occupied.value)
+                channelAlreadyReset = true
+            }
         }
 
         if !channelAlreadyReset {
@@ -190,13 +198,21 @@ public final class MPEManager: @unchecked Sendable {
             -configuredBendRangeSemitones,
             min(configuredBendRangeSemitones, semitones)
         )
+        let bendValue = MIDIEngine.pitchBendValue(
+            semitoneOffset: clamped,
+            bendRangeSemitones: configuredBendRangeSemitones
+        )
         voice.currentPitchBend = clamped
+        guard voice.currentPitchBendValue != bendValue else {
+            activeVoices[note] = voice
+            return
+        }
+        voice.currentPitchBendValue = bendValue
         activeVoices[note] = voice
         midiEngine.sendPitchBend(
             port: .mpe,
             channel: voice.channel,
-            semitoneOffset: clamped,
-            bendRangeSemitones: configuredBendRangeSemitones
+            value: bendValue
         )
     }
 
@@ -207,6 +223,7 @@ public final class MPEManager: @unchecked Sendable {
 
         guard var voice = activeVoices[note] else { return }
         let clamped = min(UInt8(127), pressure)
+        guard voice.currentPressure != clamped else { return }
         voice.currentPressure = clamped
         activeVoices[note] = voice
         midiEngine.sendChannelPressure(
@@ -222,6 +239,7 @@ public final class MPEManager: @unchecked Sendable {
 
         guard var voice = activeVoices[note] else { return }
         let clamped = min(UInt8(127), value)
+        guard voice.currentTimbre != clamped else { return }
         voice.currentTimbre = clamped
         activeVoices[note] = voice
         midiEngine.sendTimbreCC74(

@@ -5,11 +5,11 @@ import XPadController
 /// Live interactive controller visualiser showing all inputs and their musical assignments.
 struct ControllerVisualizerView: View {
     @Environment(AppState.self) private var appState
+    @State private var displayState = ControllerDisplayState()
     
     var body: some View {
-        let state = appState.controllerManager.controllerState
         let isConnected = appState.controllerManager.isConnected
-        let hasLiveInput = isConnected || state.hasVisiblePerformanceInput
+        let hasLiveInput = isConnected || displayState.input.hasVisiblePerformanceInput
         
         VStack(spacing: 18) {
             // Header
@@ -45,20 +45,54 @@ struct ControllerVisualizerView: View {
             }
 
             ControllerPerformanceHUD(
-                state: state,
+                state: displayState.input,
                 controllerKind: appState.controllerManager.controllerKind,
                 isConnected: isConnected,
                 labels: appState.hudLabels,
-                frame: hasLiveInput ? appState.lastFrame : nil,
+                frame: hasLiveInput ? displayState.performanceFrame : nil,
                 instrument: appState.instrumentProfile,
                 duoMode: appState.duoPerformanceMode,
                 currentChord: appState.currentChord,
-                lastVelocity: hasLiveInput ? appState.lastVelocity : 0,
-                lastStrumDirection: hasLiveInput ? appState.lastStrumDirection : .none
+                lastVelocity: hasLiveInput ? displayState.lastVelocity : 0,
+                lastStrumDirection: hasLiveInput ? displayState.lastStrumDirection : .none
             )
         }
         .padding(18)
         .xCard(isActive: isConnected)
+        .task {
+            await sampleDisplayState()
+        }
+    }
+
+    /// UI sampling is deliberately independent of the audio/MIDI callback.
+    /// A 60 Hz snapshot is immediate to the eye while coalescing faster hardware
+    /// callbacks into one bounded SwiftUI update per display frame.
+    @MainActor
+    private func sampleDisplayState() async {
+        while !Task.isCancelled {
+            displayState = ControllerDisplayState(appState: appState)
+            do {
+                try await Task.sleep(for: .nanoseconds(16_666_667))
+            } catch {
+                break
+            }
+        }
+    }
+}
+
+private struct ControllerDisplayState {
+    var input: ControllerHUDInputState = .idle
+    var performanceFrame: PerformanceFrame?
+    var lastVelocity: UInt8 = 0
+    var lastStrumDirection: StrumDirection = .none
+
+    init() {}
+
+    init(appState: AppState) {
+        input = ControllerHUDInputState(appState.controllerManager.controllerState)
+        performanceFrame = appState.lastFrame
+        lastVelocity = appState.lastVelocity
+        lastStrumDirection = appState.lastStrumDirection
     }
 }
 

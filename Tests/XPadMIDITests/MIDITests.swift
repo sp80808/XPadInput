@@ -158,6 +158,37 @@ final class MIDITests: XCTestCase {
         })
     }
 
+    func testMessageLogRingKeepsNewestMessagesInDeliveryOrder() {
+        let midi = MIDIEngine()
+        midi.clearMessageLog()
+
+        for index in 0..<2_052 {
+            midi.sendCC(
+                port: .main,
+                channel: 0,
+                controller: UInt8((index >> 7) & 0x7F),
+                value: UInt8(index & 0x7F)
+            )
+        }
+
+        let messages = midi.sentMessages
+        XCTAssertEqual(messages.count, 2_048)
+        XCTAssertEqual(messages.first?.bytes, [0xB0, 0, 4])
+        XCTAssertEqual(messages.last?.bytes, [0xB0, 16, 3])
+    }
+
+    func testDisposalWithoutLiveEndpointsSkipsSyntheticPanicTraffic() {
+        let midi = MIDIEngine()
+        midi.sendNoteOn(port: .mpe, channel: 1, note: 60, velocity: 100)
+        midi.clearMessageLog()
+
+        midi.prepareForVirtualSourceDisposal()
+
+        XCTAssertTrue(midi.sentMessages.isEmpty)
+        XCTAssertEqual(midi.activeNoteCount, 0)
+        XCTAssertTrue(midi.lastSentNotes.isEmpty)
+    }
+
     // MARK: - MPEManager Tests
     func testMPEManagerMultiVoiceAllocation() {
         let mpe = MPEManager(midiManager: MIDIManager.shared)
@@ -231,6 +262,63 @@ final class MIDITests: XCTestCase {
             [0xB1, 74, 64],
             [0x91, 74, 101]
         ])
+    }
+
+    func testRepeatedMPEAttackReusesChannelWithoutStealingPolyphony() {
+        let midi = MIDIEngine()
+        let mpe = MPEManager(midiEngine: midi)
+        for note: UInt8 in 60..<74 {
+            mpe.noteOn(note: note, velocity: 90)
+        }
+        let originalChannel = mpe.voice(for: 70)?.channel
+        XCTAssertEqual(mpe.activeVoiceCount, 14)
+
+        midi.clearMessageLog()
+        mpe.noteOn(note: 70, velocity: 105)
+
+        XCTAssertEqual(mpe.activeVoiceCount, 14)
+        XCTAssertEqual(mpe.voice(for: 70)?.channel, originalChannel)
+        XCTAssertNotNil(mpe.voice(for: 60))
+        XCTAssertEqual(midi.sentMessages.map(\.bytes), [
+            [0x8B, 70, 0],
+            [0xEB, 0, 0x40],
+            [0xDB, 0],
+            [0xBB, 74, 64],
+            [0x9B, 70, 105]
+        ])
+    }
+
+    func testMPEExpressionCoalescesUnchangedWireValues() {
+        let midi = MIDIEngine()
+        let mpe = MPEManager(midiEngine: midi, bendRangeSemitones: 48)
+        mpe.noteOn(note: 60, velocity: 100)
+        midi.clearMessageLog()
+
+        // The mandatory neutral reset happened before Note On; matching first
+        // input frames do not need to repeat it.
+        mpe.setPitchBend(for: 60, semitones: 0)
+        mpe.setPressure(for: 60, pressure: 0)
+        mpe.setTimbre(for: 60, value: 64)
+        XCTAssertTrue(midi.sentMessages.isEmpty)
+
+        mpe.setPitchBend(for: 60, semitones: 1)
+        mpe.setPressure(for: 60, pressure: 80)
+        mpe.setTimbre(for: 60, value: 90)
+        XCTAssertEqual(midi.sentMessages.count, 3)
+
+        for _ in 0..<32 {
+            mpe.setPitchBend(for: 60, semitones: 1)
+            mpe.setPressure(for: 60, pressure: 80)
+            mpe.setTimbre(for: 60, value: 90)
+        }
+        // A sub-resolution bend change maps to the same MIDI 14-bit value.
+        XCTAssertEqual(
+            MIDIEngine.pitchBendValue(semitoneOffset: 1, bendRangeSemitones: 48),
+            MIDIEngine.pitchBendValue(semitoneOffset: 1.0001, bendRangeSemitones: 48)
+        )
+        mpe.setPitchBend(for: 60, semitones: 1.0001)
+
+        XCTAssertEqual(midi.sentMessages.count, 3)
     }
 
     func testMPEStopAllResetsAllocatorAndChannelState() {

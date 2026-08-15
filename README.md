@@ -132,29 +132,48 @@ swift run XPadTests
 
 ```
 XPadInput/
+├── Package.swift              # Swift Package Manager manifest
 ├── Sources/
-│   ├── XPadCore/        # Pure 12-TET theory primitives (PitchClass, Note, Scale, Chord)
-│   ├── XPadTheory/      # Harmonic wheel, voice leading, suggestions & progressions
-│   ├── XPadController/  # GCController abstraction, virtual strummer & gesture DSP
-│   ├── XPadMIDI/        # CoreMIDI virtual ports, MPE zone manager & SMF exporter
-│   ├── XPadAudio/       # PolyBLEP DSP synthesizer & factory presets
-│   ├── XPadSequencer/   # 960 PPQN tick clock, clips, tracks & scenes
-│   ├── XPadUI/          # Native SwiftUI 5-workspace desktop interface
-│   ├── XPadInput/       # Application main entrypoint
-│   └── XPadTests/       # Universal exhaustive test runner
-├── Tests/               # Unit and integration test suites
-├── .agents/skills/      # Specialized agent skills and workflow guides
-├── AGENTS.md            # Agent operating instructions and modular rules
-├── DESIGN.md            # Authoritative interaction, feedback, and ergonomic rules
-├── INSTRUMENT_TECHNIQUES.md # Semantic technique and instrument-profile contract
-├── MIDI_MPE_SPEC.md      # CoreMIDI, MPE zone, expression, and fallback contract
-├── SOUL.md              # Philosophical and artistic instrument manifesto
-├── ROADMAP.md           # 5-phase product development trajectory
-├── TECH_STACK.md        # Technical, mathematical & latency specifications
-└── README.md            # Project documentation and guide
+│   ├── XPadCore/              # Pure 12-TET theory primitives (PitchClass, Note, Scale, Chord)
+│   ├── XPadTheory/            # Harmonic wheel, voice leading, suggestions & progressions
+│   ├── XPadController/        # GCController abstraction, virtual strummer & gesture DSP
+│   ├── XPadMIDI/              # CoreMIDI virtual ports, MPE zone manager & SMF exporter
+│   ├── XPadAudio/             # PolyBLEP DSP synthesizer & factory presets
+│   ├── XPadSequencer/         # 960 PPQN tick clock, clips, tracks & scenes
+│   ├── XPadUI/                # Native SwiftUI 5-workspace desktop interface
+│   ├── XPadInput/             # Application main entrypoint
+│   └── XPadTests/             # Universal exhaustive test runner (executable target)
+├── Tests/
+│   ├── XPadCoreTests/         # Unit tests for theory primitives
+│   ├── XPadTheoryTests/       # Unit tests for harmony engine
+│   ├── XPadControllerTests/   # Unit tests for controller abstraction
+│   ├── XPadMIDITests/         # Unit tests for CoreMIDI & MPE
+│   ├── XPadAudioTests/        # Unit tests for DSP synth
+│   └── XPadSequencerTests/    # Unit tests for timeline engine
+├── .agents/skills/            # Specialized agent skills and workflow guides
+├── AGENTS.md                  # Agent operating instructions and modular rules
+├── DESIGN.md                  # Authoritative interaction, feedback, and ergonomic rules
+├── INSTRUMENT_TECHNIQUES.md   # Semantic technique and instrument-profile contract
+├── MIDI_MPE_SPEC.md           # CoreMIDI, MPE zone, expression, and fallback contract
+├── PRODUCT_RESEARCH.md        # Competitive and product research
+├── ROADMAP.md                 # 5-phase product development trajectory
+├── SOUL.md                    # Philosophical and artistic instrument manifesto
+├── TECH_STACK.md              # Technical, mathematical & latency specifications
+└── README.md                  # Project documentation and guide
 ```
 
 ---
 
 ## 📄 License
 MIT License. Crafted for musicians, beatmakers, and performers.
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repository and create a feature branch from `main`.
+2. Follow the module conventions in `AGENTS.md` — pure theory in `XPadCore`/`XPadTheory`, no audio/UI dependencies in core modules.
+3. Run `swift test` before committing; all test suites must pass.
+4. Keep commits semantic: `feat:`, `fix:`, `refactor:`, `test:`, `docs:`.
+5. Purge `._*` AppleDouble files before committing.
+6. Open a PR with a clear description of the musical or technical motivation.

@@ -2,9 +2,99 @@ import SwiftUI
 import XPadCore
 import XPadController
 
+/// A value snapshot used by the HUD so GameController's callback cadence does
+/// not become SwiftUI's invalidation cadence. Musical processing continues to
+/// consume the freshest `ControllerState`; PLAY samples this display state once
+/// per rendered frame.
+struct ControllerHUDInputState: Sendable {
+    let leftStick: ProcessedStickState
+    let rightStick: ProcessedStickState
+    let leftTrigger: ProcessedTriggerState
+    let rightTrigger: ProcessedTriggerState
+    let leftShoulder: Bool
+    let rightShoulder: Bool
+    let buttonA: Bool
+    let buttonB: Bool
+    let buttonX: Bool
+    let buttonY: Bool
+    let dpadUp: Bool
+    let dpadDown: Bool
+    let dpadLeft: Bool
+    let dpadRight: Bool
+    let leftStickButton: Bool
+    let rightStickButton: Bool
+    let touchpadActive: Bool
+    let hasMotion: Bool
+
+    static let idle = ControllerHUDInputState()
+
+    init(_ state: ControllerState) {
+        leftStick = state.leftStick
+        rightStick = state.rightStick
+        leftTrigger = state.leftTrigger
+        rightTrigger = state.rightTrigger
+        leftShoulder = state.leftShoulder
+        rightShoulder = state.rightShoulder
+        buttonA = state.buttonA
+        buttonB = state.buttonB
+        buttonX = state.buttonX
+        buttonY = state.buttonY
+        dpadUp = state.dpadUp
+        dpadDown = state.dpadDown
+        dpadLeft = state.dpadLeft
+        dpadRight = state.dpadRight
+        leftStickButton = state.leftStickButton
+        rightStickButton = state.rightStickButton
+        touchpadActive = state.touchpadActive
+        hasMotion = state.hasMotion
+    }
+
+    private init() {
+        leftStick = ProcessedStickState()
+        rightStick = ProcessedStickState()
+        leftTrigger = ProcessedTriggerState()
+        rightTrigger = ProcessedTriggerState()
+        leftShoulder = false
+        rightShoulder = false
+        buttonA = false
+        buttonB = false
+        buttonX = false
+        buttonY = false
+        dpadUp = false
+        dpadDown = false
+        dpadLeft = false
+        dpadRight = false
+        leftStickButton = false
+        rightStickButton = false
+        touchpadActive = false
+        hasMotion = false
+    }
+
+    var hasVisiblePerformanceInput: Bool {
+        leftStick.radius > 0.001
+            || rightStick.radius > 0.001
+            || leftTrigger.value > 0.001
+            || rightTrigger.value > 0.001
+            || leftShoulder
+            || rightShoulder
+            || buttonA
+            || buttonB
+            || buttonX
+            || buttonY
+            || dpadUp
+            || dpadDown
+            || dpadLeft
+            || dpadRight
+            || leftStickButton
+            || rightStickButton
+            || touchpadActive
+            || hasMotion
+    }
+}
+
 /// PLAY's glanceable, state-driven controller surface.
 struct ControllerPerformanceHUD: View {
-    let state: ControllerState
+    let state: ControllerHUDInputState
     let controllerKind: ControllerKind
     let isConnected: Bool
     let labels: GestureHUDLabels
@@ -413,8 +503,6 @@ private struct TactileShoulderControl: View {
 }
 
 private struct TactileTriggerControl: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     let label: String
     let role: String
     let trigger: ProcessedTriggerState
@@ -459,6 +547,11 @@ private struct TactileTriggerControl: View {
                     .offset(y: CGFloat(8 + value * 8))
             }
             .frame(width: 36, height: 38)
+            // Trigger travel is essential positional feedback. It must follow
+            // the processed value directly, even inside an animated ancestor.
+            .transaction { transaction in
+                transaction.animation = nil
+            }
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(role)
@@ -482,7 +575,6 @@ private struct TactileTriggerControl: View {
             RoundedRectangle(cornerRadius: 7)
                 .stroke(value > 0.1 ? tint.opacity(0.45) : XTheme.border, lineWidth: 1)
         )
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.08), value: trigger.isPressed)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(label), \(role)")
         .accessibilityValue("\(Int(feedbackValue * 100)) percent")
@@ -593,6 +685,12 @@ private struct TactileStickView: View {
                     .offset(y: diameter * 0.32)
             }
             .frame(width: diameter, height: diameter)
+            // The input pipeline already smooths the coordinates. Additional
+            // easing here would add visible lag and queue animation work at the
+            // controller callback rate.
+            .transaction { transaction in
+                transaction.animation = nil
+            }
 
             Text(role)
                 .font(.system(size: scale == .expanded ? 11 : 9, weight: .semibold))
@@ -620,7 +718,7 @@ private struct TactileStickView: View {
 }
 
 private struct TactileDPadView: View {
-    let state: ControllerState
+    let state: ControllerHUDInputState
     let scale: ControllerHUDScale
 
     var body: some View {
@@ -722,6 +820,11 @@ private struct ExpressionCoreView: View {
                     .frame(width: 1, height: scale == .expanded ? 46 : 32)
             }
             .frame(width: scale.expressionDiameter, height: scale.expressionDiameter)
+            // Bend, pressure and timbre are positional musical state, not
+            // decoration. Keep them locked to the sampled display frame.
+            .transaction { transaction in
+                transaction.animation = nil
+            }
 
             Text(technique ?? "Expression")
                 .font(.system(size: scale == .expanded ? 10 : 8, weight: .semibold, design: .monospaced))
@@ -738,7 +841,7 @@ private struct ExpressionCoreView: View {
 }
 
 private struct TactileFaceButtonsView: View {
-    let state: ControllerState
+    let state: ControllerHUDInputState
     let iconPack: ControllerIconPack
     let controllerKind: ControllerKind
     let roles: FaceRoleLabels

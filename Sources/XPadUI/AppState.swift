@@ -9,7 +9,7 @@ import XPadAudio
 @Observable
 public final class AppState: @unchecked Sendable {
     public var controllerManager = ControllerManager()
-    public var midiEngine = MIDIEngine()
+    public var midiEngine: MIDIEngine
     public var audioEngine = AudioEngine()
     public var mpeManager: MPEManager
     public var performanceEngine = InstrumentPerformanceEngine()
@@ -63,13 +63,17 @@ public final class AppState: @unchecked Sendable {
     private var duoControlEngine = DuoControlEngine()
 
     public init() {
-        mpeManager = MPEManager(midiEngine: MIDIEngine())
+        let midiEngine = MIDIEngine()
+        self.midiEngine = midiEngine
+        self.mpeManager = MPEManager(
+            midiEngine: midiEngine,
+            bendRangeSemitones: DestinationCapabilityProfile.internalSynth.bendRangeSemitones
+        )
     }
 
     public func initialize() {
         updateDiatonicChords()
         audioEngine.start()
-        mpeManager = MPEManager(midiEngine: midiEngine, bendRangeSemitones: destinationProfile.bendRangeSemitones)
         midiEngine.onVirtualMIDIChanged = { [weak self] enabled in
             guard let self else { return }
             if enabled {

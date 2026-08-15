@@ -68,19 +68,86 @@ This document outlines the architectural patterns, native frameworks, performanc
 
 ---
 
-## 4. Mathematical Foundations
+## 5. Concurrency & Threading Model
 
-### 4.1 12-TET Frequency Computation
+### 5.1 Actor Isolation
+
+- **UI state** (`ControllerManager`, `Sequencer`, `AppState`) is `@MainActor`-isolated.
+- **Audio DSP** runs on a high-priority real-time thread via `AVAudioSourceNode` C-callback. No Swift concurrency features (`async`/`await`, `Task`) are used inside the audio render callback.
+- **MIDI dispatch** uses a dedicated serial queue with `NSLock` synchronization for voice allocation state.
+
+### 5.2 Real-Time Safety Rules
+
+- No blocking I/O, file access, or heavy theory loops inside `AVAudioSourceNode` render block.
+- Voice DSP state, buffers, and oscillators are pre-allocated and statically indexed.
+- Controller input callbacks publish lightweight state; heavy processing is deferred to the main actor or a background scheduler.
+- SwiftUI view updates are throttled to display refresh cadence; audio/MIDI scheduling never waits for SwiftUI invalidation.
+
+### 5.3 Communication Boundaries
+
+```
+@MainActor (UI) ──Publisher──▶ ──Publisher──▶ Real-Time Threads
+     ▲                        │
+     │                        ▼
+ Background Scheduler    MIDI / Audio Queues
+ (theory, analysis)
+```
+
+Pure theory models (`XPadCore`, `XPadTheory`) are `Sendable` value types with no side effects.
+
+---
+
+## 6. Verification & Testing
+
+### 6.1 Test Suite Structure
+
+| Suite | Domain | Focus |
+| :--- | :--- | :--- |
+| `XPadCoreTests` | Theory primitives | Pitch math, enharmonics, intervals, scales, chords, voicings |
+| `XPadTheoryTests` | Harmony engine | Polar wheels, voice leading, suggestions, modulations, progressions |
+| `XPadControllerTests` | Hardware abstraction | Deadzones, strum velocity, direction heuristics, rhythm compass, gesture capture |
+| `XPadMIDITests` | MIDI/MPE | Virtual port lifecycle, MPE channel distribution, SMF binary encoding |
+| `XPadAudioTests` | DSP synth | Preset configurations, ADSR state transitions |
+| `XPadSequencerTests` | Timeline | Transport states, clip recording, 960 PPQN clock, scene transitions |
+
+### 6.2 Running Tests
+
+```bash
+# Run all unit tests
+swift test
+
+# Run the exhaustive integration test runner
+swift run XPadTests
+```
+
+### 6.3 Determinism Requirements
+
+All `XPadCore` and `XPadTheory` models must be deterministic given identical inputs. Randomness is confined to optional generative features in `XPadTheory` and is explicitly seeded.
+
+---
+
+## 7. Mathematical Foundations
+
+### 7.1 12-TET Frequency Computation
+
 Given a MIDI note number $m \in [0, 127]$ and a fractional pitch bend offset in semitones $\Delta s$:
+
 $$f(m, \Delta s) = 440.0 \times 2^{\frac{m + \Delta s - 69}{12}}\text{ Hz}$$
 
-### 4.2 Polar Harmonic Wheel Geometry
+### 7.2 Polar Harmonic Wheel Geometry
+
 The harmonic wheel maps analog thumbstick polar coordinates $(r, \theta)$ to chord sectors:
+
 $$\theta = \text{atan2}(y, x) \in [-\pi, \pi]$$
+
 $$\text{Sector Index } k = \left\lfloor \frac{(\theta + \frac{\pi}{2} \pmod{2\pi}) \times N}{2\pi} \right\rfloor$$
+
 Where $N$ is the sector count of the active layer, and $r = \sqrt{x^2 + y^2}$ defines the harmonic tension radius.
 
-### 4.3 Voice Leading Cost Function
+### 7.3 Voice Leading Cost Function
+
 The transition cost between previous voicing $V_{\text{prev}}$ and candidate voicing $V_{\text{cand}}$ is:
+
 $$\mathcal{C}(V_{\text{prev}}, V_{\text{cand}}) = \sum_{i=1}^{\min(|V_{\text{prev}}|, |V_{\text{cand}}|)} (v_{\text{cand}, i} - v_{\text{prev}, i})^2 + 15.0 \cdot \big| |V_{\text{cand}}| - |V_{\text{prev}}| \big| + \text{Penalty}_{\text{register}} + \text{Penalty}_{\text{strategy}}$$
+
 Minimizing $\mathcal{C}$ ensures smooth pianistic transitions with minimal physical voice displacement and maximum preserved common tones.

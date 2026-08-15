@@ -35,7 +35,7 @@ public final class MIDIEngine: @unchecked Sendable {
             guard newValue != virtualMIDIEnabled else { return }
             if virtualMIDIEnabled && !newValue {
                 // Deliver note-offs while the endpoints are still live.
-                panic()
+                prepareForVirtualSourceDisposal()
             }
         }
         didSet {
@@ -62,7 +62,13 @@ public final class MIDIEngine: @unchecked Sendable {
 
     public var sentMessages: [MIDIMessageRecord] {
         lock.lock()
-        let messages = messageLog
+        let messages: [MIDIMessageRecord]
+        if messageLog.count < Self.messageLogCapacity || messageLogWriteIndex == 0 {
+            messages = messageLog
+        } else {
+            messages = Array(messageLog[messageLogWriteIndex...])
+                + Array(messageLog[..<messageLogWriteIndex])
+        }
         lock.unlock()
         return messages
     }
@@ -86,7 +92,9 @@ public final class MIDIEngine: @unchecked Sendable {
     private var midiClient: MIDIClientRef = 0
     private var outputs: [VirtualPort: MIDIEndpointRef] = [:]
     private var activeNotes: Set<ActiveNote> = []
+    private static let messageLogCapacity = 2_048
     private var messageLog: [MIDIMessageRecord] = []
+    private var messageLogWriteIndex = 0
     private let lock = NSLock()
 
     private struct ActiveNote: Hashable {
@@ -100,7 +108,7 @@ public final class MIDIEngine: @unchecked Sendable {
     }
 
     deinit {
-        panic()
+        prepareForVirtualSourceDisposal()
         disposeVirtualSources()
         if midiClient != 0 {
             MIDIClientDispose(midiClient)
@@ -110,7 +118,25 @@ public final class MIDIEngine: @unchecked Sendable {
     public func clearMessageLog() {
         lock.lock()
         messageLog.removeAll(keepingCapacity: true)
+        messageLogWriteIndex = 0
         lock.unlock()
+    }
+
+    /// Cleans up state before endpoints are disposed. When CoreMIDI never created
+    /// an endpoint, emitting a full 16-channel panic cannot reach a receiver and
+    /// only adds avoidable startup/teardown work.
+    func prepareForVirtualSourceDisposal() {
+        lock.lock()
+        let hasLiveEndpoint = outputs.values.contains { $0 != 0 }
+        if !hasLiveEndpoint {
+            activeNotes.removeAll()
+            lastSentNotes.removeAll()
+        }
+        lock.unlock()
+
+        if hasLiveEndpoint {
+            panic()
+        }
     }
 
     private func setupMIDIClient() {
@@ -420,9 +446,12 @@ public final class MIDIEngine: @unchecked Sendable {
 
     private func emit(_ bytes: [UInt8], to port: VirtualPort) {
         lock.lock()
-        messageLog.append(MIDIMessageRecord(port: port, bytes: bytes))
-        if messageLog.count > 2_048 {
-            messageLog.removeFirst(messageLog.count - 2_048)
+        let record = MIDIMessageRecord(port: port, bytes: bytes)
+        if messageLog.count < Self.messageLogCapacity {
+            messageLog.append(record)
+        } else {
+            messageLog[messageLogWriteIndex] = record
+            messageLogWriteIndex = (messageLogWriteIndex + 1) % Self.messageLogCapacity
         }
         midiActivityTimestamp = Date()
         let endpoint = virtualMIDIEnabled ? outputs[port] : nil

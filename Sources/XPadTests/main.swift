@@ -271,6 +271,32 @@ final class TestRunner {
                 assertTrue(full.isActive)
             }
 
+            test("Analog Deadzones Circularly Clamp Diagonal Input") {
+                let clamped = DeadzoneStrategy.scaledRadial(0.12).process(x: 1, y: 1)
+                let magnitude = hypot(clamped.x, clamped.y)
+
+                assertTrue(magnitude <= 1.000_001)
+                assertTrue(abs(clamped.x - clamped.y) < 0.000_001)
+
+                let invalid = DeadzoneStrategy.scaledRadial(0.12).process(x: .nan, y: 0.5)
+                assertEqual(invalid.x, 0)
+                assertEqual(invalid.y, 0)
+            }
+
+            test("Gesture Velocity Recovers from Invalid Timestamps") {
+                var tracker = GestureVelocityTracker()
+                _ = tracker.update(x: 0, y: 0, timestamp: 0)
+
+                let duplicate = tracker.update(x: 0.5, y: 0, timestamp: 0)
+                let reordered = tracker.update(x: 0.75, y: 0, timestamp: -1)
+                let recovered = tracker.update(x: 1, y: 0, timestamp: 0.1)
+
+                assertEqual(duplicate.movementVelocity, 0)
+                assertEqual(reordered.movementVelocity, 0)
+                assertTrue(abs(recovered.movementVelocity - 10) < 0.001)
+                assertTrue(abs(recovered.xVelocity - 10) < 0.001)
+            }
+
             test("GamepadState Initialization & Fields") {
                 let state = GamepadState()
                 assertEqual(state.leftTrigger, 0.0)
@@ -464,6 +490,74 @@ final class TestRunner {
                 assertTrue(mpe.activeVoice(for: 60) == nil)
                 assertEqual(mpe.activeVoiceCount, 1)
                 mpe.stopAllNotes()
+            }
+
+            test("MPE Expression Coalescing Preserves Note Attack Reset") {
+                let midi = MIDIEngine()
+                let mpe = MPEManager(midiEngine: midi, bendRangeSemitones: 48)
+                mpe.noteOn(note: 60, velocity: 100)
+                midi.clearMessageLog()
+
+                mpe.setPitchBend(for: 60, semitones: 0)
+                mpe.setPressure(for: 60, pressure: 0)
+                mpe.setTimbre(for: 60, value: 64)
+                assertTrue(midi.sentMessages.isEmpty)
+
+                mpe.setPitchBend(for: 60, semitones: 1)
+                mpe.setPressure(for: 60, pressure: 80)
+                mpe.setTimbre(for: 60, value: 90)
+                assertEqual(midi.sentMessages.count, 3)
+
+                for _ in 0..<32 {
+                    mpe.setPitchBend(for: 60, semitones: 1)
+                    mpe.setPressure(for: 60, pressure: 80)
+                    mpe.setTimbre(for: 60, value: 90)
+                }
+                mpe.setPitchBend(for: 60, semitones: 1.0001)
+                assertEqual(midi.sentMessages.count, 3)
+            }
+
+            test("Repeated MPE Attack Reuses Its Saturated Member Channel") {
+                let midi = MIDIEngine()
+                let mpe = MPEManager(midiEngine: midi)
+                for note: UInt8 in 60..<74 {
+                    mpe.noteOn(note: note, velocity: 90)
+                }
+                let originalChannel = mpe.voice(for: 70)?.channel
+
+                midi.clearMessageLog()
+                mpe.noteOn(note: 70, velocity: 105)
+
+                assertEqual(mpe.activeVoiceCount, 14)
+                assertEqual(mpe.voice(for: 70)?.channel, originalChannel)
+                assertTrue(mpe.voice(for: 60) != nil)
+                assertEqual(
+                    midi.sentMessages.map(\.bytes),
+                    [
+                        [0x8B, 70, 0],
+                        [0xEB, 0, 0x40],
+                        [0xDB, 0],
+                        [0xBB, 74, 64],
+                        [0x9B, 70, 105]
+                    ]
+                )
+            }
+
+            test("MIDI Diagnostic Ring Retains Newest Delivery Order") {
+                let midi = MIDIEngine()
+                midi.clearMessageLog()
+                for index in 0..<2_052 {
+                    midi.sendCC(
+                        port: .main,
+                        channel: 0,
+                        controller: UInt8((index >> 7) & 0x7F),
+                        value: UInt8(index & 0x7F)
+                    )
+                }
+
+                assertEqual(midi.sentMessages.count, 2_048)
+                assertEqual(midi.sentMessages.first?.bytes, [0xB0, 0, 4])
+                assertEqual(midi.sentMessages.last?.bytes, [0xB0, 16, 3])
             }
 
             test("Technique Translation Separates Attack Expression and Release") {
