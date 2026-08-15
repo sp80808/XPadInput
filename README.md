@@ -14,6 +14,35 @@
 
 ---
 
+## ⬇️ Download Alpha 0.0.01
+
+The first public macOS test build is available now as a GitHub prerelease.
+
+- **Recommended:** [Download XPadInput-0.0.01.dmg](https://github.com/sp80808/XPadInput/releases/download/macos/XPadInput-0.0.01.dmg)
+- **Fallback app archive:** [Download XPadInput-0.0.01.zip](https://github.com/sp80808/XPadInput/releases/download/macos/XPadInput-0.0.01.zip)
+- [View the Alpha 0.0.01 prerelease](https://github.com/sp80808/XPadInput/releases/tag/macos)
+
+SHA-256:
+
+```text
+XPadInput-0.0.01.dmg  466d717998b4da7a17aa9a3450f7c5c66cec22132ea998bef036f528939af2b2
+XPadInput-0.0.01.zip  23994712698cb41af8be6bbd3b916b2db5bc6f3e58d896ce9d20ffa427316cf1
+```
+
+### Install & test
+
+1. Download and open the DMG.
+2. Copy the app to **Applications**.
+3. Connect a supported controller over Bluetooth or USB.
+4. Launch **XPI: Game Controller MIDI**.
+5. If macOS blocks the first launch of this early alpha, right-click the app and choose **Open** rather than disabling system security globally.
+
+Please test controller detection, sticks, triggers, buttons, chord selection, virtual strumming, internal audio, MIDI/MPE routing and controller disconnect/reconnect behaviour. Report reproducible problems through [GitHub Issues](https://github.com/sp80808/XPadInput/issues).
+
+> **Alpha warning:** 0.0.01 is a development build for hands-on testing. Mappings, UI and MIDI behaviour may change rapidly.
+
+---
+
 ## 🌟 Key Features
 
 ### 1. 🎯 Intelligent 5-Layer Harmonic Wheel
