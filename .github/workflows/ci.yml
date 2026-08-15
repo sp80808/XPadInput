@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   build-test:
-    name: Build, test and package executable
+    name: Build, test and package macOS alpha
     runs-on: macos-latest
     timeout-minutes: 25
 
@@ -36,25 +36,16 @@ jobs:
       - name: Test
         run: swift test
 
-      - name: Release build
-        run: swift build -c release --product XPI
+      - name: Package macOS alpha
+        run: bash scripts/package-macos.sh 0.0.02
 
-      - name: Stage release executable
-        shell: bash
-        run: |
-          set -euo pipefail
-          BIN_PATH="$(swift build -c release --show-bin-path)"
-          mkdir -p artifacts
-          cp "$BIN_PATH/XPI" artifacts/XPI
-          chmod +x artifacts/XPI
-          shasum -a 256 artifacts/XPI | tee artifacts/XPI.sha256
-
-      - name: Upload release executable
+      - name: Upload distributable alpha artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: XPI-${{ github.sha }}
+          name: XPI-macOS-${{ github.sha }}
           path: |
-            artifacts/XPI
-            artifacts/XPI.sha256
+            dist/XPadInput-0.0.02.dmg
+            dist/XPadInput-0.0.02.zip
+            dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
