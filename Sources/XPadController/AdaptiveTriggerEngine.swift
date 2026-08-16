@@ -13,6 +13,7 @@ public enum AdaptiveTriggerMode: String, Codable, Sendable, CaseIterable, Identi
     case customSlope = "Custom Slope Resistance"
 
     public var id: String { rawValue }
+    public var displayName: String { rawValue }
 }
 
 public enum StringGauge: String, Codable, Sendable, CaseIterable, Identifiable {
@@ -22,6 +23,7 @@ public enum StringGauge: String, Codable, Sendable, CaseIterable, Identifiable {
     case bass045 = "Bass (.045 - .105)"
 
     public var id: String { rawValue }
+    public var displayName: String { rawValue }
 
     public var stiffness: Float {
         switch self {
@@ -91,6 +93,7 @@ public struct AdaptiveTriggerFeedbackState: Sendable, Codable, Equatable {
 public final class AdaptiveTriggerEngine: @unchecked Sendable {
     public var leftConfig: AdaptiveTriggerConfig
     public var rightConfig: AdaptiveTriggerConfig
+    public private(set) var isEnabled: Bool = true
 
     public private(set) var leftState = AdaptiveTriggerFeedbackState()
     public private(set) var rightState = AdaptiveTriggerFeedbackState()
@@ -105,6 +108,10 @@ public final class AdaptiveTriggerEngine: @unchecked Sendable {
     ) {
         self.leftConfig = leftConfig
         self.rightConfig = rightConfig
+    }
+
+    public func setEnabled(_ enabled: Bool) {
+        self.isEnabled = enabled
     }
 
     /// Updates mathematical trigger resistance and pushes physical commands to DualSense hardware if attached.

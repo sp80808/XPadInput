@@ -167,65 +167,110 @@ public struct AdaptiveTriggerVisualizerHUD: View {
     public var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text(label)
-                    .font(.caption.bold())
+                HStack(spacing: 4) {
+                    Image(systemName: "hand.tap.fill")
+                        .font(.system(size: 9))
+                        .foregroundStyle(accentColor)
+                    Text(label)
+                        .font(.system(size: 11, weight: .bold))
+                }
                 Spacer()
-                Text(feedbackState.activeMode.rawValue)
+                Text(feedbackState.activeMode.displayName)
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(accentColor)
             }
 
-            // Dual bar: Position vs Resistive Motor Force
-            HStack(spacing: 8) {
+            // Dual bar: Position vs Resistive Motor Force with Detent Notches
+            HStack(spacing: 10) {
+                // Position Bar
                 VStack(spacing: 2) {
                     Text("Pos")
                         .font(.system(size: 8))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(XTheme.textTertiary)
                     ZStack(alignment: .bottom) {
                         RoundedRectangle(cornerRadius: 3)
-                            .fill(Color.white.opacity(0.1))
-                            .frame(width: 14, height: 50)
+                            .fill(Color.white.opacity(0.08))
+                            .frame(width: 14, height: 54)
+
                         RoundedRectangle(cornerRadius: 3)
-                            .fill(accentColor)
-                            .frame(width: 14, height: CGFloat(feedbackState.triggerPosition) * 50)
+                            .fill(
+                                LinearGradient(
+                                    colors: [accentColor.opacity(0.5), accentColor],
+                                    startPoint: .bottom,
+                                    endPoint: .top
+                                )
+                            )
+                            .frame(width: 14, height: CGFloat(feedbackState.triggerPosition) * 54)
+                            .xGlow(isActive: feedbackState.triggerPosition > 0.05, color: accentColor)
                     }
                 }
 
+                // Force Bar with Detent Ticks
                 VStack(spacing: 2) {
                     Text("Force")
                         .font(.system(size: 8))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(XTheme.textTertiary)
                     ZStack(alignment: .bottom) {
                         RoundedRectangle(cornerRadius: 3)
-                            .fill(Color.white.opacity(0.1))
-                            .frame(width: 14, height: 50)
+                            .fill(Color.white.opacity(0.08))
+                            .frame(width: 14, height: 54)
+
+                        // Detent Notch Markings (if in detent mode)
+                        if feedbackState.activeMode == .modWheelDetents {
+                            VStack(spacing: 5) {
+                                ForEach(0..<8) { _ in
+                                    Rectangle()
+                                        .fill(Color.white.opacity(0.25))
+                                        .frame(width: 14, height: 1)
+                                }
+                            }
+                            .frame(height: 54)
+                        }
+
                         RoundedRectangle(cornerRadius: 3)
-                            .fill(feedbackState.isInDetent ? Color.orange : Color.red.opacity(0.8))
-                            .frame(width: 14, height: CGFloat(feedbackState.calculatedForce) * 50)
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        feedbackState.isInDetent ? Color.orange : Color.red.opacity(0.6),
+                                        feedbackState.isInDetent ? Color.yellow : Color.red
+                                    ],
+                                    startPoint: .bottom,
+                                    endPoint: .top
+                                )
+                            )
+                            .frame(width: 14, height: CGFloat(feedbackState.calculatedForce) * 54)
+                            .xGlow(isActive: feedbackState.calculatedForce > 0.1, color: feedbackState.isInDetent ? .orange : .red)
                     }
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(feedbackState.statusDescription)
                         .font(.system(size: 10))
-                        .foregroundStyle(.white.opacity(0.9))
+                        .foregroundStyle(XTheme.textPrimary)
                         .lineLimit(2)
 
                     if feedbackState.isInDetent, let idx = feedbackState.activeDetentIndex {
-                        Text("Notch Detent #\(idx)")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(Color.orange)
+                        HStack(spacing: 4) {
+                            Image(systemName: "circle.circle.fill")
+                                .font(.system(size: 7))
+                                .foregroundStyle(Color.orange)
+                            Text("Notch #\(idx) Locked")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(Color.orange)
+                        }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(8)
-        .background(Color.black.opacity(0.3))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .background(
+            RoundedRectangle(cornerRadius: XTheme.radiusSmall)
+                .fill(XTheme.surface.opacity(0.8))
+        )
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+            RoundedRectangle(cornerRadius: XTheme.radiusSmall)
+                .stroke(XTheme.border, lineWidth: 1)
         )
     }
 }

@@ -80,6 +80,7 @@ struct ControllerVisualizerView: View {
     }
 }
 
+@MainActor
 private struct ControllerDisplayState {
     var input: ControllerHUDInputState = .idle
     var performanceFrame: PerformanceFrame?

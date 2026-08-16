@@ -1,6 +1,7 @@
 import SwiftUI
 import XPadAudio
 import XPadCore
+import XPadController
 
 /// Compact, performance-safe disclosure for the controls that shape a live take.
 struct PerformanceQuickControlsView: View {

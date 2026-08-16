@@ -73,7 +73,13 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 </plist>
 PLIST
 
+export COPYFILE_DISABLE=1
+
 plutil -lint "$CONTENTS/Info.plist"
+
+# Strip extended attributes and AppleDouble files before signing
+find "$APP_BUNDLE" -name "._*" -delete || true
+xattr -cr "$APP_BUNDLE" || true
 
 # Early alphas are distributed without a Developer ID certificate. Ad-hoc
 # signing keeps the bundle internally consistent without pretending it is
@@ -92,6 +98,7 @@ DMG_STAGE="$DIST_DIR/dmg-stage"
 mkdir -p "$DMG_STAGE"
 ditto "$APP_BUNDLE" "$DMG_STAGE/$APP_NAME.app"
 ln -s /Applications "$DMG_STAGE/Applications"
+find "$DMG_STAGE" -name "._*" -delete || true
 hdiutil create \
   -volname "XPI ${VERSION}" \
   -srcfolder "$DMG_STAGE" \

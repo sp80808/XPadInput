@@ -4,9 +4,11 @@ import XPadTheory
 import XPadController
 import XPadMIDI
 import XPadAudio
+import XPadSequencer
 
 /// Central application state coordinating all engines.
 @Observable
+@MainActor
 public final class AppState: @unchecked Sendable {
     public var controllerManager = ControllerManager()
     public var midiEngine: MIDIEngine
@@ -20,6 +22,7 @@ public final class AppState: @unchecked Sendable {
     public var multiJamManager = MultiControllerJammingManager()
     public var smartSoloEngine = SmartSoloEngine()
     public var ocdsManager = OCDSManager.shared
+    public var sequencer = Sequencer()
     public var isSoloModeActive: Bool = false
 
     public var currentKey: PitchClass = .d
@@ -806,6 +809,12 @@ public final class AppState: @unchecked Sendable {
         midiEngine.panic()
         lastFrame = nil
         lastDrumHit = nil
+    }
+
+    public func setBPM(_ newBPM: Double) {
+        let clamped = max(30.0, min(300.0, newBPM))
+        self.bpm = clamped
+        self.sequencer.transport.bpm = clamped
     }
 
     private func cancelPendingStrumNotes() {

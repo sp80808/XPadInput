@@ -28,7 +28,7 @@ public struct ContentView: View {
                             set: { appState.setScale($0) }
                         ))
                     case .sequence:
-                        SequenceWorkspaceView()
+                        SequenceWorkspaceView(sequencer: appState.sequencer)
                     case .map:
                         MapWorkspaceView(controllerManager: appState.controllerManager)
                     case .library:

@@ -7,6 +7,7 @@ import XPadAudio
 /// Persistent transport bar with playback, key/scale, BPM, and status indicators.
 struct TransportBar: View {
     @Environment(AppState.self) private var appState
+    @State private var tapTimes: [Date] = []
     
     var body: some View {
         @Bindable var state = appState
@@ -40,8 +41,8 @@ struct TransportBar: View {
             Divider()
                 .frame(height: 20)
             
-            // BPM
-            HStack(spacing: 4) {
+            // BPM & Tap Tempo
+            HStack(spacing: 6) {
                 Button {
                     state.metronomeEnabled.toggle()
                 } label: {
@@ -56,14 +57,31 @@ struct TransportBar: View {
                 .accessibilityValue(appState.metronomeEnabled ? "On" : "Off")
                 .keyboardShortcut("k", modifiers: [])
                 
-                Text("\(Int(appState.bpm))")
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundColor(XTheme.textPrimary)
-                    .frame(width: 32)
-                
-                Text("BPM")
-                    .font(.system(size: 9))
-                    .foregroundColor(XTheme.textTertiary)
+                HStack(spacing: 2) {
+                    Text("\(Int(appState.bpm))")
+                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .foregroundColor(XTheme.textPrimary)
+                        .frame(width: 32)
+                    
+                    Text("BPM")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundColor(XTheme.textTertiary)
+                }
+
+                // Tap Tempo Button
+                Button {
+                    registerTapTempo()
+                } label: {
+                    Text("TAP")
+                        .font(.system(size: 8, weight: .heavy, design: .rounded))
+                        .foregroundStyle(XTheme.primary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 3)
+                        .background(XTheme.primary.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .help("Tap tempo beat calculator")
             }
             
             Divider()
@@ -85,8 +103,7 @@ struct TransportBar: View {
             Divider()
                 .frame(height: 20)
             
-            // MIDI activity and wire protocol. MIDI 1 remains the alpha default;
-            // MIDI 2 switches the same musical event pipeline onto native UMP.
+            // MIDI activity and wire protocol.
             HStack(spacing: 6) {
                 Circle()
                     .fill(appState.midiEngine.isMIDIActive ? XTheme.midiActivity : XTheme.textTertiary.opacity(0.3))
@@ -118,15 +135,12 @@ struct TransportBar: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
                 .help("CoreMIDI virtual-source protocol")
-                .accessibilityLabel("MIDI transport protocol")
-                .accessibilityValue(appState.midiEngine.transportProtocol.rawValue)
                 
                 Toggle("", isOn: $state.midiEngine.virtualMIDIEnabled)
                     .toggleStyle(.switch)
                     .scaleEffect(0.6)
                     .frame(width: 30)
                     .labelsHidden()
-                    .accessibilityLabel("Virtual MIDI")
             }
             
             Divider()
@@ -142,39 +156,38 @@ struct TransportBar: View {
                     .font(.system(size: 10))
                     .foregroundColor(XTheme.textSecondary)
                     .lineLimit(1)
-                    .frame(maxWidth: 120)
+                    .frame(maxWidth: 110)
+            }
+
+            Spacer()
+
+            // Master Volume & Mini Stereo VU Meter
+            HStack(spacing: 6) {
+                Image(systemName: "speaker.wave.2.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(XTheme.textTertiary)
+
+                // Stereo Level Bars
+                VStack(spacing: 2) {
+                    levelBar(level: appState.virtualAudioDriver.levelMeter.linearLevelLeft)
+                    levelBar(level: appState.virtualAudioDriver.levelMeter.linearLevelRight)
+                }
+
+                // Volume Slider
+                Slider(
+                    value: Binding(
+                        get: { Double(appState.audioEngine.volume) },
+                        set: { appState.audioEngine.setVolume(Float($0)) }
+                    ),
+                    in: 0.0...1.0
+                )
+                .tint(XTheme.primary)
+                .frame(width: 65)
+                .help("Master Synthesizer Output Volume")
             }
 
             Divider()
                 .frame(height: 20)
-
-            // Virtual Audio Stream status
-            HStack(spacing: 6) {
-                Image(systemName: "waveform.circle.fill")
-                    .font(.system(size: 11))
-                    .foregroundColor(appState.virtualAudioDriver.isEnabled ? XTheme.primary : XTheme.textTertiary)
-                
-                Text("Loopback")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(appState.virtualAudioDriver.isEnabled ? XTheme.textPrimary : XTheme.textTertiary)
-
-                Toggle("", isOn: Binding(
-                    get: { appState.virtualAudioDriver.isEnabled },
-                    set: { enabled in
-                        appState.virtualAudioDriver.setEnabled(enabled)
-                        if enabled {
-                            appState.audioEngine.attachLoopback()
-                        }
-                    }
-                ))
-                .toggleStyle(.switch)
-                .scaleEffect(0.6)
-                .frame(width: 30)
-                .labelsHidden()
-                .accessibilityLabel("Virtual Audio Loopback")
-            }
-            
-            Spacer()
             
             // Panic button
             Button {
@@ -187,7 +200,6 @@ struct TransportBar: View {
             }
             .buttonStyle(XTactileButtonStyle(activeColor: XTheme.tense))
             .help("MIDI Panic — All Notes Off")
-            .accessibilityLabel("MIDI Panic, all notes off")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
@@ -197,6 +209,42 @@ struct TransportBar: View {
             Rectangle()
                 .fill(Color.white.opacity(0.055))
                 .frame(height: 1)
+        }
+    }
+
+    private func levelBar(level: Float) -> some View {
+        ZStack(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(Color.white.opacity(0.1))
+                .frame(width: 38, height: 4)
+
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(
+                    LinearGradient(
+                        colors: [XTheme.emerald, level > 0.85 ? XTheme.tense : XTheme.primary],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: CGFloat(max(0, min(1.0, level))) * 38, height: 4)
+        }
+    }
+
+    private func registerTapTempo() {
+        let now = Date()
+        tapTimes.append(now)
+        if tapTimes.count > 4 {
+            tapTimes.removeFirst()
+        }
+        guard tapTimes.count >= 2 else { return }
+        var intervals: [Double] = []
+        for i in 1..<tapTimes.count {
+            intervals.append(tapTimes[i].timeIntervalSince(tapTimes[i - 1]))
+        }
+        let avgInterval = intervals.reduce(0, +) / Double(intervals.count)
+        if avgInterval > 0.2 && avgInterval < 2.0 {
+            let calculatedBPM = 60.0 / avgInterval
+            appState.setBPM(calculatedBPM)
         }
     }
 }

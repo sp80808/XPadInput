@@ -1,58 +1,73 @@
 import Foundation
+import XPadCore
 
-/// Processes raw analog trigger input into a rich state.
+/// Processes raw analog trigger input into a calibrated continuous musical state.
 public struct TriggerProcessor: Sendable {
+    public var calibration: TriggerCalibration
     public var deadzone: Float = 0.05
     public var responseCurve: ResponseCurve = .linear
-    public var smoothingFactor: Float = 0.8
+    public var smoothingFactor: Float = 0.85
     
     private var velocityTracker = LinearVelocityTracker()
     private var smoothedValue: Float = 0
     
-    // Attack detection
+    // Attack detection with hysteresis
     private var lastAttackVelocity: Float = 0
     private var isHeld: Bool = false
     private var holdStartTime: TimeInterval = 0
     
-    public init() {}
+    public init(
+        calibration: TriggerCalibration = TriggerCalibration(),
+        deadzone: Float = 0.05,
+        responseCurve: ResponseCurve = .linear,
+        smoothingFactor: Float = 0.85
+    ) {
+        self.calibration = calibration
+        self.deadzone = deadzone
+        self.responseCurve = responseCurve
+        self.smoothingFactor = smoothingFactor
+    }
     
     public mutating func process(rawValue: Float, timestamp: TimeInterval) -> ProcessedTriggerState {
-        // 1. Deadzone
-        var processed = rawValue
+        // 1. Hardware Calibration
+        let calibrated = calibration.calibrate(rawValue: rawValue)
+        
+        // 2. Deadzone
+        var processed = calibrated
         if processed < deadzone {
             processed = 0
         } else {
-            processed = (processed - deadzone) / (1.0 - deadzone)
+            processed = (processed - deadzone) / max(0.001, (1.0 - deadzone))
         }
         
-        // 2. Response Curve
+        // 3. Response Curve
         processed = responseCurve.process(magnitude: processed)
         
-        // 3. Smoothing
+        // 4. Performance Smoothing
         if smoothingFactor >= 1.0 {
             smoothedValue = processed
         } else {
             smoothedValue = smoothedValue + (processed - smoothedValue) * smoothingFactor
         }
         
-        // 4. Velocity
+        // 5. Velocity Tracking
         let vels = velocityTracker.update(value: smoothedValue, timestamp: timestamp)
         
-        // 5. Attack / Hold Logic
-        if smoothedValue > 0.1 && !isHeld {
+        // 6. Attack / Hold Logic with Hysteresis (Engage at >0.10, Release at <0.04)
+        if smoothedValue > 0.10 && !isHeld {
             isHeld = true
             holdStartTime = timestamp
             lastAttackVelocity = max(0, vels.velocity)
-        } else if smoothedValue <= 0.05 && isHeld {
+        } else if smoothedValue <= 0.04 && isHeld {
             isHeld = false
             holdStartTime = 0
         }
         
-        // Attack velocity fades over time to clear the transient
+        // Attack transient decay
         if isHeld {
             let holdDuration = timestamp - holdStartTime
-            if holdDuration > 0.2 {
-                lastAttackVelocity *= 0.9 // Fade out
+            if holdDuration > 0.15 {
+                lastAttackVelocity *= 0.88 // Smooth transient decay
             }
         } else {
             lastAttackVelocity = 0
@@ -60,18 +75,20 @@ public struct TriggerProcessor: Sendable {
         
         return ProcessedTriggerState(
             rawValue: rawValue,
+            calibratedValue: calibrated,
             value: smoothedValue,
             velocity: vels.velocity,
             attackVelocity: lastAttackVelocity,
             holdDuration: isHeld ? (timestamp - holdStartTime) : 0,
-            isPressed: smoothedValue > 0.1
+            isPressed: isHeld
         )
     }
 }
 
-/// Rich state of an analog trigger.
-public struct ProcessedTriggerState: Sendable, Codable {
+/// Rich state of an analog trigger across physical, calibrated, and processed domains.
+public struct ProcessedTriggerState: Sendable, Codable, Equatable {
     public let rawValue: Float
+    public let calibratedValue: Float
     public let value: Float
     public let velocity: Float
     public let attackVelocity: Float
@@ -79,11 +96,16 @@ public struct ProcessedTriggerState: Sendable, Codable {
     public let isPressed: Bool
     
     public init(
-        rawValue: Float = 0, value: Float = 0,
-        velocity: Float = 0, attackVelocity: Float = 0,
-        holdDuration: TimeInterval = 0, isPressed: Bool = false
+        rawValue: Float = 0,
+        calibratedValue: Float = 0,
+        value: Float = 0,
+        velocity: Float = 0,
+        attackVelocity: Float = 0,
+        holdDuration: TimeInterval = 0,
+        isPressed: Bool = false
     ) {
         self.rawValue = rawValue
+        self.calibratedValue = calibratedValue
         self.value = value
         self.velocity = velocity
         self.attackVelocity = attackVelocity
