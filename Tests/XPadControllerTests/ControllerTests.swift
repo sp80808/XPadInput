@@ -155,16 +155,16 @@ final class ControllerTests: XCTestCase {
     @MainActor
     func testControllerManagerSimulatedState() {
         let manager = ControllerManager()
-        XCTAssertTrue(manager.controllerKind == .simulated || manager.isHardwareConnected)
+        XCTAssertTrue(manager.controllerKind == .simulated || manager.isConnected)
 
         var callbackTriggered = false
-        manager.onStateChanged = { state in
+        manager.onStateChanged = { _ in
             callbackTriggered = true
         }
 
         manager.injectSimulatedState { state in
             state.buttonA = true
-            state.leftStick = StickCoordinates(x: 0.5, y: 0.5)
+            state.leftStick = ProcessedStickState(x: 0.5, y: 0.5)
         }
 
         XCTAssertTrue(callbackTriggered)
