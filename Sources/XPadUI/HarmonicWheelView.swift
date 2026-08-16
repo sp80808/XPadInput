@@ -11,9 +11,12 @@ struct HarmonicWheelView: View {
     var body: some View {
         GeometryReader { geo in
             let center = CGPoint(x: geo.size.width / 2, y: geo.size.height / 2)
-            let maxRadius = min(geo.size.width, geo.size.height) / 2 - 40
-            let chordRadius = maxRadius * 0.72
-            let innerRadius = maxRadius * 0.35
+            // Use more of the available space - reduced padding from 40 to 24
+            let maxRadius = min(geo.size.width, geo.size.height) / 2 - 24
+            // Chord nodes positioned further out (85% instead of 72%)
+            let chordRadius = maxRadius * 0.85
+            // Larger center area (40% instead of 35%)
+            let innerRadius = maxRadius * 0.40
             
             ZStack {
                 // Background rings
@@ -113,17 +116,19 @@ struct HarmonicWheelView: View {
                 .fill(XTheme.surface)
                 .overlay(
                     Circle()
-                        .stroke(XTheme.borderActive, lineWidth: 1.5)
+                        .stroke(XTheme.borderActive, lineWidth: 2)
                 )
                 .frame(width: innerRadius * 2, height: innerRadius * 2)
             
-            VStack(spacing: 4) {
+            VStack(spacing: 6) {
                 Text(appState.currentKey.displayName)
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
                     .foregroundColor(XTheme.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 
                 Text(appState.currentScale.displayName)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(XTheme.textSecondary)
                     .lineLimit(1)
             }
@@ -167,31 +172,34 @@ struct ChordNodeView: View {
     let scale: Scale
     
     var body: some View {
-        VStack(spacing: 3) {
+        VStack(spacing: 4) {
             Text(chord.displayName)
-                .font(.system(size: isSelected ? 14 : 13, weight: isSelected ? .bold : .semibold, design: .rounded))
+                .font(.system(size: isSelected ? 16 : 14, weight: isSelected ? .bold : .semibold, design: .rounded))
                 .foregroundColor(isSelected ? .white : XTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
             
             if let roman = chord.romanNumeral(in: key, scale: scale) {
                 Text(roman)
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundColor(isSelected ? XTheme.accent : XTheme.textTertiary)
             }
         }
-        .frame(width: 58, height: 42)
+        // Larger node size (68x52 instead of 58x42)
+        .frame(width: 68, height: 52)
         .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(isSelected ? XTheme.primary.opacity(0.20) : XTheme.surface)
+            RoundedRectangle(cornerRadius: 12)
+                .fill(isSelected ? XTheme.primary.opacity(0.24) : XTheme.surface)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10)
+                    RoundedRectangle(cornerRadius: 12)
                         .stroke(
                             isSelected ? XTheme.primary : XTheme.tensionColor(tension).opacity(0.3),
-                            lineWidth: isSelected ? 1.5 : 1
+                            lineWidth: isSelected ? 2 : 1
                         )
                 )
         )
-        .shadow(color: isSelected ? XTheme.primary.opacity(0.22) : .clear, radius: 7)
-        .scaleEffect(isSelected && !reduceMotion ? 1.035 : 1.0)
+        .shadow(color: isSelected ? XTheme.primary.opacity(0.28) : .clear, radius: 10)
+        .scaleEffect(isSelected && !reduceMotion ? 1.04 : 1.0)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isSelected)
     }
 }
