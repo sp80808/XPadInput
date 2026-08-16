@@ -130,6 +130,10 @@ public final class MultiControllerJammingManager: @unchecked Sendable {
 
     private var physicalControllers: [PlayerSlotId: GCController] = [:]
 
+    public var isSessionActive: Bool {
+        physicalControllers.count > 1
+    }
+
     public init() {
         // Initialize 4 default player slots
         for slot in PlayerSlotId.allCases {
