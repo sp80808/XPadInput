@@ -5,13 +5,14 @@ import XPadController
 /// Main content view with sidebar navigation and transport bar.
 public struct ContentView: View {
     @Environment(AppState.self) private var appState
+    @State private var isShowingSettings = false
     
     public init() {}
     
     public var body: some View {
         HStack(spacing: 0) {
             // Sidebar Navigation
-            SidebarView()
+            SidebarView(onOpenSettings: { isShowingSettings = true })
             
             Divider()
                 .background(XTheme.border)
@@ -45,6 +46,27 @@ public struct ContentView: View {
                 TransportBar()
             }
         }
+        .sheet(isPresented: $isShowingSettings) {
+            VStack(spacing: 0) {
+                HStack {
+                    Text("Controller & Input Settings")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(XTheme.textPrimary)
+                    Spacer()
+                    Button("Done") {
+                        isShowingSettings = false
+                    }
+                    .keyboardShortcut(.defaultAction)
+                }
+                .padding(16)
+                .background(XTheme.surfaceElevated)
+
+                Divider().overlay(XTheme.border)
+
+                ControlSchemeSettingsView()
+            }
+            .frame(minWidth: 720, minHeight: 560)
+        }
         .background {
             ZStack {
                 XTheme.background
@@ -70,6 +92,7 @@ public struct ContentView: View {
 
 struct SidebarView: View {
     @Environment(AppState.self) private var appState
+    var onOpenSettings: () -> Void = {}
     
     var body: some View {
         @Bindable var state = appState
@@ -100,17 +123,23 @@ struct SidebarView: View {
             
             Spacer()
             
-            // Controller indicator
-            VStack(spacing: 6) {
-                Image(systemName: appState.controllerManager.isConnected ? "gamecontroller.fill" : "gamecontroller")
-                    .font(.system(size: 18))
-                    .foregroundColor(appState.controllerManager.isConnected ? XTheme.controllerConnected : XTheme.controllerDisconnected)
-                    .xGlow(isActive: appState.controllerManager.isConnected)
-                
-                Text(appState.controllerManager.isConnected ? "Connected" : "No Pad")
-                    .font(.caption2)
-                    .foregroundColor(XTheme.textTertiary)
+            // Settings & Controller indicator
+            Button {
+                onOpenSettings()
+            } label: {
+                VStack(spacing: 6) {
+                    Image(systemName: appState.controllerManager.isConnected ? "gamecontroller.fill" : "slider.horizontal.3")
+                        .font(.system(size: 18))
+                        .foregroundColor(appState.controllerManager.isConnected ? XTheme.controllerConnected : XTheme.primaryLight)
+                        .xGlow(isActive: appState.controllerManager.isConnected)
+                    
+                    Text("Controls")
+                        .font(.caption2.bold())
+                        .foregroundColor(XTheme.textTertiary)
+                }
             }
+            .buttonStyle(.plain)
+            .help("Open Controller Scheme & Settings")
             .padding(.bottom, 12)
         }
         .padding(.vertical, 12)

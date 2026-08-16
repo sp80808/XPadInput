@@ -3,7 +3,7 @@ import GameController
 import CoreHaptics
 import XPadCore
 
-/// Manages controller discovery and input handling.
+/// Manages controller discovery, hardware calibration, input learning, and semantic action mapping.
 @Observable
 public final class ControllerManager: @unchecked Sendable {
     public var connectedController: GCController?
@@ -14,6 +14,11 @@ public final class ControllerManager: @unchecked Sendable {
     public var isConnected: Bool = false
     public var controllerName: String = "No Controller"
     
+    // Active Control Scheme & Calibration
+    public var activeScheme: ControlScheme = ControlSchemePreset.xpiPerformance
+    public var hardwareCalibration = ControllerHardwareCalibration()
+    public var calibrationWizard = CalibrationWizard()
+    
     // Input Processors
     public var leftStickProcessor = StickProcessor(profile: .expressive)
     public var rightStickProcessor = StickProcessor(profile: .expressive)
@@ -21,6 +26,10 @@ public final class ControllerManager: @unchecked Sendable {
     public var rightTriggerProcessor = TriggerProcessor()
     public var adaptiveTriggerEngine = AdaptiveTriggerEngine()
     public var smartSoloEngine = SmartSoloEngine()
+    
+    // Input Learn Mode
+    public var learningAction: SemanticMusicalAction? = nil
+    public var onInputLearned: ((SemanticMusicalAction, PhysicalControlInput) -> Void)?
     
     // Input callbacks
     public var onStateChanged: ((ControllerState) -> Void)?
@@ -30,12 +39,27 @@ public final class ControllerManager: @unchecked Sendable {
     private var hapticEngine: CHHapticEngine?
     
     public init() {
+        loadPersistedSchemeAndCalibration()
         setupNotifications()
         scanForControllers()
     }
     
     deinit {
         observers.forEach { NotificationCenter.default.removeObserver($0) }
+    }
+    
+    private func loadPersistedSchemeAndCalibration() {
+        let store = ControllerSettingsStore.shared
+        let activeId = store.loadActiveSchemeId()
+        let customSchemes = store.loadCustomSchemes()
+        
+        if let found = (ControlSchemePreset.allBuiltIn + customSchemes).first(where: { $0.id == activeId }) {
+            self.activeScheme = found
+        } else {
+            self.activeScheme = ControlSchemePreset.xpiPerformance
+        }
+        
+        applySchemeToProcessors(self.activeScheme)
     }
     
     private func setupNotifications() {
@@ -67,7 +91,6 @@ public final class ControllerManager: @unchecked Sendable {
             // Discovery completed
         }
         
-        // Check already-connected controllers
         if let controller = GCController.controllers().first {
             controllerConnected(controller)
         }
@@ -80,10 +103,14 @@ public final class ControllerManager: @unchecked Sendable {
         controllerKind = identifyControllerKind(controller)
         capabilityProfile = ControllerCapabilityProfile.from(controller)
         
+        // Load controller-specific calibration
+        let controllerId = "\(controller.vendorName ?? "generic")_\(controller.productCategory)"
+        hardwareCalibration = ControllerSettingsStore.shared.loadCalibration(for: controllerId)
+        applyCalibrationToProcessors()
+        
         setupInputHandlers(controller)
         
-        // Enable motion if available
-        if let motion = controller.motion {
+        if let motion = controller.motion, activeScheme.isMotionEnabled {
             motion.sensorsActive = true
         }
 
@@ -104,7 +131,40 @@ public final class ControllerManager: @unchecked Sendable {
         onDisconnected?()
     }
     
-    // applyDeadzone removed in favor of input processors
+    // MARK: - Control Scheme & Calibration Application
+    
+    public func selectControlScheme(_ scheme: ControlScheme) {
+        self.activeScheme = scheme
+        ControllerSettingsStore.shared.saveActiveSchemeId(scheme.id)
+        applySchemeToProcessors(scheme)
+        
+        // Motion enable/disable
+        if let motion = connectedController?.motion {
+            motion.sensorsActive = scheme.isMotionEnabled
+        }
+    }
+    
+    public func applyHardwareCalibration(_ cal: ControllerHardwareCalibration) {
+        self.hardwareCalibration = cal
+        ControllerSettingsStore.shared.saveCalibration(cal)
+        applyCalibrationToProcessors()
+    }
+    
+    private func applySchemeToProcessors(_ scheme: ControlScheme) {
+        leftStickProcessor.profile = scheme.stickFeel.processingProfile
+        rightStickProcessor.profile = scheme.stickFeel.processingProfile
+        leftTriggerProcessor.deadzone = scheme.triggerFeel.activationThreshold
+        rightTriggerProcessor.deadzone = scheme.triggerFeel.activationThreshold
+    }
+    
+    private func applyCalibrationToProcessors() {
+        leftStickProcessor.calibration = hardwareCalibration.leftStick
+        rightStickProcessor.calibration = hardwareCalibration.rightStick
+        leftTriggerProcessor.calibration = hardwareCalibration.leftTrigger
+        rightTriggerProcessor.calibration = hardwareCalibration.rightTrigger
+    }
+    
+    // MARK: - Input Handlers & Input Learn
     
     private func setupInputHandlers(_ controller: GCController) {
         guard let gamepad = controller.extendedGamepad else { return }
@@ -112,38 +172,48 @@ public final class ControllerManager: @unchecked Sendable {
         gamepad.valueChangedHandler = { [weak self] (gamepad, element) in
             guard let self = self else { return }
             
-            // Update state on main thread for UI, but capture values immediately
-            let state = self.controllerState
+            let rawLX = gamepad.leftThumbstick.xAxis.value
+            let rawLY = gamepad.leftThumbstick.yAxis.value
+            let rawRX = gamepad.rightThumbstick.xAxis.value
+            let rawRY = gamepad.rightThumbstick.yAxis.value
+            let rawLT = gamepad.leftTrigger.value
+            let rawRT = gamepad.rightTrigger.value
             
+            // Feed calibration wizard if active
+            self.calibrationWizard.feed(rawLeftX: rawLX, rawLeftY: rawLY, rawRightX: rawRX, rawRightY: rawRY)
+            
+            // Check Input Learn
+            if let targetAction = self.learningAction {
+                if let detected = self.detectDeliberateInput(gamepad: gamepad) {
+                    self.learningAction = nil
+                    self.onInputLearned?(targetAction, detected)
+                    self.playTechniqueHaptic(.buttonConfirm)
+                    return
+                }
+            }
+            
+            let state = self.controllerState
             let timestamp = ProcessInfo.processInfo.systemUptime
             
-            // Left stick
-            state.leftStick = self.leftStickProcessor.process(
-                rawX: gamepad.leftThumbstick.xAxis.value,
-                rawY: gamepad.leftThumbstick.yAxis.value,
-                timestamp: timestamp
-            )
+            // Process Left & Right Sticks with Calibration, Deadzones & Inversion
+            let swapRoles = self.activeScheme.isLeftRightSwapped
+            let leftX = swapRoles ? rawRX : rawLX
+            let leftY = swapRoles ? rawRY : rawLY
+            let rightX = swapRoles ? rawLX : rawRX
+            let rightY = swapRoles ? rawLY : rawRY
             
-            // Right stick
-            state.rightStick = self.rightStickProcessor.process(
-                rawX: gamepad.rightThumbstick.xAxis.value,
-                rawY: gamepad.rightThumbstick.yAxis.value,
-                timestamp: timestamp
-            )
+            state.leftStick = self.leftStickProcessor.process(rawX: leftX, rawY: leftY, timestamp: timestamp)
+            state.rightStick = self.rightStickProcessor.process(rawX: rightX, rawY: rightY, timestamp: timestamp)
             
-            // Triggers
-            state.leftTrigger = self.leftTriggerProcessor.process(
-                rawValue: gamepad.leftTrigger.value,
-                timestamp: timestamp
-            )
-            state.rightTrigger = self.rightTriggerProcessor.process(
-                rawValue: gamepad.rightTrigger.value,
-                timestamp: timestamp
-            )
+            // Process Triggers with Calibration & Hysteresis
+            let triggerL = swapRoles ? rawRT : rawLT
+            let triggerR = swapRoles ? rawLT : rawRT
+            state.leftTrigger = self.leftTriggerProcessor.process(rawValue: triggerL, timestamp: timestamp)
+            state.rightTrigger = self.rightTriggerProcessor.process(rawValue: triggerR, timestamp: timestamp)
             
             // Shoulders
-            state.leftShoulder = gamepad.leftShoulder.isPressed
-            state.rightShoulder = gamepad.rightShoulder.isPressed
+            state.leftShoulder = swapRoles ? gamepad.rightShoulder.isPressed : gamepad.leftShoulder.isPressed
+            state.rightShoulder = swapRoles ? gamepad.leftShoulder.isPressed : gamepad.rightShoulder.isPressed
             
             // Face buttons
             state.buttonA = gamepad.buttonA.isPressed
@@ -158,8 +228,8 @@ public final class ControllerManager: @unchecked Sendable {
             state.dpadRight = gamepad.dpad.right.isPressed
             
             // Stick buttons
-            state.leftStickButton = gamepad.leftThumbstickButton?.isPressed ?? false
-            state.rightStickButton = gamepad.rightThumbstickButton?.isPressed ?? false
+            state.leftStickButton = swapRoles ? (gamepad.rightThumbstickButton?.isPressed ?? false) : (gamepad.leftThumbstickButton?.isPressed ?? false)
+            state.rightStickButton = swapRoles ? (gamepad.leftThumbstickButton?.isPressed ?? false) : (gamepad.rightThumbstickButton?.isPressed ?? false)
             
             // Menu
             state.menuButton = gamepad.buttonMenu.isPressed
@@ -167,8 +237,8 @@ public final class ControllerManager: @unchecked Sendable {
 
             // Adaptive trigger feedback processing
             self.adaptiveTriggerEngine.process(
-                leftTrigger: gamepad.leftTrigger.value,
-                rightTrigger: gamepad.rightTrigger.value,
+                leftTrigger: rawLT,
+                rightTrigger: rawRT,
                 controller: controller,
                 timestamp: timestamp
             )
@@ -181,8 +251,9 @@ public final class ControllerManager: @unchecked Sendable {
         if let motion = controller.motion {
             motion.valueChangedHandler = { [weak self] (motion) in
                 guard let self = self else { return }
-                let state = self.controllerState
+                guard self.activeScheme.isMotionEnabled else { return }
                 
+                let state = self.controllerState
                 state.gyroX = motion.rotationRate.x
                 state.gyroY = motion.rotationRate.y
                 state.gyroZ = motion.rotationRate.z
@@ -195,54 +266,123 @@ public final class ControllerManager: @unchecked Sendable {
             }
         }
     }
+    
+    /// Detects a deliberate button press or stick excursion while ignoring resting drift (<0.20).
+    private func detectDeliberateInput(gamepad: GCExtendedGamepad) -> PhysicalControlInput? {
+        if gamepad.buttonA.isPressed { return .buttonSouth }
+        if gamepad.buttonB.isPressed { return .buttonEast }
+        if gamepad.buttonX.isPressed { return .buttonWest }
+        if gamepad.buttonY.isPressed { return .buttonNorth }
+        
+        if gamepad.leftShoulder.isPressed { return .leftShoulder }
+        if gamepad.rightShoulder.isPressed { return .rightShoulder }
+        if gamepad.leftTrigger.value > 0.40 { return .leftTrigger }
+        if gamepad.rightTrigger.value > 0.40 { return .rightTrigger }
+        
+        if gamepad.dpad.up.isPressed { return .dpadUp }
+        if gamepad.dpad.down.isPressed { return .dpadDown }
+        if gamepad.dpad.left.isPressed { return .dpadLeft }
+        if gamepad.dpad.right.isPressed { return .dpadRight }
+        
+        if gamepad.leftThumbstickButton?.isPressed == true { return .leftStickClick }
+        if gamepad.rightThumbstickButton?.isPressed == true { return .rightStickClick }
+        
+        if abs(gamepad.leftThumbstick.xAxis.value) > 0.55 { return .leftStickX }
+        if abs(gamepad.leftThumbstick.yAxis.value) > 0.55 { return .leftStickY }
+        if abs(gamepad.rightThumbstick.xAxis.value) > 0.55 { return .rightStickX }
+        if abs(gamepad.rightThumbstick.yAxis.value) > 0.55 { return .rightStickY }
+        
+        if gamepad.buttonOptions?.isPressed == true { return .buttonOptions }
+        if gamepad.buttonMenu.isPressed { return .buttonShare }
+        
+        return nil
+    }
 
-    public var isHardwareConnected: Bool { isConnected }
+    // MARK: - Dynamic Prompt Single-Source-of-Truth
+    
+    /// Returns the localized, controller-aware label for a musical action (e.g. "R2" on DualSense, "RT" on Xbox, "Right Stick Y").
+    public func controlLabel(for action: SemanticMusicalAction) -> String {
+        guard let binding = activeScheme.binding(for: action) else {
+            return "Unassigned"
+        }
+        return physicalLabel(for: binding.input)
+    }
+
+    /// Returns the high-fidelity controller glyph for rendering on HUD badges and chord cards.
+    public func controlGlyph(for action: SemanticMusicalAction) -> GlyphKey {
+        guard let binding = activeScheme.binding(for: action) else {
+            return .leftStick
+        }
+        return binding.input.defaultGlyphKey
+    }
+
+    /// Formats a physical control name based on the connected controller hardware style.
+    public func physicalLabel(for input: PhysicalControlInput) -> String {
+        let isXbox = controllerKind == .xbox
+        let isNintendo = controllerKind == .switchPro
+        
+        switch input {
+        case .leftStick2D: return "Left Stick"
+        case .rightStick2D: return "Right Stick"
+        case .leftStickX: return "Left Stick X"
+        case .leftStickY: return "Left Stick Y"
+        case .rightStickX: return "Right Stick X"
+        case .rightStickY: return "Right Stick Y"
+        case .leftTrigger: return isXbox ? "LT" : (isNintendo ? "ZL" : "L2")
+        case .rightTrigger: return isXbox ? "RT" : (isNintendo ? "ZR" : "R2")
+        case .leftShoulder: return isXbox ? "LB" : (isNintendo ? "L" : "L1")
+        case .rightShoulder: return isXbox ? "RB" : (isNintendo ? "R" : "R1")
+        case .leftStickClick: return isXbox ? "LSB" : (isNintendo ? "L3" : "L3")
+        case .rightStickClick: return isXbox ? "RSB" : (isNintendo ? "R3" : "R3")
+        case .buttonSouth: return isXbox ? "A" : (isNintendo ? "B" : "✕ Cross")
+        case .buttonEast: return isXbox ? "B" : (isNintendo ? "A" : "○ Circle")
+        case .buttonWest: return isXbox ? "X" : (isNintendo ? "Y" : "□ Square")
+        case .buttonNorth: return isXbox ? "Y" : (isNintendo ? "X" : "△ Triangle")
+        case .dpadUp: return "D-Pad Up"
+        case .dpadDown: return "D-Pad Down"
+        case .dpadLeft: return "D-Pad Left"
+        case .dpadRight: return "D-Pad Right"
+        case .buttonOptions: return isXbox ? "Menu" : (isNintendo ? "+" : "Options")
+        case .buttonShare: return isXbox ? "View" : (isNintendo ? "-" : "Share")
+        case .buttonCenter: return "Touchpad"
+        case .touchpad2D: return "Touchpad"
+        case .motionPitch: return "Tilt (Pitch)"
+        case .motionRoll: return "Tilt (Roll)"
+        case .motionYaw: return "Tilt (Yaw)"
+        case .unassigned: return "—"
+        }
+    }
+
+    public func selectControllerKind(_ kind: ControllerKind) {
+        controllerKind = kind
+    }
+
+    public func injectSimulatedState(_ mutate: (ControllerState) -> Void) {
+        let state = controllerState
+        mutate(state)
+        currentState = Self.gamepadState(from: state)
+        onStateChanged?(state)
+    }
 
     public func configureForInstrumentProfile(_ profile: InstrumentProfile) {
         adaptiveTriggerEngine.configureForInstrumentProfile(profile)
     }
 
-    /// Selects a visual/simulated controller family without requiring hardware.
-    public func selectControllerKind(_ kind: ControllerKind) {
-        controllerKind = kind
-        capabilityProfile = Self.capabilityProfile(for: kind)
-        if !isConnected {
-            controllerName = kind.rawValue
-        }
-    }
-
-    /// Allows tests, previews, and keyboard fallbacks to drive the same processed callback path.
-    public func injectSimulatedState(_ transform: (inout GamepadState) -> Void) {
-        var state = currentState
-        transform(&state)
-        currentState = state
-        controllerState = Self.controllerState(from: state)
-        onStateChanged?(controllerState)
-    }
-
-    /// Plays a single restrained haptic for a discrete technique landmark.
-    public func playTechniqueHaptic(_ kind: TechniqueHaptic) {
+    // MARK: - Haptic Feedback
+    
+    public func playTechniqueHaptic(_ haptic: TechniqueHaptic) {
+        guard activeScheme.haptics != .off else { return }
         guard let engine = hapticEngine else { return }
-        let intensity: Float
-        let sharpness: Float
-        switch kind {
-        case .bendDetent:
-            intensity = 0.12; sharpness = 0.65
-        case .hammerOn, .pullOff:
-            intensity = 0.10; sharpness = 0.40
-        case .slideArrival:
-            intensity = 0.16; sharpness = 0.35
-        case .pinchHarmonic:
-            intensity = 0.22; sharpness = 0.90
-        case .palmMuteThreshold:
-            intensity = 0.08; sharpness = 0.20
-        }
+        
+        let multiplier: Float = activeScheme.haptics == .subtle ? 0.45 : 1.0
+        let intensity = min(1.0, haptic.intensity * multiplier)
+        
         do {
             let event = CHHapticEvent(
                 eventType: .hapticTransient,
                 parameters: [
                     CHHapticEventParameter(parameterID: .hapticIntensity, value: intensity),
-                    CHHapticEventParameter(parameterID: .hapticSharpness, value: sharpness)
+                    CHHapticEventParameter(parameterID: .hapticSharpness, value: haptic.sharpness)
                 ],
                 relativeTime: 0
             )
@@ -252,7 +392,6 @@ public final class ControllerManager: @unchecked Sendable {
         } catch {}
     }
 
-    /// Plays one restrained transient when an exact bend target is crossed.
     public func playBendTargetDetent() {
         playTechniqueHaptic(.bendDetent)
     }
@@ -282,26 +421,7 @@ public final class ControllerManager: @unchecked Sendable {
         return .generic
     }
 
-    private static func capabilityProfile(for kind: ControllerKind) -> ControllerCapabilityProfile {
-        switch kind {
-        case .dualSense, .dualShock4: return .dualSense
-        case .xbox: return .xbox
-        case .switchPro: return .switchPro
-        case .steamDeck: return .steamDeck
-        case .guitarHero: return .guitarHero
-        case .soundVoltex: return .soundVoltex
-        case .beatmaniaIIDX: return .beatmaniaIIDX
-        case .popnMusic: return .popnMusic
-        case .taikoDrum: return .taikoDrum
-        case .danceMat: return .danceMat
-        case .flightStick: return .flightStick
-        case .racingWheel: return .racingWheel
-        case .fightStick: return .fightStick
-        case .generic, .simulated: return .generic
-        }
-    }
-
-    private static func gamepadState(from state: ControllerState) -> GamepadState {
+    public static func gamepadState(from state: ControllerState) -> GamepadState {
         GamepadState(
             leftStick: StickCoordinates(x: Double(state.leftStick.x), y: Double(state.leftStick.y)),
             rightStick: StickCoordinates(x: Double(state.rightStick.x), y: Double(state.rightStick.y)),
@@ -328,7 +448,7 @@ public final class ControllerManager: @unchecked Sendable {
         )
     }
 
-    private static func controllerState(from state: GamepadState) -> ControllerState {
+    public static func controllerState(from state: GamepadState) -> ControllerState {
         let processed = ControllerState()
         processed.leftStick = ProcessedStickState(
             rawX: Float(state.leftStick.x),

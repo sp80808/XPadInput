@@ -635,7 +635,7 @@ public final class MIDIEngine: @unchecked Sendable {
         }
 
         let words = [word]
-        packet = MIDIEventListAdd(
+        _ = MIDIEventListAdd(
             &eventList,
             1024,
             packet,
@@ -643,7 +643,6 @@ public final class MIDIEngine: @unchecked Sendable {
             words.count,
             words
         )
-        guard packet != nil else { return }
         MIDIReceivedEventList(endpoint, &eventList)
     }
 
@@ -654,9 +653,9 @@ public final class MIDIEngine: @unchecked Sendable {
 
     private func sendMIDI2Message(_ message: MIDIMessage_64, endpoint: MIDIEndpointRef) {
         var eventList = MIDIEventList()
-        var packet = MIDIEventListInit(&eventList, ._2_0)
+        let packet = MIDIEventListInit(&eventList, ._2_0)
         let words = [message.word0, message.word1]
-        packet = MIDIEventListAdd(
+        _ = MIDIEventListAdd(
             &eventList,
             1024,
             packet,
@@ -664,7 +663,6 @@ public final class MIDIEngine: @unchecked Sendable {
             words.count,
             words
         )
-        guard packet != nil else { return }
         MIDIReceivedEventList(endpoint, &eventList)
     }
 }

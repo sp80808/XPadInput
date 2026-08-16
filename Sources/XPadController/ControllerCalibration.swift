@@ -171,18 +171,32 @@ public final class CalibrationWizard: @unchecked Sendable {
         var cal = ControllerHardwareCalibration()
 
         if !restLeftSamples.isEmpty {
-            let avgLX = restLeftSamples.map(\.0).reduce(0, +) / Float(restLeftSamples.count)
-            let avgLY = restLeftSamples.map(\.1).reduce(0, +) / Float(restLeftSamples.count)
-            let maxDriftL = restLeftSamples.map { sqrt(($0.0 - avgLX) * ($0.0 - avgLX) + ($0.1 - avgLY) * ($0.1 - avgLY)) }.max() ?? 0.04
+            let countL = Float(restLeftSamples.count)
+            let avgLX = restLeftSamples.map(\.0).reduce(0, +) / countL
+            let avgLY = restLeftSamples.map(\.1).reduce(0, +) / countL
+            var maxDriftL: Float = 0.04
+            for sample in restLeftSamples {
+                let dx = sample.0 - avgLX
+                let dy = sample.1 - avgLY
+                let d = sqrt(dx * dx + dy * dy)
+                if d > maxDriftL { maxDriftL = d }
+            }
             cal.leftStick.restCenterX = avgLX
             cal.leftStick.restCenterY = avgLY
             cal.leftStick.driftRadius = max(0.02, maxDriftL * 1.5)
         }
 
         if !restRightSamples.isEmpty {
-            let avgRX = restRightSamples.map(\.0).reduce(0, +) / Float(restRightSamples.count)
-            let avgRY = restRightSamples.map(\.1).reduce(0, +) / Float(restRightSamples.count)
-            let maxDriftR = restRightSamples.map { sqrt(($0.0 - avgRX) * ($0.0 - avgRX) + ($0.1 - avgRY) * ($0.1 - avgRY)) }.max() ?? 0.04
+            let countR = Float(restRightSamples.count)
+            let avgRX = restRightSamples.map(\.0).reduce(0, +) / countR
+            let avgRY = restRightSamples.map(\.1).reduce(0, +) / countR
+            var maxDriftR: Float = 0.04
+            for sample in restRightSamples {
+                let dx = sample.0 - avgRX
+                let dy = sample.1 - avgRY
+                let d = sqrt(dx * dx + dy * dy)
+                if d > maxDriftR { maxDriftR = d }
+            }
             cal.rightStick.restCenterX = avgRX
             cal.rightStick.restCenterY = avgRY
             cal.rightStick.driftRadius = max(0.02, maxDriftR * 1.5)

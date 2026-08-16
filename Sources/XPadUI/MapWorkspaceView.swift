@@ -46,9 +46,9 @@ public struct MapWorkspaceView: View {
 
                     Spacer()
 
-                    Text(controllerManager.isHardwareConnected ? "Hardware Connected" : "Interactive Simulation")
+                    Text(controllerManager.isConnected ? "Hardware Connected" : "Interactive Simulation")
                         .font(.caption2.bold())
-                        .foregroundStyle(controllerManager.isHardwareConnected ? .green : .orange)
+                        .foregroundStyle(controllerManager.isConnected ? .green : .orange)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(Color.white.opacity(0.1))
@@ -98,15 +98,16 @@ public struct MapWorkspaceView: View {
             .padding()
             .frame(minWidth: 460)
 
-            // Right: Modulation Matrix or OCDS Manager
+            // Right: Modulation Matrix, Control Schemes, or OCDS Manager
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
                     Picker("View Mode", selection: $selectedTab) {
                         Text("Modulation Matrix").tag(0)
-                        Text("OCDS Profile Manager").tag(1)
+                        Text("Control Schemes").tag(1)
+                        Text("OCDS Profiles").tag(2)
                     }
                     .pickerStyle(.segmented)
-                    .frame(maxWidth: 320)
+                    .frame(maxWidth: 380)
 
                     Spacer()
 
@@ -120,6 +121,8 @@ public struct MapWorkspaceView: View {
                 }
 
                 if selectedTab == 1 {
+                    ControlSchemeSettingsView()
+                } else if selectedTab == 2 {
                     OCDSProfileManagerView()
                 } else {
                     ScrollView {

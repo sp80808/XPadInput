@@ -65,4 +65,29 @@ public enum TechniqueHaptic: String, Codable, Sendable, Equatable {
     case slideArrival
     case pinchHarmonic
     case palmMuteThreshold
+    case buttonConfirm
+
+    public var intensity: Float {
+        switch self {
+        case .bendDetent: return 0.5
+        case .hammerOn: return 0.4
+        case .pullOff: return 0.35
+        case .slideArrival: return 0.6
+        case .pinchHarmonic: return 0.8
+        case .palmMuteThreshold: return 0.45
+        case .buttonConfirm: return 0.3
+        }
+    }
+
+    public var sharpness: Float {
+        switch self {
+        case .bendDetent: return 0.6
+        case .hammerOn: return 0.8
+        case .pullOff: return 0.7
+        case .slideArrival: return 0.5
+        case .pinchHarmonic: return 0.95
+        case .palmMuteThreshold: return 0.4
+        case .buttonConfirm: return 0.5
+        }
+    }
 }

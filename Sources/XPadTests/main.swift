@@ -374,7 +374,7 @@ final class TestRunner {
 
                 let sustainedNote = attack.faceEvents.first?.note
                 manager.injectSimulatedState { state in
-                    state.rightTrigger = 0.7
+                    state.rightTrigger = ProcessedTriggerState(rawValue: 0.7, value: 0.7, isPressed: true)
                 }
                 assertTrue(manager.currentState.buttonA, "Unrelated simulated changes must preserve held buttons.")
                 let sustain = engine.process(
@@ -1412,6 +1412,182 @@ final class TestRunner {
                 } catch {
                     assertTrue(false, "Failed to register custom profile: \(error)")
                 }
+            }
+        }
+
+        // ==================================================
+        // SUITE: Control Schemes, Ergonomics, Hardware Calibration & Remapping
+        // ==================================================
+        suite("Control Schemes, Ergonomics, Hardware Calibration & Remapping") {
+            test("Control Scheme presets default bindings & structure") {
+                let perf = ControlSchemePreset.xpiPerformance
+                assertEqual(perf.id, "xpi_performance")
+                assertEqual(perf.bindings[.harmonyNavigate2D]?.input, .leftStick2D)
+                assertEqual(perf.bindings[.primaryExcitation]?.input, .rightStickY)
+                assertEqual(perf.bindings[.pitchExpression]?.input, .rightStickX)
+                assertEqual(perf.bindings[.dampingExpression]?.input, .leftTrigger)
+                assertEqual(perf.bindings[.pressureExpression]?.input, .rightTrigger)
+                assertEqual(perf.bindings[.techniqueModifier]?.input, .leftShoulder)
+                assertEqual(perf.bindings[.sustainLatch]?.input, .rightShoulder)
+                assertTrue(perf.isBuiltIn)
+
+                let classic = ControlSchemePreset.xpiClassic
+                assertEqual(classic.id, "xpi_classic")
+                assertEqual(classic.bindings[.harmonyNavigate2D]?.input, .leftStick2D)
+
+                let lowFatigue = ControlSchemePreset.lowFatigue
+                assertEqual(lowFatigue.id, "xpi_low_fatigue")
+                assertEqual(lowFatigue.stickFeel, .responsive)
+                assertEqual(lowFatigue.triggerFeel, .soft)
+
+                let oneHandL = ControlSchemePreset.oneHandLeft
+                assertEqual(oneHandL.bindings[.primaryExcitation]?.input, .leftTrigger)
+                assertEqual(oneHandL.bindings[.harmonyNavigate2D]?.input, .leftStick2D)
+
+                let oneHandR = ControlSchemePreset.oneHandRight
+                assertEqual(oneHandR.bindings[.primaryExcitation]?.input, .rightStickY)
+                assertEqual(oneHandR.bindings[.pitchExpression]?.input, .rightStickX)
+            }
+
+            test("Semantic musical action categories and compatibility") {
+                assertEqual(SemanticMusicalAction.primaryExcitation.category, .excitation)
+                assertEqual(SemanticMusicalAction.pitchExpression.category, .expression)
+                assertEqual(SemanticMusicalAction.harmonyNavigate2D.category, .harmony)
+                assertEqual(SemanticMusicalAction.techniqueModifier.category, .articulation)
+                assertEqual(SemanticMusicalAction.voiceDegree1.category, .directVoices)
+                assertEqual(SemanticMusicalAction.panic.category, .utility)
+
+                assertEqual(SemanticMusicalAction.harmonyNavigate2D.compatibilityType, .continuous2D)
+                assertEqual(SemanticMusicalAction.primaryExcitation.compatibilityType, .continuous1DOr2D)
+                assertEqual(SemanticMusicalAction.techniqueModifier.compatibilityType, .digitalMomentary)
+            }
+
+            test("Thumbstick hardware calibration and drift deadzone suppression") {
+                let cal = StickCalibration(
+                    restCenterX: 0.05,
+                    restCenterY: -0.04,
+                    driftRadius: 0.08,
+                    maxRadius: 0.95
+                )
+
+                // Resting input near drift offset must be clamped strictly to 0
+                let resting = cal.calibrate(rawX: 0.06, rawY: -0.03)
+                assertEqual(resting.x, 0.0)
+                assertEqual(resting.y, 0.0)
+
+                // Excursion past drift deadzone must scale outward smoothly
+                let active = cal.calibrate(rawX: 0.95, rawY: -0.04)
+                assertTrue(active.x > 0.9)
+                assertEqual(active.y, 0.0)
+            }
+
+            test("Trigger hardware calibration and travel thresholding") {
+                let cal = TriggerCalibration(restMin: 0.06, travelMax: 0.92, sensitivity: 1.0)
+                
+                // Below rest threshold must be 0
+                assertEqual(cal.calibrate(rawValue: 0.04), 0.0)
+                
+                // Half travel
+                let mid = cal.calibrate(rawValue: 0.49)
+                assertTrue(mid > 0.45 && mid < 0.55)
+                
+                // Full travel
+                let maxVal = cal.calibrate(rawValue: 0.95)
+                assertEqual(maxVal, 1.0)
+            }
+
+            test("StickProcessor per-axis inversion and sensitivity multipliers") {
+                var processor = StickProcessor(profile: .expressive)
+                processor.invertY = true
+                processor.sensitivityX = 1.5
+
+                let processed = processor.process(rawX: 0.4, rawY: 0.4, timestamp: 1.0)
+                assertTrue(processed.calibratedX > 0.5, "Sensitivity multiplier should increase effective excursion.")
+                assertTrue(processed.calibratedY < 0.0, "Y inversion must reverse axis direction.")
+            }
+
+            test("Interactive calibration wizard step progression and capture") {
+                let wizard = CalibrationWizard()
+                wizard.start()
+                assertEqual(wizard.currentStep, .measuringRest(samples: 0))
+
+                // Feed rest samples
+                for _ in 0..<65 {
+                    wizard.feed(rawLeftX: 0.02, rawLeftY: -0.01, rawRightX: -0.03, rawRightY: 0.02)
+                }
+
+                if case .measuringRange = wizard.currentStep {
+                    assertTrue(true)
+                } else {
+                    assertTrue(false, "Wizard should transition to measuringRange after rest samples.")
+                }
+
+                // Feed rotation excursion
+                wizard.feed(rawLeftX: 0.98, rawLeftY: 0.0, rawRightX: 0.0, rawRightY: 0.96)
+                let result = wizard.finish()
+                assertEqual(wizard.currentStep, .completed)
+                assertTrue(result.leftStick.restCenterX > 0.01)
+                assertTrue(result.leftStick.maxRadius >= 0.85)
+            }
+
+            test("Control scheme remapping conflict detection") {
+                var scheme = ControlSchemePreset.xpiPerformance
+
+                // No conflicts in default preset
+                let clean = MappingConflict.detectConflicts(in: scheme)
+                assertEqual(clean.count, 0)
+
+                // Induce critical conflict: Map Strum and Harmonic wheel to the same stick
+                scheme.bindings[.primaryExcitation] = PhysicalControlBinding(input: .leftStick2D)
+                let conflicts = MappingConflict.detectConflicts(in: scheme)
+                assertTrue(conflicts.contains { $0.severity == .critical }, "Mutually exclusive primary actions on the same control must be flagged as critical.")
+            }
+
+            test("Dynamic prompt and glyph single-source-of-truth generation") {
+                let manager = ControllerManager()
+                manager.selectControllerKind(.dualSense)
+                manager.selectControlScheme(ControlSchemePreset.xpiPerformance)
+
+                let strumLabel = manager.controlLabel(for: .primaryExcitation)
+                assertEqual(strumLabel, "Right Stick Y")
+
+                let dampingLabel = manager.controlLabel(for: .dampingExpression)
+                assertEqual(dampingLabel, "L2")
+
+                // Switch to Xbox controller kind
+                manager.selectControllerKind(.xbox)
+                let xboxDamp = manager.controlLabel(for: .dampingExpression)
+                assertEqual(xboxDamp, "LT")
+            }
+
+            test("Safe control scheme switching without stuck notes") {
+                let manager = ControllerManager()
+                manager.selectControlScheme(ControlSchemePreset.xpiPerformance)
+                assertEqual(manager.activeScheme.id, "xpi_performance")
+
+                // Switch to low-fatigue scheme
+                manager.selectControlScheme(ControlSchemePreset.lowFatigue)
+                assertEqual(manager.activeScheme.id, "xpi_low_fatigue")
+                assertEqual(manager.leftStickProcessor.profile.id, "fast")
+                assertEqual(manager.leftTriggerProcessor.deadzone, 0.04)
+            }
+
+            test("ControlScheme and HardwareCalibration JSON persistence and roundtrip") {
+                let scheme = ControlSchemePreset.xpiPerformance.makeCustomCopy(name: "My Custom Synth Scheme")
+                let store = ControllerSettingsStore.shared
+                store.saveCustomScheme(scheme)
+
+                let loaded = store.loadCustomSchemes()
+                assertTrue(loaded.contains { $0.id == scheme.id })
+                assertEqual(loaded.first(where: { $0.id == scheme.id })?.name, "My Custom Synth Scheme")
+
+                // Test hardware calibration persistence
+                var cal = ControllerHardwareCalibration(controllerIdentifier: "test_dualsense_01")
+                cal.leftStick.restCenterX = 0.045
+                store.saveCalibration(cal)
+
+                let loadedCal = store.loadCalibration(for: "test_dualsense_01")
+                assertEqual(loadedCal.leftStick.restCenterX, 0.045)
             }
         }
 

@@ -1367,10 +1367,46 @@ This document synthesises the current XPI implementation with the following desi
 
 ---
 
-## 32. Final Design Principle
+---
+
+## 33. Semantic Control Scheme Architecture & Ergonomics
+
+XPI decouples physical controller input from instrument profiles through an intermediate **Semantic Musical Action** layer:
+
+```text
+Physical Controller Input (GameController / GCExtendedGamepad)
+            ↓
+Controller Hardware Calibration (Rest Center, Drift Radius, Max Reach Radius)
+            ↓
+Input Processing Pipeline (Deadzones with Hysteresis, Curves: Precise/Balanced/Responsive, Smoothing)
+            ↓
+Control Scheme (XPI Performance, XPI Classic, Low-Fatigue, One-Hand Left, One-Hand Right, Custom)
+            ↓
+Semantic Musical Actions (primaryExcitation, pitchExpression, pressureExpression, harmonyNavigate2D...)
+            ↓
+Instrument Profile (Guitar, Synth Lead, Bass, Strings, Keys, Drums)
+            ↓
+Performance Event → MIDI/MPE & Audio Synthesizer
+```
+
+### 33.1 Built-in Schemes
+1. **XPI Performance (Recommended Default)**: Balanced two-hand layout. Left thumb navigates the Harmonic Wheel; Right thumb performs Pitch Expression ($X$) and Strum Excitation ($Y$); Triggers govern Palm Mute Damping (L2) and Pressure Swell (R2); Bumpers govern Legato Technique (L1) and Ringing Sustain Latch (R1); Face buttons articulate direct chord voices or solo notes.
+2. **XPI Classic (Compatibility)**: Exact legacy XPadInput mapping layout.
+3. **Low-Fatigue Ergonomics**: Eliminates stick clicks, replaces long holds with toggles, and uses light trigger thresholds for low-strain playing.
+4. **One-Hand (Left)**: Full single-handed performance on the left side with 6-axis gyro tilt pitch expression.
+5. **One-Hand (Right)**: Full single-handed performance on the right side with right-stick expression and face button chord triggers.
+6. **Custom Schemes**: User-editable copies with full remapping, axis inversion, and conflict detection.
+
+### 33.2 Single Source of Truth for Control Prompts
+All UI tooltips, HUD badges, and onboarding cues query `controllerManager.controlLabel(for: .action)` to dynamically reflect active rebindings and controller hardware glyphs (DualSense $\to$ L2/R2, Xbox $\to$ LT/RT, Switch $\to$ ZL/ZR).
+
+---
+
+## 34. Final Design Principle
 
 > **Do not show the user that a controller value changed. Show them that the instrument responded to their gesture.**
 
 A successful XPI interface should become progressively less necessary to stare at as the player gains skill.
 
 The screen teaches the instrument, confirms the instrument, and reveals its deeper state — but the player’s hands should ultimately be able to make music without asking the screen what to do next.
+

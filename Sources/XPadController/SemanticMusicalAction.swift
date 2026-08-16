@@ -141,7 +141,7 @@ public enum SemanticMusicalAction: String, Codable, Sendable, CaseIterable, Iden
             return .continuous1DOr2D
         case .octaveUp, .octaveDown, .voicingNext, .voicingPrevious:
             return .digitalOrDirectional
-        case .techniqueModifier, .voiceDegree1, .voiceDegree3, .voiceDegree5, .voiceDegree7:
+        case .techniqueModifier, .secondaryExcitation, .voiceDegree1, .voiceDegree3, .voiceDegree5, .voiceDegree7:
             return .digitalMomentary
         case .sustainLatch, .soloModeToggle, .duoModeToggle, .panic, .metronomeToggle:
             return .digitalToggleOrButton
@@ -238,9 +238,9 @@ public enum PhysicalControlInput: String, Codable, Sendable, CaseIterable, Ident
         case .dpadLeft: return .dpadLeft
         case .dpadRight: return .dpadRight
         case .buttonOptions: return .psOptions
-        case .buttonShare: return .psShare
+        case .buttonShare: return .psCreate
         case .buttonCenter, .touchpad2D: return .psTouchpad
-        case .motionPitch, .motionRoll, .motionYaw: return .gyroMotion
+        case .motionPitch, .motionRoll, .motionYaw: return .guitarTilt
         case .unassigned: return .leftStick
         }
     }
