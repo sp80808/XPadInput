@@ -45,16 +45,16 @@ struct ScaleSelectorView: View {
                     appState.setScale(scale)
                 } label: {
                     if scale.id == appState.currentScale.id {
-                        Label(scale.name, systemImage: "checkmark")
+                        Label(scale.displayName, systemImage: "checkmark")
                     } else {
-                        Text(scale.name)
+                        Text(scale.displayName)
                     }
                 }
             }
         } label: {
             CompactTransportMenuLabel(
                 prefix: nil,
-                value: appState.currentScale.name,
+                value: appState.currentScale.displayName,
                 minWidth: 116
             )
         }
@@ -63,7 +63,7 @@ struct ScaleSelectorView: View {
         .fixedSize(horizontal: true, vertical: false)
         .help("Choose scale")
         .accessibilityLabel("Scale")
-        .accessibilityValue(appState.currentScale.name)
+        .accessibilityValue(appState.currentScale.displayName)
     }
 }
 

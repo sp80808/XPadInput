@@ -9,11 +9,13 @@ public struct XTheme {
     public static let primaryDark = Color(hue: 0.38, saturation: 0.90, brightness: 0.45)
     public static let accent = Color(hue: 0.35, saturation: 0.90, brightness: 0.82)
     public static let primaryMuted = Color(hue: 0.38, saturation: 0.20, brightness: 0.25)
+    public static let emerald = primary
     
     // MARK: - Surface Colors
     
     public static let background = Color(hue: 0.38, saturation: 0.08, brightness: 0.10)
     public static let surface = Color(hue: 0.38, saturation: 0.06, brightness: 0.14)
+    public static let cardBackground = surface
     public static let surfaceElevated = Color(hue: 0.38, saturation: 0.05, brightness: 0.18)
     public static let surfaceHover = Color(hue: 0.38, saturation: 0.10, brightness: 0.22)
     public static let surfacePressed = Color(hue: 0.38, saturation: 0.14, brightness: 0.11)
@@ -61,6 +63,8 @@ public struct XTheme {
         startPoint: .top,
         endPoint: .bottom
     )
+
+    public static let backgroundGradient = subtleGradient
 
     public static let cardGradient = LinearGradient(
         colors: [surfaceElevated.opacity(0.82), surface.opacity(0.98)],

@@ -97,30 +97,50 @@ Pure theory models (`XPadCore`, `XPadTheory`) are `Sendable` value types with no
 
 ---
 
-## 6. Verification & Testing
+## 6. Verification, Testing & CI Pipeline
 
-### 6.1 Test Suite Structure
+### 6.1 Automated macOS CI & Release Packaging Gate
+
+Every commit to `main` and all pull requests are validated via GitHub Actions on a native macOS runner (`.github/workflows/macos-ci.yml`):
+- **Diagnostic Toolchain**: Verifies active Swift 6.0 toolchain and macOS environment.
+- **Automated Test Gate**: Runs full unit test suites across all 6 submodules via `swift test`.
+- **Release Packaging**: Compiles release binary, builds universal `XPI.app` bundle, ad-hoc signs with entitlements, and packages distributable `.dmg` and `.zip` archives.
+- **Checksum Verification**: Generates and validates cryptographic SHA-256 hashes against all distribution artifacts.
+
+### 6.2 Test Suite Structure
 
 | Suite | Domain | Focus |
 | :--- | :--- | :--- |
 | `XPadCoreTests` | Theory primitives | Pitch math, enharmonics, intervals, scales, chords, voicings |
 | `XPadTheoryTests` | Harmony engine | Polar wheels, voice leading, suggestions, modulations, progressions |
 | `XPadControllerTests` | Hardware abstraction | Deadzones, strum velocity, direction heuristics, rhythm compass, gesture capture |
-| `XPadMIDITests` | MIDI/MPE | Virtual port lifecycle, MPE channel distribution, SMF binary encoding |
-| `XPadAudioTests` | DSP synth | Preset configurations, ADSR state transitions |
+| `XPadMIDITests` | MIDI/MPE & CoreMIDI | Port lifecycle, MPE channel distribution, SMF encoding, UMP translation, **CoreMIDI virtual loopback** |
+| `XPadAudioTests` | DSP synth | Preset configurations, ADSR state transitions, filter responses |
 | `XPadSequencerTests` | Timeline | Transport states, clip recording, 960 PPQN clock, scene transitions |
 
-### 6.2 Running Tests
+### 6.3 CoreMIDI Virtual-Source Loopback Testing
 
-```bash
-# Run all unit tests
-swift test
+To prove high-resolution MIDI 2.0 delivery without third-party host dependency in CI:
+- An in-process CoreMIDI test receiver initializes a `._2_0` input port via `MIDIInputPortCreateWithProtocol`.
+- Connects directly to the `XPI Main` virtual source endpoint (`MIDISourceCreateWithProtocol`).
+- Validates that native 32-bit pitch bend words (`0x80000000` centre anchor) and UMP packet headers (`0x4` Channel Voice) survive the real macOS CoreMIDI driver transport without truncation.
 
-# Run the exhaustive integration test runner
-swift run XPadTests
+### 6.4 Recording Architecture: Dual SMF1 & MIDI Clip File (SMF2)
+
+```
+Recorded Gesture / Performance Timeline (Transport-Neutral Normalized Events)
+                         │
+         +---------------+---------------+
+         │                               │
+         ▼                               ▼
+Standard MIDI File 1.0          MIDI Clip File (SMF2 / M2-116-U)
+  - Type 0 / Type 1 SMF           - Single UMP stream
+  - 14-bit pitch bend             - 32-bit pitch / pressure / CC
+  - 7-bit velocity & CC           - 16-bit note velocity
+  - Legacy DAW drag-and-drop      - Native MIDI 2.0 clip export
 ```
 
-### 6.3 Determinism Requirements
+### 6.5 Determinism Requirements
 
 All `XPadCore` and `XPadTheory` models must be deterministic given identical inputs. Randomness is confined to optional generative features in `XPadTheory` and is explicitly seeded.
 

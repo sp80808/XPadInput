@@ -122,8 +122,7 @@ struct HarmonicWheelView: View {
                     .font(.system(size: 22, weight: .bold, design: .rounded))
                     .foregroundColor(XTheme.primary)
                 
-                Text(appState.currentScale.name.replacingOccurrences(of: " (Ionian)", with: "")
-                        .replacingOccurrences(of: " (Aeolian)", with: ""))
+                Text(appState.currentScale.displayName)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(XTheme.textSecondary)
                     .lineLimit(1)

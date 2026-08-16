@@ -147,3 +147,85 @@ public struct VelocityPulse: View {
             }
     }
 }
+
+/// HUD displaying dynamic DualSense adaptive motor resistance feedback and detents.
+public struct AdaptiveTriggerVisualizerHUD: View {
+    public let feedbackState: AdaptiveTriggerFeedbackState
+    public let label: String
+    public let accentColor: Color
+
+    public init(
+        feedbackState: AdaptiveTriggerFeedbackState,
+        label: String = "Adaptive Trigger",
+        accentColor: Color = .green
+    ) {
+        self.feedbackState = feedbackState
+        self.label = label
+        self.accentColor = accentColor
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(label)
+                    .font(.caption.bold())
+                Spacer()
+                Text(feedbackState.activeMode.rawValue)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(accentColor)
+            }
+
+            // Dual bar: Position vs Resistive Motor Force
+            HStack(spacing: 8) {
+                VStack(spacing: 2) {
+                    Text("Pos")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.secondary)
+                    ZStack(alignment: .bottom) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.white.opacity(0.1))
+                            .frame(width: 14, height: 50)
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(accentColor)
+                            .frame(width: 14, height: CGFloat(feedbackState.triggerPosition) * 50)
+                    }
+                }
+
+                VStack(spacing: 2) {
+                    Text("Force")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.secondary)
+                    ZStack(alignment: .bottom) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.white.opacity(0.1))
+                            .frame(width: 14, height: 50)
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(feedbackState.isInDetent ? Color.orange : Color.red.opacity(0.8))
+                            .frame(width: 14, height: CGFloat(feedbackState.calculatedForce) * 50)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(feedbackState.statusDescription)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .lineLimit(2)
+
+                    if feedbackState.isInDetent, let idx = feedbackState.activeDetentIndex {
+                        Text("Notch Detent #\(idx)")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Color.orange)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .padding(8)
+        .background(Color.black.opacity(0.3))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+}

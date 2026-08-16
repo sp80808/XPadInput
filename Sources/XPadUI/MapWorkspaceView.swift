@@ -4,6 +4,7 @@ import XPadController
 
 public struct MapWorkspaceView: View {
     public var controllerManager: ControllerManager
+    @State private var selectedTab: Int = 0
 
     public init(controllerManager: ControllerManager) {
         self.controllerManager = controllerManager
@@ -80,21 +81,35 @@ public struct MapWorkspaceView: View {
 
                 // Triggers & Shoulders Gauges (if standard)
                 if controllerManager.controllerKind.category == .standard {
-                    HStack(spacing: 20) {
-                        triggerGauge(label: "Left Trigger (L2 / Mute)", value: state.leftTrigger)
-                        triggerGauge(label: "Right Trigger (R2 / Expression)", value: state.rightTrigger)
+                    HStack(spacing: 12) {
+                        AdaptiveTriggerVisualizerHUD(
+                            feedbackState: controllerManager.adaptiveTriggerEngine.leftState,
+                            label: "L2 (Mute / Tension)",
+                            accentColor: .green
+                        )
+                        AdaptiveTriggerVisualizerHUD(
+                            feedbackState: controllerManager.adaptiveTriggerEngine.rightState,
+                            label: "R2 (Pressure / Drag)",
+                            accentColor: .orange
+                        )
                     }
                 }
             }
             .padding()
             .frame(minWidth: 460)
 
-            // Right: Gesture-to-Music Modulation Matrix with Vector Glyphs
+            // Right: Modulation Matrix or OCDS Manager
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
-                    Text("Modulation & Gesture Matrix")
-                        .font(.headline)
+                    Picker("View Mode", selection: $selectedTab) {
+                        Text("Modulation Matrix").tag(0)
+                        Text("OCDS Profile Manager").tag(1)
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 320)
+
                     Spacer()
+
                     Text(iconPack.name)
                         .font(.caption2.bold())
                         .foregroundStyle(Color(hex: iconPack.brandAccentHex))
@@ -104,10 +119,13 @@ public struct MapWorkspaceView: View {
                         .clipShape(Capsule())
                 }
 
-                ScrollView {
-                    VStack(spacing: 10) {
-                        switch controllerManager.controllerKind {
-                        case .guitarHero:
+                if selectedTab == 1 {
+                    OCDSProfileManagerView()
+                } else {
+                    ScrollView {
+                        VStack(spacing: 10) {
+                            switch controllerManager.controllerKind {
+                            case .guitarHero:
                             modulationRowWithGlyph(glyph: .guitarStrumDown, source: "Strum Bar Down", dest: "Voiced Chord Strum (Down)", amount: "100%")
                             modulationRowWithGlyph(glyph: .guitarStrumUp, source: "Strum Bar Up", dest: "Voiced Chord Strum (Up)", amount: "100%")
                             modulationRowWithGlyph(glyph: .guitarWhammy, source: "Whammy Bar", dest: "MPE Pitch Dive & Timbre Swell", amount: "100%")
@@ -148,11 +166,10 @@ public struct MapWorkspaceView: View {
                             modulationRowWithGlyph(glyph: .leftStick, source: "Left Stick Angle", dest: "Harmonic Wheel Sector", amount: "100%")
                             modulationRowWithGlyph(glyph: .leftStick, source: "Left Stick Radius", dest: "Harmonic Risk / Extensions", amount: "75%")
                             modulationRowWithGlyph(glyph: .rightStick, source: "Right Stick Velocity", dest: "Strum Dynamics & Velocity", amount: "100%")
-                            modulationRowWithGlyph(glyph: .psL2, source: "Left Trigger (L2)", dest: "Palm Mute & Filter Decay", amount: "100%")
-                            modulationRowWithGlyph(glyph: .psR2, source: "Right Trigger (R2)", dest: "MPE Timbre Expression (CC74)", amount: "100%")
                             modulationRowWithGlyph(glyph: .psTouchpad, source: "Touchpad Surface", dest: "2D Filter & Resonance Sweep", amount: "80%")
                         }
                     }
+                }
                 }
             }
             .padding()

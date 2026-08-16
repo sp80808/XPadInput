@@ -78,7 +78,27 @@ feat(MIDI): add polyphonic key pressure fallback for legacy synths
 
 ---
 
-## 6. Filesystem Sanitation
+## 6. Task Tracking with Beads (`bd`)
+
+This repository uses **Beads (`bd`)** backed by Dolt for distributed issue and milestone tracking:
+
+```bash
+# View available ready tasks
+bd ready
+
+# View issue details
+bd show <issue-id>
+
+# Claim an issue to work on
+bd update <issue-id> --claim
+
+# Complete and close work
+bd close <issue-id>
+```
+
+---
+
+## 7. Filesystem Sanitation
 
 Purge AppleDouble files before committing:
 ```bash
@@ -86,11 +106,22 @@ dot_clean .
 git status
 ```
 
-Do not commit `._*` files, `.DS_Store`, or build artifacts.
+Do not commit `._*` files, `.DS_Store`, or release/agentic build artifacts (enforced via `.gitignore`).
 
 ---
 
-## 7. Documentation Updates
+## 8. Continuous Integration & Release Gate
+
+Every push and PR runs through the GitHub Actions macOS CI workflow (`.github/workflows/macos-ci.yml`):
+- `swift package resolve` & `swift build`
+- `swift test` (all unit test suites)
+- Release `XPI.app` packaging and `.dmg` / `.zip` artifact validation with SHA-256 checksums
+
+Ensure all local tests pass (`swift test`) before opening a PR.
+
+---
+
+## 9. Documentation Updates
 
 When changing behaviour, update the relevant spec:
 
@@ -98,10 +129,11 @@ When changing behaviour, update the relevant spec:
 - UI/interaction changes → `DESIGN.md`
 - Architecture or performance changes → `TECH_STACK.md`
 - Milestone changes → `ROADMAP.md`
+- MIDI 2.0 / MIDI-CI changes → `MIDI2_ROADMAP.md`
 
 ---
 
-## 8. Design Review
+## 10. Design Review
 
 Before merging, verify against the checklist in `DESIGN.md` §27:
 
@@ -113,7 +145,8 @@ Before merging, verify against the checklist in `DESIGN.md` §27:
 
 ---
 
-## 9. Questions
+## 11. Questions
 
-- Existing discussion: open an issue with the `question` label.
+- Issue tracking & task discovery: run `bd ready` or check [GitHub Issues](https://github.com/sp80808/XPadInput/issues).
 - Design direction: reference `DESIGN.md` and `SOUL.md`.
+

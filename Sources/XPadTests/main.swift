@@ -1,4 +1,6 @@
 import Foundation
+import AudioToolbox
+import AVFoundation
 import XPadCore
 import XPadTheory
 import XPadController
@@ -667,6 +669,265 @@ final class TestRunner {
             }
         }
 
+        // MARK: - AUv3 & VST3 Plugin Suite
+        suite("AUv3 & VST3 Plugin Targets: Instrument & MIDI FX") {
+            test("AUv3 Parameter Tree & VST3 Bridge Mapping") {
+                let tree = XPadAUParameterTreeBuilder.createParameterTree()
+                let cutoffParam = tree.parameter(withAddress: XPadAUParameterAddress.filterCutoff.rawValue)
+                assertNotNil(cutoffParam)
+                assertEqual(cutoffParam?.minValue ?? 0, 20.0)
+                assertEqual(cutoffParam?.maxValue ?? 0, 20000.0)
+
+                let volParam = tree.parameter(withAddress: XPadAUParameterAddress.masterVolume.rawValue)
+                assertNotNil(volParam)
+                assertEqual(volParam?.value ?? 0, 0.7)
+
+                let vstBridge = VST3Bridge.shared
+                assertNotNil(vstBridge.parameterInfos[100])
+                if let cutoffInfo = vstBridge.parameterInfos[200] {
+                    assertEqual(cutoffInfo.minValue, 20.0)
+                    assertEqual(cutoffInfo.maxValue, 20000.0)
+                    let norm = cutoffInfo.plainToNormalized(10010.0)
+                    assertTrue(abs(norm - 0.5) < 0.01)
+                    let plain = cutoffInfo.normalizedToPlain(0.5)
+                    assertTrue(abs(plain - 10010.0) < 1.0)
+                }
+            }
+
+            test("AUv3 Instrument Audio Render Block & State Serialization") {
+                do {
+                    let desc = XPadPluginRegistrar.instrumentComponentDescription
+                    let instrument = try XPadAUInstrument(componentDescription: desc)
+                    assertEqual(instrument.outputBusses.count, 1)
+                    assertEqual(instrument.inputBusses.count, 0)
+
+                    try instrument.allocateRenderResources()
+
+                    let renderBlock = instrument.internalRenderBlock
+                    var flags: AudioUnitRenderActionFlags = []
+                    var timestamp = AudioTimeStamp()
+                    timestamp.mSampleTime = 0
+                    timestamp.mFlags = .sampleTimeValid
+
+                    let frameCount: UInt32 = 128
+                    let format = AVAudioFormat(standardFormatWithSampleRate: 44100.0, channels: 2)!
+                    let pcmBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
+                    pcmBuffer.frameLength = frameCount
+
+                    var midiEvent = AURenderEvent()
+                    midiEvent.head.eventType = .MIDI
+                    midiEvent.head.eventSampleTime = 0
+                    midiEvent.MIDI.data = (0x90, 60, 100)
+                    midiEvent.MIDI.length = 3
+
+                    let status = withUnsafePointer(to: &midiEvent) { eventPtr in
+                        renderBlock(&flags, &timestamp, frameCount, 0, pcmBuffer.mutableAudioBufferList, eventPtr, nil)
+                    }
+                    assertEqual(status, noErr)
+
+                    let leftChannel = pcmBuffer.floatChannelData![0]
+                    var maxAudioSample: Float = 0
+                    for i in 0..<Int(frameCount) {
+                        let sample = abs(leftChannel[i])
+                        if sample > maxAudioSample { maxAudioSample = sample }
+                    }
+                    assertTrue(maxAudioSample > 0.0001, "Poly synth render block must generate audio on Note On")
+
+                    let state = instrument.fullState
+                    assertNotNil(state)
+                    assertTrue(state?["XPadParameters"] != nil)
+
+                    instrument.deallocateRenderResources()
+                } catch {
+                    assertTrue(false, "AUv3 Instrument test failed: \(error)")
+                }
+            }
+
+            test("AUv3 MIDI FX Chord & Voice Leading Output") {
+                do {
+                    let desc = XPadPluginRegistrar.midiFXComponentDescription
+                    let midiFX = try XPadAUMIDIFX(componentDescription: desc)
+                    assertEqual(midiFX.outputBusses.count, 0)
+                    assertEqual(midiFX.inputBusses.count, 0)
+
+                    var generatedMIDIEvents: [[UInt8]] = []
+                    midiFX.midiOutputEventBlock = { sampleTime, cable, length, data in
+                        let bytes = Array(UnsafeBufferPointer(start: data, count: length))
+                        generatedMIDIEvents.append(bytes)
+                        return noErr
+                    }
+
+                    try midiFX.allocateRenderResources()
+                    let renderBlock = midiFX.internalRenderBlock
+                    var flags: AudioUnitRenderActionFlags = []
+                    var timestamp = AudioTimeStamp()
+                    timestamp.mSampleTime = 0
+
+                    var midiInEvent = AURenderEvent()
+                    midiInEvent.head.eventType = .MIDI
+                    midiInEvent.MIDI.data = (0x90, 62, 100) // D4
+                    midiInEvent.MIDI.length = 3
+
+                    let emptyFormat = AVAudioFormat(standardFormatWithSampleRate: 44100, channels: 1)!
+                    let emptyPcm = AVAudioPCMBuffer(pcmFormat: emptyFormat, frameCapacity: 64)!
+                    withUnsafePointer(to: &midiInEvent) { eventPtr in
+                        _ = renderBlock(&flags, &timestamp, 64, 0, emptyPcm.mutableAudioBufferList, eventPtr, nil)
+                    }
+
+                    assertTrue(generatedMIDIEvents.count >= 3, "MIDI FX must output chord notes")
+                    assertTrue(generatedMIDIEvents.allSatisfy { $0[0] == 0x90 }, "Generated events must be Note On")
+
+                    midiFX.deallocateRenderResources()
+                } catch {
+                    assertTrue(false, "AUv3 MIDI FX test failed: \(error)")
+                }
+            }
+        }
+
+        // MARK: - CoreAudio Virtual Audio Driver & Loopback Suite
+        suite("CoreAudio Virtual Audio Driver & Loopback Stream") {
+            test("Audio Ring Buffer Multi-Channel Read/Write & Wrap-Around") {
+                let ringBuffer = AudioRingBuffer(channels: 2, capacityFrames: 1024)
+                assertEqual(ringBuffer.channels, 2)
+                assertEqual(ringBuffer.capacityFrames, 1024)
+                assertEqual(ringBuffer.availableReadFrames, 0)
+
+                let testInputL: [Float] = [0.1, 0.2, 0.3, 0.4, 0.5]
+                let testInputR: [Float] = [0.6, 0.7, 0.8, 0.9, 1.0]
+
+                testInputL.withUnsafeBufferPointer { ptrL in
+                    testInputR.withUnsafeBufferPointer { ptrR in
+                        let written = ringBuffer.writeStereo(left: ptrL.baseAddress!, right: ptrR.baseAddress!, frameCount: 5)
+                        assertEqual(written, 5)
+                    }
+                }
+
+                assertEqual(ringBuffer.availableReadFrames, 5)
+
+                var readOutput = [Float](repeating: 0.0, count: 10)
+                readOutput.withUnsafeMutableBufferPointer { ptr in
+                    let readFrames = ringBuffer.readInterleaved(into: ptr.baseAddress!, frameCount: 5)
+                    assertEqual(readFrames, 5)
+                }
+
+                assertEqual(readOutput[0], 0.1)
+                assertEqual(readOutput[1], 0.6)
+                assertEqual(readOutput[8], 0.5)
+                assertEqual(readOutput[9], 1.0)
+                assertEqual(ringBuffer.availableReadFrames, 0)
+
+                // Wrap-around test
+                let largeWriteL = [Float](repeating: 0.25, count: 800)
+                let largeWriteR = [Float](repeating: 0.25, count: 800)
+                largeWriteL.withUnsafeBufferPointer { ptrL in
+                    largeWriteR.withUnsafeBufferPointer { ptrR in
+                        _ = ringBuffer.writeStereo(left: ptrL.baseAddress!, right: ptrR.baseAddress!, frameCount: 800)
+                    }
+                }
+                var largeRead = [Float](repeating: 0.0, count: 1600)
+                largeRead.withUnsafeMutableBufferPointer { ptr in
+                    _ = ringBuffer.readInterleaved(into: ptr.baseAddress!, frameCount: 800)
+                }
+                assertEqual(ringBuffer.availableReadFrames, 0)
+
+                let wrapWriteL = [Float](repeating: 0.75, count: 500)
+                let wrapWriteR = [Float](repeating: 0.75, count: 500)
+                wrapWriteL.withUnsafeBufferPointer { ptrL in
+                    wrapWriteR.withUnsafeBufferPointer { ptrR in
+                        let written = ringBuffer.writeStereo(left: ptrL.baseAddress!, right: ptrR.baseAddress!, frameCount: 500)
+                        assertEqual(written, 500)
+                    }
+                }
+                assertEqual(ringBuffer.availableReadFrames, 500)
+
+                var wrapRead = [Float](repeating: 0.0, count: 1000)
+                wrapRead.withUnsafeMutableBufferPointer { ptr in
+                    let read = ringBuffer.readInterleaved(into: ptr.baseAddress!, frameCount: 500)
+                    assertEqual(read, 500)
+                }
+                assertEqual(wrapRead[0], 0.75)
+                assertEqual(wrapRead[1], 0.75)
+
+                ringBuffer.reset()
+                assertEqual(ringBuffer.availableReadFrames, 0)
+            }
+
+            test("Audio Level Meter RMS and Peak Ballistics") {
+                let meter = AudioLevelMeter()
+                let loudAudioL: [Float] = [0.8, -0.8, 0.8, -0.8]
+                let loudAudioR: [Float] = [0.4, -0.4, 0.4, -0.4]
+                loudAudioL.withUnsafeBufferPointer { pL in
+                    loudAudioR.withUnsafeBufferPointer { pR in
+                        meter.processFrames(left: pL.baseAddress!, right: pR.baseAddress!, frameCount: 4)
+                    }
+                }
+                assertTrue(meter.peakLeft >= 0.8)
+                assertTrue(meter.peakRight >= 0.4)
+                assertTrue(meter.peakLeftDB > -3.0)
+                assertTrue(meter.rmsLeft > 0.5)
+            }
+
+            test("Virtual Audio Driver Stream Lifecycle & Ingestion") {
+                let driver = VirtualAudioDriver(ringBufferCapacity: 2048)
+                assertFalse(driver.isEnabled)
+                driver.setEnabled(true)
+                assertTrue(driver.isEnabled)
+
+                driver.setSampleRate(.rate48k0)
+                assertEqual(driver.sampleRate, .rate48k0)
+
+                driver.setBufferSize(.lowLatency64)
+                assertEqual(driver.bufferSize, .lowLatency64)
+
+                let testFrames: [Float] = [0.5, 0.5, 0.5, 0.5]
+                testFrames.withUnsafeBufferPointer { p in
+                    driver.ingestAudio(left: p.baseAddress!, right: nil, frameCount: 4)
+                }
+                assertTrue(driver.driverState.totalFramesStreamed >= 4)
+
+                var pulledData = [Float](repeating: 0.0, count: 8)
+                pulledData.withUnsafeMutableBufferPointer { p in
+                    let pulled = driver.pullInterleaved(into: p.baseAddress!, frameCount: 4)
+                    assertEqual(pulled, 4)
+                }
+                assertEqual(pulledData[0], 0.5)
+                assertEqual(pulledData[1], 0.5)
+
+                driver.setEnabled(false)
+                assertFalse(driver.isEnabled)
+            }
+
+            test("Loopback Stem Recording & WAV Disk Export") {
+                let recorder = LoopbackAudioRecorder()
+                assertFalse(recorder.isRecording)
+
+                do {
+                    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("test_loopback_export.wav")
+                    try? FileManager.default.removeItem(at: tempURL)
+
+                    let fileURL = try recorder.startRecording(outputURL: tempURL, sampleRate: 44100.0, channels: 2)
+                    assertTrue(recorder.isRecording)
+                    assertEqual(fileURL, tempURL)
+
+                    let format = AVAudioFormat(standardFormatWithSampleRate: 44100.0, channels: 2)!
+                    if let pcmBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 128) {
+                        pcmBuffer.frameLength = 128
+                        recorder.recordBuffer(pcmBuffer)
+                        assertEqual(recorder.recordedFrames, 128)
+                    }
+
+                    let stoppedURL = recorder.stopRecording()
+                    assertFalse(recorder.isRecording)
+                    assertEqual(stoppedURL, tempURL)
+                    assertTrue(FileManager.default.fileExists(atPath: tempURL.path))
+
+                    try? FileManager.default.removeItem(at: tempURL)
+                } catch {
+                    assertTrue(false, "LoopbackAudioRecorder test failed: \(error)")
+                }
+            }
+        }
+
         // MARK: - Sequencer Tests
         suite("XPadSequencer: Track, Clip, Scene, Transport, Recording") {
             test("Sequencer Data Models") {
@@ -853,6 +1114,304 @@ final class TestRunner {
                 assertEqual(Array(data[0..<4]), [0x4D, 0x54, 0x68, 0x64])
                 assertEqual(Array(data.suffix(3)), [0xFF, 0x2F, 0x00])
                 assertTrue(data.contains(where: { $0 >= 0xE0 && $0 <= 0xEF }))
+            }
+        }
+
+        // MARK: - Dynamic Adaptive Triggers Tests
+        suite("Dynamic Adaptive Triggers: DualSense Resistance, Gauges & Detents") {
+            test("Guitar string tension exponential force curve and pluck snap") {
+                let engine = AdaptiveTriggerEngine()
+                let config = AdaptiveTriggerConfig(mode: .guitarStringTension, stringGauge: .regular010, resistiveStrength: 0.8)
+
+                let lowTravel = engine.calculateTriggerState(position: 0.2, velocity: 0, config: config, label: "L2")
+                let midTravel = engine.calculateTriggerState(position: 0.6, velocity: 0, config: config, label: "L2")
+                let highTravel = engine.calculateTriggerState(position: 0.85, velocity: 0, config: config, label: "L2")
+                let snapRelease = engine.calculateTriggerState(position: 0.98, velocity: 0, config: config, label: "L2")
+
+                assertTrue(lowTravel.calculatedForce < midTravel.calculatedForce)
+                assertTrue(midTravel.calculatedForce < highTravel.calculatedForce)
+                assertTrue(snapRelease.calculatedForce < highTravel.calculatedForce, "Pluck release must drop tension past 90% travel.")
+            }
+
+            test("String gauge stiffness scales physical tension") {
+                let engine = AdaptiveTriggerEngine()
+                let lightCfg = AdaptiveTriggerConfig(mode: .guitarStringTension, stringGauge: .light009, resistiveStrength: 1.0)
+                let bassCfg = AdaptiveTriggerConfig(mode: .guitarStringTension, stringGauge: .bass045, resistiveStrength: 1.0)
+
+                let lightState = engine.calculateTriggerState(position: 0.7, velocity: 0, config: lightCfg, label: "L2")
+                let bassState = engine.calculateTriggerState(position: 0.7, velocity: 0, config: bassCfg, label: "L2")
+
+                assertTrue(bassState.calculatedForce > lightState.calculatedForce)
+            }
+
+            test("Bowed string viscous drag scales with gesture velocity") {
+                let engine = AdaptiveTriggerEngine()
+                let bowCfg = AdaptiveTriggerConfig(mode: .bowDragResistance, resistiveStrength: 0.7)
+
+                let slowBow = engine.calculateTriggerState(position: 0.5, velocity: 0.5, config: bowCfg, label: "R2")
+                let fastBow = engine.calculateTriggerState(position: 0.5, velocity: 3.5, config: bowCfg, label: "R2")
+
+                assertTrue(fastBow.calculatedForce > slowBow.calculatedForce)
+            }
+
+            test("Mod-wheel detent notch detection and snap threshold") {
+                let engine = AdaptiveTriggerEngine()
+                let detentCfg = AdaptiveTriggerConfig(mode: .modWheelDetents, resistiveStrength: 0.8, detentCount: 10)
+
+                // Exact step position: 0.5 (step 5 / 10)
+                let inNotch = engine.calculateTriggerState(position: 0.502, velocity: 0, config: detentCfg, label: "R2")
+                assertTrue(inNotch.isInDetent)
+                assertEqual(inNotch.activeDetentIndex, 5)
+
+                // Between steps: 0.55
+                let betweenNotches = engine.calculateTriggerState(position: 0.55, velocity: 0, config: detentCfg, label: "R2")
+                assertFalse(betweenNotches.isInDetent)
+            }
+
+            test("Palm mute shelf kicks in past dampening threshold") {
+                let engine = AdaptiveTriggerEngine()
+                let palmCfg = AdaptiveTriggerConfig(mode: .palmMuteShelf, startPosition: 0.4, resistiveStrength: 0.85)
+
+                let openStrum = engine.calculateTriggerState(position: 0.2, velocity: 0, config: palmCfg, label: "L2")
+                let mutedStrum = engine.calculateTriggerState(position: 0.7, velocity: 0, config: palmCfg, label: "L2")
+
+                assertTrue(openStrum.calculatedForce < 0.1)
+                assertTrue(mutedStrum.calculatedForce > 0.6)
+            }
+
+            test("Instrument profile automatic trigger configuration") {
+                let engine = AdaptiveTriggerEngine()
+                engine.configureForInstrumentProfile(.guitar)
+                assertEqual(engine.leftConfig.mode, .palmMuteShelf)
+                assertEqual(engine.rightConfig.mode, .guitarStringTension)
+
+                engine.configureForInstrumentProfile(.synthLead)
+                assertEqual(engine.leftConfig.mode, .modWheelDetents)
+                assertEqual(engine.rightConfig.mode, .modWheelDetents)
+            }
+        }
+
+        // MARK: - Voice-Led Solo Engine Tests
+        suite("Voice-Led Lead Guitar Solo Mode: Polar Navigation, Guide Tones & Enclosures") {
+            test("Polar stick quadrant mapping") {
+                let engine = VoiceLedSoloEngine()
+                assertEqual(engine.polarQuadrant(for: .pi / 2), .northGuideTones)
+                assertEqual(engine.polarQuadrant(for: -.pi / 2), .southBassAnchors)
+                assertEqual(engine.polarQuadrant(for: 0), .eastDiatonicScale)
+                assertEqual(engine.polarQuadrant(for: .pi), .westEnclosures)
+            }
+
+            test("North guide tones resolve 3rds and 7ths of active chord") {
+                let engine = VoiceLedSoloEngine()
+                let cMaj7 = Chord(root: .c, quality: .major7)
+                let ctx = MusicalContext(key: .c, scale: Scale(root: .c, type: .major), chord: cMaj7, registerOctave: 4)
+
+                // Outer North: 7th (B)
+                let highSolo = engine.evaluateStick(stickX: 0, stickY: 0.9, radius: 0.9, angle: .pi / 2, velocity: 1.0, context: ctx)
+                assertTrue(highSolo.isGuideTone)
+                assertEqual(highSolo.targetNote.pitchClass, .b)
+
+                // Mid North: 3rd (E)
+                let midSolo = engine.evaluateStick(stickX: 0, stickY: 0.55, radius: 0.55, angle: .pi / 2, velocity: 0.5, context: ctx)
+                assertTrue(midSolo.isGuideTone)
+                assertEqual(midSolo.targetNote.pitchClass, .e)
+            }
+
+            test("Harmonic guide-tone voice leading during chord transition") {
+                let engine = VoiceLedSoloEngine()
+                let dm7 = Chord(root: .d, quality: .minor7)
+                let g7 = Chord(root: .g, quality: .dominant7)
+                let ctx = MusicalContext(key: .c, scale: Scale(root: .c, type: .major), chord: g7, registerOctave: 4)
+
+                // Sustaining C (7th of Dm7), chord changes to G7 -> should smoothly voice lead to B (3rd of G7)
+                let prevNote = Note(pitchClass: .c, octave: 4)
+                let resolution = engine.resolveChordTransition(from: prevNote, oldChord: dm7, newChord: g7, context: ctx)
+
+                assertEqual(resolution.targetNote.pitchClass, .b)
+                assertTrue(resolution.isGuideTone)
+            }
+
+            test("West quadrant generates chromatic approach and blues notes") {
+                let engine = VoiceLedSoloEngine()
+                let aMin = Chord(root: .a, quality: .minor)
+                let ctx = MusicalContext(key: .a, scale: Scale(root: .a, type: .naturalMinor), chord: aMin, registerOctave: 4)
+
+                // Outer West: Flat-5 Blue Note (Eb)
+                let blueNote = engine.evaluateStick(stickX: -0.85, stickY: 0, radius: 0.85, angle: .pi, velocity: 1.0, context: ctx)
+                assertTrue(blueNote.isBlueNote)
+                assertEqual(blueNote.targetNote.pitchClass, .dSharp) // D#/Eb
+
+                // Inner West: Chromatic approach
+                let approach = engine.evaluateStick(stickX: -0.45, stickY: 0, radius: 0.45, angle: .pi, velocity: 0.5, context: ctx)
+                assertTrue(approach.isPassingTone)
+                assertEqual(approach.targetNote.pitchClass, .c)
+            }
+
+            test("Smart solo engine real-time note-on and note-off lifecycle") {
+                let engine = SmartSoloEngine()
+                let chord = Chord(root: .c, quality: .major)
+                let ctx = MusicalContext(key: .c, scale: Scale(root: .c, type: .major), chord: chord)
+
+                // Rest inside deadzone
+                let rest = engine.process(stick: StickCoordinates(x: 0, y: 0), movementVelocity: 0, context: ctx, timestamp: 1.0)
+                assertTrue(rest.noteOn == nil)
+
+                // Strike North
+                let strike = engine.process(stick: StickCoordinates(x: 0, y: 0.8), movementVelocity: 5.0, context: ctx, timestamp: 1.05)
+                assertTrue(strike.noteOn != nil)
+                assertTrue(engine.telemetry.isActive)
+
+                // Return to deadzone
+                let release = engine.process(stick: StickCoordinates(x: 0, y: 0), movementVelocity: 0, context: ctx, timestamp: 1.20)
+                assertTrue(release.noteOff != nil)
+                assertFalse(engine.telemetry.isActive)
+            }
+        }
+
+        // MARK: - Multi-Controller Jamming Tests
+        suite("Multi-Controller Jamming: 4-Player Slots, Shared Clock & MIDI Routing") {
+            test("4-Player default slot initialization and role assignment") {
+                let manager = MultiControllerJammingManager()
+                assertEqual(manager.players.count, 4)
+
+                assertEqual(manager.players[.p1]?.role, .chords)
+                assertEqual(manager.players[.p2]?.role, .bass)
+                assertEqual(manager.players[.p3]?.role, .lead)
+                assertEqual(manager.players[.p4]?.role, .drums)
+
+                assertEqual(manager.players[.p1]?.midiChannel, 0)
+                assertEqual(manager.players[.p2]?.midiChannel, 1)
+                assertEqual(manager.players[.p3]?.midiChannel, 2)
+                assertEqual(manager.players[.p4]?.midiChannel, 9)
+            }
+
+            test("Simulated state injection per player slot") {
+                let manager = MultiControllerJammingManager()
+                var receivedSlot: PlayerSlotId?
+                var receivedState: ControllerState?
+
+                manager.onPlayerStateChanged = { slot, state in
+                    receivedSlot = slot
+                    receivedState = state
+                }
+
+                manager.injectPlayerState(slot: .p3) { state in
+                    state.buttonA = true
+                    state.rightTrigger = ProcessedTriggerState(rawValue: 0.8, value: 0.8, isPressed: true)
+                }
+
+                assertEqual(receivedSlot, .p3)
+                assertTrue(receivedState?.buttonA == true)
+                assertTrue(receivedState?.rightTrigger.value == 0.8)
+            }
+
+            test("Shared harmonic synchronization across all 4 jam slots") {
+                let manager = MultiControllerJammingManager()
+                let newKey = PitchClass.fSharp
+                let newScale = Scale(root: newKey, type: .dorian)
+                let newChord = Chord(root: .gSharp, quality: .minor7)
+
+                manager.updateSharedHarmony(key: newKey, scale: newScale, chord: newChord)
+                assertEqual(manager.currentKey, .fSharp)
+                assertEqual(manager.currentScale.type, .dorian)
+                assertEqual(manager.activeChord.displayName, "A♭m7")
+            }
+
+            test("Dynamic track role reassignment updates MIDI channels") {
+                let manager = MultiControllerJammingManager()
+                manager.setRole(.lead, for: .p1)
+                assertEqual(manager.players[.p1]?.role, .lead)
+                assertEqual(manager.players[.p1]?.midiChannel, 2)
+            }
+        }
+
+        // MARK: - Open Controller Definition Standard (OCDS) Tests
+        suite("Open Controller Definition Standard (OCDS): JSON Schema & Bundled Profiles") {
+            test("Bundled profiles loaded for all 13 controller hardware types") {
+                let manager = OCDSManager.shared
+                assertEqual(manager.bundledProfiles.count, 13)
+
+                assertTrue(manager.profile(for: "sony_dualsense_mpe") != nil)
+                assertTrue(manager.profile(for: "xbox_wireless_expressive") != nil)
+                assertTrue(manager.profile(for: "switch_pro_gyro") != nil)
+                assertTrue(manager.profile(for: "guitar_hero_fretboard") != nil)
+                assertTrue(manager.profile(for: "sound_voltex_console") != nil)
+                assertTrue(manager.profile(for: "beatmania_djdao") != nil)
+                assertTrue(manager.profile(for: "flight_stick_hotas") != nil)
+                assertTrue(manager.profile(for: "racing_wheel_pedals") != nil)
+            }
+
+            test("OCDS profile JSON serialization and deserialization integrity") {
+                let manager = OCDSManager.shared
+                let dualSense = manager.profile(for: "sony_dualsense_mpe")!
+
+                do {
+                    let json = try manager.encodeToJSON(dualSense)
+                    assertTrue(json.contains("\"schemaVersion\" : \"1.0.0\""))
+                    assertTrue(json.contains("\"id\" : \"sony_dualsense_mpe\""))
+                    assertTrue(json.contains("\"hasAdaptiveTriggers\" : true"))
+
+                    let decoded = try manager.decodeFromJSON(json)
+                    assertEqual(decoded.metadata.id, dualSense.metadata.id)
+                    assertEqual(decoded.hardwareSpec.buttonCount, dualSense.hardwareSpec.buttonCount)
+                    assertEqual(decoded.inputBindings.count, dualSense.inputBindings.count)
+                } catch {
+                    assertTrue(false, "OCDS serialization failed: \(error)")
+                }
+            }
+
+            test("OCDS JSON schema v1 validation and error handling") {
+                let manager = OCDSManager.shared
+
+                // Invalid schema version
+                let badVersion = OCDSProfile(
+                    schemaVersion: "2.0.0",
+                    metadata: OCDSMetadata(id: "test", name: "Test"),
+                    hardwareSpec: OCDSHardwareSpec()
+                )
+                var caughtError = false
+                do {
+                    try manager.validate(badVersion)
+                } catch {
+                    caughtError = true
+                }
+                assertTrue(caughtError, "Schema validator must reject unsupported schema version.")
+
+                // Invalid deadzone range
+                let badDeadzone = OCDSProfile(
+                    metadata: OCDSMetadata(id: "test_dz", name: "Test"),
+                    hardwareSpec: OCDSHardwareSpec(),
+                    inputBindings: [OCDSInputBinding(source: .leftStick, target: .pitchBend, deadzone: 1.5)]
+                )
+                var caughtDzError = false
+                do {
+                    try manager.validate(badDeadzone)
+                } catch {
+                    caughtDzError = true
+                }
+                assertTrue(caughtDzError, "Validator must reject deadzones > 1.0.")
+            }
+
+            test("Custom community profile registration and lookup") {
+                let manager = OCDSManager()
+                let custom = OCDSProfile(
+                    metadata: OCDSMetadata(
+                        id: "community_hitbox_arcade",
+                        name: "Hitbox Leverless Arcade Controller",
+                        author: "FGC Producer",
+                        description: "24mm Sanwa button mapping with instant chromatic chords."
+                    ),
+                    hardwareSpec: OCDSHardwareSpec(stickCount: 0, triggerCount: 0, buttonCount: 12)
+                )
+
+                do {
+                    try manager.registerCustomProfile(custom)
+                    let retrieved = manager.profile(for: "community_hitbox_arcade")
+                    assertNotNil(retrieved)
+                    assertEqual(retrieved?.metadata.author, "FGC Producer")
+                } catch {
+                    assertTrue(false, "Failed to register custom profile: \(error)")
+                }
             }
         }
 

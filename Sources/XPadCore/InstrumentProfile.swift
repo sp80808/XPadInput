@@ -124,7 +124,7 @@ public struct GestureHUDLabels: Codable, Hashable, Sendable {
 
     public static let keys = GestureHUDLabels(
         leftStick: "Voicing",
-        rightStick: "Tremolo",
+        rightStick: "Strum",
         l1: "Extensions",
         r1: "Grace / Trill",
         l2: "Sustain",
@@ -359,6 +359,9 @@ public struct InstrumentProfile: Identifiable, Codable, Hashable, Sendable {
             .tremolo, .trill, .graceNote
         ],
         supportsAftertouch: true,
+        supportsPitchBend: false,
+        supportsSlides: false,
+        supportsStrumming: true,
         supportsLegato: true,
         vibratoDepthSemitones: 0.0,
         vibratoRateHz: 0.0

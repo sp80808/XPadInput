@@ -249,33 +249,37 @@ PLAY must not expose packet numbers or channel bookkeeping during normal perform
 
 ### Automated proof boundary
 
-Focused tests cover the six port names, member-channel isolation, pre-note pitch reset, note-off/reset lifecycle, bend centre/endpoints, pressure fallback, unsafe conventional-chord bend blocking, and basic SMF structure. MIDI 2 tests additionally cover transport defaults, 7-bit expansion endpoints, exact 32-bit pitch-bend anchors, supported MIDI 2 Channel Voice UMP creation, malformed-message rejection, and semantic-log stability across transport selection.
+Focused tests cover the six port names, member-channel isolation, pre-note pitch reset, note-off/reset lifecycle, bend centre/endpoints, pressure fallback, unsafe conventional-chord bend blocking, and basic SMF structure.
 
-A green repository CI result must be reported separately; this specification does not convert source presence into a passing release gate.
+High-resolution and MIDI 2 automated proofs:
+- **Native 32-bit semantic pitch bend (PR #16):** Direct encoding from semitone offsets to MIDI 2 32-bit pitch bend word (`0x00000000` min, `0x80000000` centre, `0xFFFFFFFF` max) without 14-bit down-quantization; protocol-aware deduplication ensures sub-14-bit movements are preserved in MIDI 2 while suppressed as redundant in MIDI 1.
+- **CoreMIDI virtual-source loopback (PR #17):** In-process CoreMIDI test client creating a `._2_0` protocol input port (`MIDIInputPortCreateWithProtocol`) connected to `XPI Main` virtual source (`MIDISourceCreateWithProtocol`), proving the native 32-bit pitch word survives the real macOS CoreMIDI subsystem.
+- **Normalized MPE pressure and timbre state (PR #20):** High-resolution normalized `Double` state tracking on member voices with protocol-resolution-aware deduplication for Channel/Poly Pressure and CC74.
+
+A green repository CI workflow (`.github/workflows/macos-ci.yml`) executes these tests on every push and PR.
 
 ### Manual proof still required
 
-- six sources appearing correctly in macOS Audio MIDI Setup and each supported DAW under MIDI 1;
-- six sources appearing correctly when experimental MIDI 2 transport is selected;
-- a real MIDI-2-aware destination receiving note, CC, pressure and bend UMP correctly;
-- CoreMIDI protocol conversion observed with at least one MIDI-1-only destination rather than assumed;
-- host recognition of the lower MPE zone and advertised bend range on the established MIDI 1 path;
-- active-controller bend return without audible stepping or stuck notes;
-- correct pressure and CC74 response in real destination instruments;
-- protocol switching under live use without stuck notes or retained expression;
-- haptic detent delivery and ergonomic feel;
-- repeated allocation/voice-steal stress under live performance.
+Tracked by GitHub issues #3 and #13:
+- **DAW Virtual Port Enumeration:** All six sources appearing correctly in macOS Audio MIDI Setup and each supported DAW (Logic Pro, Ableton Live, Bitwig Studio) under MIDI 1.0 and MIDI 2.0.
+- **MPE Lower Zone & Bend Agreement:** Host recognition of Master Ch 1 + Member Ch 2–15 and agreement on configured ±48 semitone pitch-bend sensitivity.
+- **Real-Host MIDI 2.0 Reception (Logic Pro):** With Logic Pro MIDI 2.0 preference enabled, verify Note On/Off, CC, Channel Pressure, Poly Pressure, and smooth continuous 32-bit pitch bend without stepping.
+- **Ableton Live MPE Regression:** Member-channel note isolation, per-note pitch/pressure/timbre with MPE instruments (Wavetable, Drift), and clean Guitar bend return to centre.
+- **Protocol Switching Resilience:** Switching between MIDI 1.0 $\leftrightarrow$ MIDI 2.0 with active sounding notes without hung notes, stuck expression, or memory leaks.
+- **Panic & Recovery:** Global MIDI Panic reliably recovers destinations across all 16 channels on all 6 ports.
+- **Repeated Allocation & Stealing:** Round-robin voice-stealing under heavy polyphonic strumming without dropped note-offs.
 
 ### Planned compatibility work
 
-- carry genuinely high-resolution expression through semantic events before MIDI 2 encoding;
-- evaluate native MIDI 2 per-note pitch/controllers where they improve instrument techniques;
+- carry genuinely high-resolution expression through live `AppState.applyExpression` callers before MIDI 2 encoding (#15);
+- evaluate native MIDI 2 per-note pitch/controllers where they improve instrument techniques (#18);
 - UMP Endpoint and Function Block discovery/topology;
-- MIDI-CI capability discovery using CoreMIDI's current APIs, not Apple's deprecated session/responder path;
+- MIDI-CI MPE Profile (`M2-120-UM_v2-0-3`) negotiation using CoreMIDI `MIDICIDevice` / `MIDICIDeviceManager` (#14);
 - Profile Configuration or Property Exchange only for concrete interoperability use cases;
 - destination profiles for specific instruments and sample libraries;
 - configurable keyswitch/CC articulation maps;
 - host-specific setup presets and compatibility certification;
-- complete technique-aware SMF export and import round-trip tests.
+- MIDI Clip File (M2-116-U) / SMF2 export for native MIDI 2 performances (#19).
 
 See `MIDI2_ROADMAP.md` for the staged MIDI 2.0 / MIDI-CI plan and compliance-language boundary.
+

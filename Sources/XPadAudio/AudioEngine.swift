@@ -8,6 +8,13 @@ public enum OscillatorType: String, CaseIterable, Codable, Sendable {
     case saw = "Sawtooth"
     case square = "Square"
     case triangle = "Triangle"
+    case noise = "Noise"
+}
+
+public enum FilterType: String, CaseIterable, Codable, Sendable {
+    case lowPass = "Low Pass"
+    case highPass = "High Pass"
+    case bandPass = "Band Pass"
 }
 
 public struct SynthPreset: Identifiable, Codable, Sendable {
@@ -21,7 +28,11 @@ public struct SynthPreset: Identifiable, Codable, Sendable {
     public let release: Double
 
     public var filterCutoffHz: Double
-    public var attackSeconds: Double { attack }
+    public var filterResonance: Double
+    public var filterType: FilterType
+    public var osc2Level: Double
+    public var osc2DetuneCents: Double
+    public var saturationAmount: Double
 
     public init(
         id: String,
@@ -32,7 +43,12 @@ public struct SynthPreset: Identifiable, Codable, Sendable {
         decay: Double = 0.1,
         sustain: Double = 0.8,
         release: Double = 0.2,
-        filterCutoffHz: Double = 2800
+        filterCutoffHz: Double = 2800,
+        filterResonance: Double = 0.0,
+        filterType: FilterType = .lowPass,
+        osc2Level: Double = 0.36,
+        osc2DetuneCents: Double = 5.0,
+        saturationAmount: Double = 0.0
     ) {
         self.id = id
         self.name = name
@@ -43,16 +59,153 @@ public struct SynthPreset: Identifiable, Codable, Sendable {
         self.sustain = sustain
         self.release = release
         self.filterCutoffHz = filterCutoffHz
+        self.filterResonance = filterResonance
+        self.filterType = filterType
+        self.osc2Level = osc2Level
+        self.osc2DetuneCents = osc2DetuneCents
+        self.saturationAmount = saturationAmount
     }
 
-    public static let polyLead = SynthPreset(id: "polyLead", name: "Poly Lead", osc1Type: .saw, osc2Type: .square, attack: 0.01, decay: 0.1, sustain: 0.7, release: 0.15, filterCutoffHz: 2800)
-    public static let rhodesEP = SynthPreset(id: "rhodesEP", name: "Rhodes EP", osc1Type: .sine, osc2Type: .triangle, attack: 0.005, decay: 0.4, sustain: 0.5, release: 0.3, filterCutoffHz: 2200)
-    public static let ambientPad = SynthPreset(id: "ambientPad", name: "Ambient Pad", osc1Type: .saw, osc2Type: .sine, attack: 0.3, decay: 0.5, sustain: 0.9, release: 0.8, filterCutoffHz: 1600)
-    public static let warmPad = ambientPad
-    public static let pluck = SynthPreset(id: "pluck", name: "Acoustic Pluck", osc1Type: .triangle, osc2Type: .saw, attack: 0.002, decay: 0.2, sustain: 0.2, release: 0.1, filterCutoffHz: 3200)
-    public static let subBass = SynthPreset(id: "subBass", name: "Sub Bass", osc1Type: .sine, osc2Type: .sine, attack: 0.01, decay: 0.1, sustain: 0.9, release: 0.1, filterCutoffHz: 700)
+    public static let polyLead = SynthPreset(
+        id: "polyLead",
+        name: "Poly Lead",
+        osc1Type: .saw,
+        osc2Type: .square,
+        attack: 0.01,
+        decay: 0.1,
+        sustain: 0.7,
+        release: 0.15,
+        filterCutoffHz: 3200,
+        filterResonance: 0.35,
+        filterType: .lowPass,
+        osc2Level: 0.42,
+        osc2DetuneCents: 7.0,
+        saturationAmount: 0.12
+    )
+    
+    public static let rhodesEP = SynthPreset(
+        id: "rhodesEP",
+        name: "Rhodes EP",
+        osc1Type: .sine,
+        osc2Type: .triangle,
+        attack: 0.005,
+        decay: 0.4,
+        sustain: 0.5,
+        release: 0.3,
+        filterCutoffHz: 2800,
+        filterResonance: 0.15,
+        filterType: .lowPass,
+        osc2Level: 0.32,
+        osc2DetuneCents: 2.0,
+        saturationAmount: 0.08
+    )
+    
+    public static let ambientPad = SynthPreset(
+        id: "ambientPad",
+        name: "Ambient Pad",
+        osc1Type: .saw,
+        osc2Type: .sine,
+        attack: 0.3,
+        decay: 0.5,
+        sustain: 0.9,
+        release: 1.2,
+        filterCutoffHz: 1800,
+        filterResonance: 0.25,
+        filterType: .lowPass,
+        osc2Level: 0.38,
+        osc2DetuneCents: 12.0,
+        saturationAmount: 0.15
+    )
+    
+    public static let warmPad = SynthPreset(
+        id: "warmPad",
+        name: "Warm Pad",
+        osc1Type: .triangle,
+        osc2Type: .sine,
+        attack: 0.25,
+        decay: 0.6,
+        sustain: 0.85,
+        release: 1.0,
+        filterCutoffHz: 1400,
+        filterResonance: 0.2,
+        filterType: .lowPass,
+        osc2Level: 0.45,
+        osc2DetuneCents: 8.0,
+        saturationAmount: 0.1
+    )
+    
+    public static let pluck = SynthPreset(
+        id: "pluck",
+        name: "Acoustic Pluck",
+        osc1Type: .triangle,
+        osc2Type: .saw,
+        attack: 0.002,
+        decay: 0.2,
+        sustain: 0.15,
+        release: 0.1,
+        filterCutoffHz: 3800,
+        filterResonance: 0.4,
+        filterType: .lowPass,
+        osc2Level: 0.28,
+        osc2DetuneCents: 5.0,
+        saturationAmount: 0.05
+    )
+    
+    public static let subBass = SynthPreset(
+        id: "subBass",
+        name: "Sub Bass",
+        osc1Type: .sine,
+        osc2Type: .sine,
+        attack: 0.01,
+        decay: 0.1,
+        sustain: 0.9,
+        release: 0.2,
+        filterCutoffHz: 800,
+        filterResonance: 0.0,
+        filterType: .lowPass,
+        osc2Level: 0.0,
+        osc2DetuneCents: 0.0,
+        saturationAmount: 0.18
+    )
+    
+    public static let analogBrass = SynthPreset(
+        id: "analogBrass",
+        name: "Analog Brass",
+        osc1Type: .saw,
+        osc2Type: .square,
+        attack: 0.02,
+        decay: 0.3,
+        sustain: 0.7,
+        release: 0.25,
+        filterCutoffHz: 2000,
+        filterResonance: 0.5,
+        filterType: .lowPass,
+        osc2Level: 0.5,
+        osc2DetuneCents: 3.0,
+        saturationAmount: 0.12
+    )
+    
+    public static let digitalBell = SynthPreset(
+        id: "digitalBell",
+        name: "Digital Bell",
+        osc1Type: .sine,
+        osc2Type: .sine,
+        attack: 0.001,
+        decay: 0.5,
+        sustain: 0.3,
+        release: 0.4,
+        filterCutoffHz: 4500,
+        filterResonance: 0.6,
+        filterType: .lowPass,
+        osc2Level: 0.5,
+        osc2DetuneCents: 19.0,
+        saturationAmount: 0.0
+    )
 
-    public static let allPresets: [SynthPreset] = [.polyLead, .rhodesEP, .ambientPad, .pluck, .subBass]
+    public static let allPresets: [SynthPreset] = [
+        .polyLead, .rhodesEP, .ambientPad, .warmPad, .pluck, .subBass, 
+        .analogBrass, .digitalBell
+    ]
 }
 
 /// Simple polyphonic synthesizer using AVAudioEngine.
@@ -251,18 +404,32 @@ public final class AudioEngine: @unchecked Sendable {
         reverb.bypass = !settings.isEnabled || settings.mixPercent == 0
     }
     
+    public let loopbackEngine = VirtualAudioLoopbackEngine.shared
+
+    public func attachLoopback() {
+        guard let limiter = limiter else { return }
+        loopbackEngine.installTap(on: limiter)
+    }
+
+    public func detachLoopback() {
+        guard let limiter = limiter else { return }
+        loopbackEngine.removeTap(from: limiter)
+    }
+
     public func start() {
         guard let engine = engine, !isRunning else { return }
         
         do {
             try engine.start()
             isRunning = true
+            attachLoopback()
         } catch {
             print("⚠️ Audio engine failed to start: \(error)")
         }
     }
     
     public func stop() {
+        detachLoopback()
         allNotesOff()
         engine?.stop()
         isRunning = false
@@ -661,25 +828,24 @@ public final class SynthVoice: @unchecked Sendable {
         let oscillator1 = preset.osc1Type
         let oscillator2 = preset.osc2Type
         let baseFilterCutoff = max(80, min(sampleRate * 0.42, preset.filterCutoffHz))
-        let detuneCents: Double
-        switch preset.id {
-        case "ambientPad": detuneCents = 8
-        case "polyLead": detuneCents = 5
-        case "rhodesEP": detuneCents = 2
-        case "subBass": detuneCents = 0
-        default: detuneCents = 3
-        }
-        let oscillator2Detune = pow(2.0, detuneCents / 1_200.0)
+        let filterResonance = max(0.0, min(0.95, preset.filterResonance))
+        let filterType = preset.filterType
+        let osc2Level = max(0.0, min(1.0, preset.osc2Level))
+        let osc2DetuneCents = preset.osc2DetuneCents
+        let saturationAmount = max(0.0, min(1.0, preset.saturationAmount))
+        let oscillator2Detune = pow(2.0, osc2DetuneCents / 1_200.0)
         
         var oscillator1Phase = 0.0
         var oscillator2Phase = 0.0
         var envPhase = 0.0
         var releasePhase = 0.0
         var releaseStartAmp = 0.0
-        var filterState = 0.0
+        var filterState1 = 0.0
+        var filterState2 = 0.0
         var wasReleasing = false
         var renderFinished = false
         var cachedControlSnapshot = control.snapshot()
+        var noiseState: UInt32 = 0x9E37_79B9
         
         self.sourceNode = AVAudioSourceNode { _, _, frameCount, audioBufferList -> OSStatus in
             let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
@@ -720,7 +886,17 @@ public final class SynthVoice: @unchecked Sendable {
                 * (0.52 + controlSnapshot.timbre * 1.15)
                 * (1.0 - mute * 0.78)
             let cutoff = max(70, min(sampleRate * 0.42, expressiveCutoff))
-            let filterPole = exp(-2.0 * .pi * cutoff / sampleRate)
+            
+            // Calculate filter coefficients based on type
+            // Using a simpler state-variable filter approach for better stability
+            let resonance = max(0.0, min(0.95, filterResonance))
+            let cutoffHz = cutoff
+            let filterFrequencyRad = 2.0 * .pi * cutoffHz / sampleRate
+            
+            // State-variable filter coefficients
+            let f = sin(filterFrequencyRad) * 0.5
+            let q = 1.0 - f * (1.0 - resonance * 0.8)
+            
             var reachedReleaseEnd = false
 
             for frame in 0..<Int(frameCount) {
@@ -748,17 +924,39 @@ public final class SynthVoice: @unchecked Sendable {
                 let pressureAmp = 0.72 + controlSnapshot.pressure * 0.55
                 let h = controlSnapshot.harmonic
 
+                // Generate oscillator samples
                 let first = SynthVoice.oscillatorSample(
                     type: oscillator1,
                     phase: oscillator1Phase,
                     increment: oscillator1Increment
                 )
+                
                 let second = SynthVoice.oscillatorSample(
                     type: oscillator2,
                     phase: oscillator2Phase,
                     increment: oscillator2Increment
                 )
-                var sample = first * 0.64 + second * 0.36
+                
+                // Handle noise oscillator
+                let noiseSample: Double
+                if oscillator2 == .noise {
+                    noiseState = noiseState &* 1_664_525 &+ 1_013_904_223
+                    let unitNoise = Double(noiseState) / Double(UInt32.max)
+                    noiseSample = unitNoise * 2.0 - 1.0
+                } else {
+                    noiseSample = 0.0
+                }
+                
+                // Mix oscillators with configurable levels
+                var sample = first * (1.0 - osc2Level)
+                
+                if oscillator2 == .noise {
+                    sample += noiseSample * osc2Level
+                } else {
+                    sample += second * osc2Level
+                }
+                
+                // Add harmonic enhancement
                 sample += h * 0.18 * sin(oscillator1Phase * 2.0 * .pi * 3.0)
                 if controlSnapshot.pinch {
                     sample = sample * 0.58
@@ -766,13 +964,36 @@ public final class SynthVoice: @unchecked Sendable {
                         + 0.14 * sin(oscillator1Phase * 2.0 * .pi * 12.0)
                 }
 
-                // A one-pole low-pass removes brittle oscillator edges while
-                // letting timbre and damping move the cutoff musically.
-                filterState = (1.0 - filterPole) * sample + filterPole * filterState
-                sample = filterState * 0.78 * pressureAmp * (1.0 - mute * 0.45)
+                // Apply saturation (soft clipping) for warmth
+                let saturatedSample: Double
+                if saturationAmount > 0 {
+                    let x = sample * 2.0
+                    let softClip = x - (x * x * x) / 3.0
+                    saturatedSample = (sample * (1.0 - saturationAmount)) + (softClip * saturationAmount * 0.3)
+                } else {
+                    saturatedSample = sample
+                }
 
+                // Apply state-variable filter
+                let lowPass = filterState1 + f * (saturatedSample - filterState1)
+                let highPass = saturatedSample - lowPass
+                let bandPass = filterState2 + f * (highPass - filterState2)
+                filterState2 = bandPass
+                filterState1 = lowPass
+                
+                let filtered: Double
+                switch filterType {
+                case .lowPass:
+                    filtered = lowPass + q * bandPass
+                case .highPass:
+                    filtered = highPass + q * bandPass
+                case .bandPass:
+                    filtered = bandPass
+                }
+                
                 let dampedEnv = envValue * (1.0 - mute * 0.55)
-                ptr[frame] = Float(tanh(sample * dampedEnv * 0.4))
+                let finalSample = filtered * pressureAmp * (1.0 - mute * 0.45)
+                ptr[frame] = Float(tanh(finalSample * dampedEnv * 0.45))
                 
                 oscillator1Phase += oscillator1Increment
                 if oscillator1Phase >= 1.0 { oscillator1Phase -= floor(oscillator1Phase) }
@@ -809,6 +1030,8 @@ public final class SynthVoice: @unchecked Sendable {
                 - polyBLEP(phase: shiftedPhase, increment: increment)
         case .triangle:
             return 1.0 - 4.0 * abs(phase - 0.5)
+        case .noise:
+            return 0.0
         }
     }
 

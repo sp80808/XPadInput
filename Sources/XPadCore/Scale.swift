@@ -64,6 +64,10 @@ public struct Scale: Hashable, Codable, Sendable, Identifiable {
         intervals.map { root.transposed(by: $0) }
     }
 
+    public var displayName: String {
+        type.rawValue
+    }
+
     public func pitchClasses(root: PitchClass) -> [PitchClass] {
         intervals.map { root.transposed(by: $0) }
     }
@@ -108,17 +112,17 @@ public struct Scale: Hashable, Codable, Sendable, Identifiable {
     public static let cMajor = Scale(root: .c, type: .major)
     public static let aMinor = Scale(root: .a, type: .naturalMinor)
     public static let major = Scale(root: .c, type: .major)
-    public static let naturalMinor = Scale(root: .a, type: .naturalMinor)
-    public static let harmonicMinor = Scale(root: .a, type: .harmonicMinor)
-    public static let melodicMinor = Scale(root: .a, type: .melodicMinor)
-    public static let dorian = Scale(root: .d, type: .dorian)
-    public static let phrygian = Scale(root: .e, type: .phrygian)
-    public static let lydian = Scale(root: .f, type: .lydian)
-    public static let mixolydian = Scale(root: .g, type: .mixolydian)
-    public static let locrian = Scale(root: .b, type: .locrian)
+    public static let naturalMinor = Scale(root: .c, type: .naturalMinor)
+    public static let harmonicMinor = Scale(root: .c, type: .harmonicMinor)
+    public static let melodicMinor = Scale(root: .c, type: .melodicMinor)
+    public static let dorian = Scale(root: .c, type: .dorian)
+    public static let phrygian = Scale(root: .c, type: .phrygian)
+    public static let lydian = Scale(root: .c, type: .lydian)
+    public static let mixolydian = Scale(root: .c, type: .mixolydian)
+    public static let locrian = Scale(root: .c, type: .locrian)
     public static let pentatonicMajor = Scale(root: .c, type: .pentatonicMajor)
-    public static let pentatonicMinor = Scale(root: .a, type: .pentatonicMinor)
-    public static let blues = Scale(root: .a, type: .blues)
+    public static let pentatonicMinor = Scale(root: .c, type: .pentatonicMinor)
+    public static let blues = Scale(root: .c, type: .blues)
     public static let chromatic = Scale(root: .c, type: .chromatic)
 
     public static let allScales: [Scale] = [

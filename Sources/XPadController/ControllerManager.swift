@@ -19,6 +19,8 @@ public final class ControllerManager: @unchecked Sendable {
     public var rightStickProcessor = StickProcessor(profile: .expressive)
     public var leftTriggerProcessor = TriggerProcessor()
     public var rightTriggerProcessor = TriggerProcessor()
+    public var adaptiveTriggerEngine = AdaptiveTriggerEngine()
+    public var smartSoloEngine = SmartSoloEngine()
     
     // Input callbacks
     public var onStateChanged: ((ControllerState) -> Void)?
@@ -163,6 +165,14 @@ public final class ControllerManager: @unchecked Sendable {
             state.menuButton = gamepad.buttonMenu.isPressed
             state.optionsButton = gamepad.buttonOptions?.isPressed ?? false
 
+            // Adaptive trigger feedback processing
+            self.adaptiveTriggerEngine.process(
+                leftTrigger: gamepad.leftTrigger.value,
+                rightTrigger: gamepad.rightTrigger.value,
+                controller: controller,
+                timestamp: timestamp
+            )
+
             self.currentState = Self.gamepadState(from: state)
             self.onStateChanged?(state)
         }
@@ -187,6 +197,10 @@ public final class ControllerManager: @unchecked Sendable {
     }
 
     public var isHardwareConnected: Bool { isConnected }
+
+    public func configureForInstrumentProfile(_ profile: InstrumentProfile) {
+        adaptiveTriggerEngine.configureForInstrumentProfile(profile)
+    }
 
     /// Selects a visual/simulated controller family without requiring hardware.
     public func selectControllerKind(_ kind: ControllerKind) {

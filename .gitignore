@@ -15,8 +15,11 @@ Package.pins
 Package.resolved
 DerivedData/
 
-# Release Builds
+# Release Builds & Distribution Artifacts
+release-artifacts/
 builds/
+dist/
+artifacts/
 *.app
 *.dmg
 *.zip
@@ -39,6 +42,13 @@ builds/
 *.sublime-workspace
 *.sublime-project
 
+# Agentic Tooling & AI References
+.claude/
+.gemini/
+agent-references/
+*.agent.md
+*.reference.md
+
 # Logs & Temporary Files
 *.log
 *.tmp
@@ -51,3 +61,4 @@ builds/
 *.db
 .beads-credential-key
 .beads/proxieddb/
+

@@ -32,29 +32,59 @@ public struct LibraryWorkspaceView: View {
                     }
                 }
 
+                // CoreAudio Virtual Audio Driver & Loopback Section
+                VirtualAudioView()
+
                 Divider()
 
-                // DAW Integration Guide
+                // DAW Integration & Plugin Hosting Guide
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("DAW Integration & Virtual MIDI Routing")
-                        .font(.headline)
+                    HStack {
+                        Text("DAW Integration, AUv3 / VST3 Hosting & Virtual MIDI")
+                            .font(.headline)
+                        Spacer()
+                        Text("AUv3 Instrument ('xpii') • AUv3 MIDI FX ('xpim')")
+                            .font(.caption.monospaced())
+                            .foregroundColor(XTheme.primary)
+                    }
 
                     VStack(alignment: .leading, spacing: 10) {
                         dawGuideCard(
-                            daw: "Ableton Live 11 / 12",
-                            steps: "1. Open Preferences → Link/MIDI.\n2. Enable 'Track' and 'Remote' on 'XPI Main' or 'XPI Chords'.\n3. Use 'XPI Expression (MPE)' for independent expressive bend."
+                            daw: "Apple Logic Pro (AUv3 MIDI FX & Instrument)",
+                            steps: "• MIDI FX Slot: Insert 'XPI MIDI FX' on any software instrument track for automatic chord/scale voice-leading.\n• Instrument Slot: Load 'XPI Instrument' (AUv3 Music Device) for direct polyphonic PolyBLEP playback.\n• MPE Track: Select MIDI Input 'XPI Expression (MPE)' to drive Alchemy or Sculpture with ±48st pitch bend."
                         )
 
                         dawGuideCard(
-                            daw: "Apple Logic Pro",
-                            steps: "1. Create a Software Instrument track.\n2. In Track Inspector, select MIDI Input Port: 'XPI Expression (MPE)'.\n3. Enable MPE in Logic instrument settings (e.g. Alchemy / Sculpture)."
+                            daw: "Ableton Live 11 / 12 (AUv3 / VST3 & MPE)",
+                            steps: "• Preferences → Link/MIDI: Enable 'Track' and 'MPE' on 'XPI Main' or 'XPI Expression'.\n• Load 'XPad: XPI Instrument' AUv3/VST3 into a MIDI track.\n• Use MPE Pitch Bend (±48 st) and CC74 Timbre on Wavetable and Drift devices."
                         )
 
                         dawGuideCard(
-                            daw: "Bitwig Studio",
-                            steps: "1. Select 'XPI Expression (MPE)' as the controller input.\n2. Route channels directly to Polymer, Phase-4, or Grid devices."
+                            daw: "Bitwig Studio & Reaper (Native AUv3 / VST3)",
+                            steps: "• Bitwig: Add 'XPI MIDI FX' inside Note FX chains before Polymer or Grid devices.\n• Reaper: Insert 'AU: XPad: XPI Instrument' on any track with multi-channel MPE routing."
+                        )
+
+                        dawGuideCard(
+                            daw: "OBS & Stream Audio Capture (Zero-Configuration Loopback)",
+                            steps: "• Enable 'CoreAudio Virtual Audio Driver' above.\n• In OBS or DAW, select Audio Input Device: 'XPI Virtual Loopback Input' for pristine 32-bit float audio capture without virtual cables."
                         )
                     }
+                }
+
+                Divider()
+
+                // OCDS Open Controller Definition Standard Section
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Open Controller Definition Standard (OCDS)")
+                            .font(.headline)
+                        Spacer()
+                        Text("JSON Schema v1.0.0 • 13 Bundled Profiles")
+                            .font(.caption.monospaced())
+                            .foregroundColor(XTheme.primary)
+                    }
+
+                    OCDSProfileManagerView()
                 }
             }
             .padding()

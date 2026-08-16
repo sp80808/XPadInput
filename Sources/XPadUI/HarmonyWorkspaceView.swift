@@ -6,6 +6,7 @@ import XPadAudio
 
 public struct HarmonyWorkspaceView: View {
     @Binding var currentScale: Scale
+    @Environment(AppState.self) private var appState
     @State private var activeProgression: Progression
     @State private var selectedBlockIndex: Int? = 0
     @State private var voiceLeadingStrategy: VoiceLeadingStrategy = .smooth
@@ -25,7 +26,7 @@ public struct HarmonyWorkspaceView: View {
         if let idx = selectedBlockIndex, idx < activeProgression.blocks.count {
             return activeProgression.blocks[idx].chord
         }
-        return Chord(root: currentScale.root, quality: .major)
+        return Chord(root: appState.currentKey, quality: .major)
     }
 
     private var suggestions: [ChordSuggestion] {
@@ -99,7 +100,7 @@ public struct HarmonyWorkspaceView: View {
                 // Modulation Explorer
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
-                        Text("Modulation Explorer: \(currentScale.root.standardName) → ")
+                        Text("Modulation Explorer: \(appState.currentKey.standardName) → ")
                             .font(.headline)
                         Picker("Target Key", selection: $modulationTargetKey) {
                             ForEach(PitchClass.allCases) { pc in

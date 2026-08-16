@@ -4,31 +4,58 @@ import XPadController
 
 /// Main content view with sidebar navigation and transport bar.
 public struct ContentView: View {
+    @Environment(AppState.self) private var appState
+    
     public init() {}
     
     public var body: some View {
-        VStack(spacing: 0) {
-            // XPI is intentionally a single, focused performance surface.
-            PlayView()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        HStack(spacing: 0) {
+            // Sidebar Navigation
+            SidebarView()
             
             Divider()
                 .background(XTheme.border)
             
-            // Transport bar (always visible)
-            TransportBar()
+            // Main Workspace Content
+            VStack(spacing: 0) {
+                Group {
+                    switch appState.selectedWorkspace {
+                    case .play:
+                        PlayView()
+                    case .harmony:
+                        HarmonyWorkspaceView(currentScale: Binding(
+                            get: { appState.currentScale },
+                            set: { appState.setScale($0) }
+                        ))
+                    case .sequence:
+                        SequenceWorkspaceView()
+                    case .map:
+                        MapWorkspaceView(controllerManager: appState.controllerManager)
+                    case .library:
+                        LibraryWorkspaceView()
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .transition(.opacity.combined(with: .scale(scale: 0.99)))
+                
+                Divider()
+                    .background(XTheme.border)
+                
+                // Transport bar (always visible)
+                TransportBar()
+            }
         }
         .background {
             ZStack {
                 XTheme.background
                 RadialGradient(
-                    colors: [XTheme.primary.opacity(0.10), .clear],
+                    colors: [XTheme.primary.opacity(0.12), .clear],
                     center: .topLeading,
                     startRadius: 24,
-                    endRadius: 620
+                    endRadius: 700
                 )
                 LinearGradient(
-                    colors: [.clear, Color.black.opacity(0.18)],
+                    colors: [.clear, Color.black.opacity(0.25)],
                     startPoint: .top,
                     endPoint: .bottom
                 )

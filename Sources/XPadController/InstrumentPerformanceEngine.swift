@@ -223,7 +223,7 @@ public struct InstrumentPerformanceEngine: Sendable {
         let pressure = pressureEngine.process(raw: rawPressure, noteHeld: notesHeld, dt: dt)
         if pressure.isActive { candidates.append(.aftertouch) }
 
-        var slide = slideEngine.advance(dt: dt)
+        let slide = slideEngine.advance(dt: dt)
 
         let faceEvents = interpretFaceButtons(
             state: state,
@@ -410,7 +410,7 @@ public struct InstrumentPerformanceEngine: Sendable {
                     note: note,
                     isOn: true,
                     technique: technique,
-                    velocity: legato?.velocity ?? 90
+                    velocity: legato?.velocity ?? 110
                 ))
             } else if !pair.pressed && pair.was {
                 let note = targeter.note(for: pair.role, chord: chord, previous: intervalMemory.lastNote, baseOctave: context.registerOctave)

@@ -144,6 +144,35 @@ struct TransportBar: View {
                     .lineLimit(1)
                     .frame(maxWidth: 120)
             }
+
+            Divider()
+                .frame(height: 20)
+
+            // Virtual Audio Stream status
+            HStack(spacing: 6) {
+                Image(systemName: "waveform.circle.fill")
+                    .font(.system(size: 11))
+                    .foregroundColor(appState.virtualAudioDriver.isEnabled ? XTheme.primary : XTheme.textTertiary)
+                
+                Text("Loopback")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(appState.virtualAudioDriver.isEnabled ? XTheme.textPrimary : XTheme.textTertiary)
+
+                Toggle("", isOn: Binding(
+                    get: { appState.virtualAudioDriver.isEnabled },
+                    set: { enabled in
+                        appState.virtualAudioDriver.setEnabled(enabled)
+                        if enabled {
+                            appState.audioEngine.attachLoopback()
+                        }
+                    }
+                ))
+                .toggleStyle(.switch)
+                .scaleEffect(0.6)
+                .frame(width: 30)
+                .labelsHidden()
+                .accessibilityLabel("Virtual Audio Loopback")
+            }
             
             Spacer()
             

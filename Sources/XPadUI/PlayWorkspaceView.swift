@@ -15,11 +15,19 @@ public struct PlayView: View {
             HStack(spacing: 0) {
                 // Left panel: Harmonic wheel + chord info
                 VStack(spacing: 16) {
+                    // 4-Player Ensemble Jamming Bar
+                    MultiControllerJammingBarView(jammingManager: appState.multiJamManager)
+
                     // Current chord display
                     ChordDisplayView()
 
                     if let hint = appState.contextualHint, appState.activeNotes.isEmpty == false {
                         TechniqueHintBanner(text: hint)
+                    }
+
+                    // Voice-led Solo HUD
+                    if appState.instrumentProfile.family == .synthLead || appState.isSoloModeActive {
+                        SmartSoloHUDView(telemetry: appState.smartSoloEngine.telemetry, chord: appState.currentChord)
                     }
 
                     // Harmonic wheel
@@ -88,7 +96,7 @@ struct ChordDisplayView: View {
 
                 ActiveTechniqueStatusView()
 
-                Text("\(appState.currentKey.displayName) \(appState.currentScale.name)")
+                Text("\(appState.currentKey.displayName) \(appState.currentScale.displayName)")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(XTheme.textSecondary)
             }

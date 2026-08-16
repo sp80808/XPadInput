@@ -7,6 +7,7 @@ struct PerformanceQuickControlsView: View {
     @Environment(AppState.self) private var appState
     @State private var showsGate = false
     @State private var showsVelocity = false
+    @State private var showsTriggers = false
     @State private var showsEQ = false
     @State private var showsCompressor = false
     @State private var showsReverb = false
@@ -79,6 +80,40 @@ struct PerformanceQuickControlsView: View {
             )
             .help("Duo: A kick, X snare, Y closed hat, B open hat; both sticks remain on the instrument")
             .accessibilityValue(appState.duoPerformanceMode.rawValue)
+
+            Button {
+                withAnimation(XTheme.springAnimation) {
+                    appState.isSoloModeActive.toggle()
+                }
+            } label: {
+                QuickControlLabel(
+                    icon: "guitars.fill",
+                    title: "Solo",
+                    value: compact ? nil : (appState.isSoloModeActive ? "Lead on" : "Strum"),
+                    compact: compact
+                )
+            }
+            .buttonStyle(
+                XTactileButtonStyle(
+                    isActive: appState.isSoloModeActive,
+                    activeColor: .orange
+                )
+            )
+            .help("Smart Soloing: Right stick locks to chord tones, passing runs, and blues inflections")
+
+            Button { showsTriggers.toggle() } label: {
+                QuickControlLabel(
+                    icon: "hand.tap.fill",
+                    title: compact ? "Trig" : "Triggers",
+                    value: compact ? nil : appState.controllerManager.adaptiveTriggerEngine.leftConfig.mode.displayName,
+                    compact: compact
+                )
+            }
+            .buttonStyle(XTactileButtonStyle(isActive: appState.controllerManager.adaptiveTriggerEngine.isEnabled))
+            .popover(isPresented: $showsTriggers, arrowEdge: .bottom) {
+                AdaptiveTriggerQuickPopover()
+            }
+            .help("DualSense motor resistance, string tension and mod-wheel detents")
 
             Spacer(minLength: compact ? 2 : 8)
 
@@ -422,3 +457,98 @@ private func effectToggle(_ title: String, isOn: Binding<Bool>) -> some View {
         .controlSize(.small)
         .font(.system(size: 11, weight: .semibold))
 }
+
+// MARK: - Adaptive Trigger Quick Popover
+
+private struct AdaptiveTriggerQuickPopover: View {
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Image(systemName: "hand.tap.fill")
+                    .foregroundColor(XTheme.primary)
+                Text("Adaptive Motor Resistance")
+                    .font(.system(size: 12, weight: .bold))
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { appState.controllerManager.adaptiveTriggerEngine.isEnabled },
+                    set: { appState.controllerManager.adaptiveTriggerEngine.setEnabled($0) }
+                ))
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+            }
+
+            Divider()
+
+            // Mode Selector
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Trigger Resistance Mode")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(XTheme.textSecondary)
+
+                Picker("", selection: Binding(
+                    get: { appState.controllerManager.adaptiveTriggerEngine.leftConfig.mode },
+                    set: { mode in
+                        appState.controllerManager.adaptiveTriggerEngine.leftConfig.mode = mode
+                        appState.controllerManager.adaptiveTriggerEngine.rightConfig.mode = mode
+                    }
+                )) {
+                    ForEach(AdaptiveTriggerMode.allCases, id: \.self) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+
+            // String Gauge (if guitar mode)
+            if appState.controllerManager.adaptiveTriggerEngine.leftConfig.mode == .guitarStringTension {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("String Gauge Tension")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(XTheme.textSecondary)
+
+                    Picker("", selection: Binding(
+                        get: { appState.controllerManager.adaptiveTriggerEngine.leftConfig.stringGauge },
+                        set: { gauge in
+                            appState.controllerManager.adaptiveTriggerEngine.leftConfig.stringGauge = gauge
+                            appState.controllerManager.adaptiveTriggerEngine.rightConfig.stringGauge = gauge
+                        }
+                    )) {
+                        ForEach(StringGauge.allCases, id: \.self) { gauge in
+                            Text(gauge.displayName).tag(gauge)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+            }
+
+            // Resistive Strength
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Motor Force Strength")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(XTheme.textSecondary)
+                    Spacer()
+                    Text("\(Int(appState.controllerManager.adaptiveTriggerEngine.leftConfig.resistiveStrength * 100))%")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundColor(XTheme.primary)
+                }
+                Slider(
+                    value: Binding(
+                        get: { appState.controllerManager.adaptiveTriggerEngine.leftConfig.resistiveStrength },
+                        set: {
+                            appState.controllerManager.adaptiveTriggerEngine.leftConfig.resistiveStrength = $0
+                            appState.controllerManager.adaptiveTriggerEngine.rightConfig.resistiveStrength = $0
+                        }
+                    ),
+                    in: 0.1...1.0
+                )
+                .tint(XTheme.primary)
+            }
+        }
+        .padding(14)
+        .frame(width: 280)
+    }
+}
+

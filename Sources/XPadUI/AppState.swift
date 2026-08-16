@@ -15,6 +15,12 @@ public final class AppState: @unchecked Sendable {
     public var performanceEngine = InstrumentPerformanceEngine()
     public var midiTranslator = TechniqueMIDITranslator()
     public var techniqueRecorder = TechniqueRecorder()
+    public var virtualAudioDriver = VirtualAudioDriver.shared
+    public var loopbackEngine = VirtualAudioLoopbackEngine.shared
+    public var multiJamManager = MultiControllerJammingManager()
+    public var smartSoloEngine = SmartSoloEngine()
+    public var ocdsManager = OCDSManager.shared
+    public var isSoloModeActive: Bool = false
 
     public var currentKey: PitchClass = .d
     public var currentScale: Scale = .naturalMinor
@@ -74,6 +80,7 @@ public final class AppState: @unchecked Sendable {
     public func initialize() {
         updateDiatonicChords()
         audioEngine.start()
+        XPadPluginRegistrar.registerPluginComponents()
         midiEngine.onVirtualMIDIChanged = { [weak self] enabled in
             guard let self else { return }
             if enabled {
@@ -105,11 +112,12 @@ public final class AppState: @unchecked Sendable {
 
     public func setKey(_ key: PitchClass) {
         currentKey = key
+        currentScale = Scale(root: key, type: currentScale.type)
         updateDiatonicChords()
     }
 
     public func setScale(_ scale: Scale) {
-        currentScale = scale
+        currentScale = Scale(root: currentKey, type: scale.type)
         updateDiatonicChords()
     }
 
@@ -184,6 +192,7 @@ public final class AppState: @unchecked Sendable {
 
     private func applyInstrument(_ profile: InstrumentProfile) {
         instrumentProfile = profile
+        controllerManager.configureForInstrumentProfile(profile)
         performanceEngine.setProfile(profile)
         midiTranslator.profile = profile
         midiTranslator.destination = destinationProfile
@@ -212,6 +221,24 @@ public final class AppState: @unchecked Sendable {
         let duoFrame = duoControlEngine.process(state: state, drumVelocity: drumVelocity)
         handleDuoDrumHits(duoFrame.drumHits)
 
+        // Voice-led smart soloing engine
+        if instrumentProfile.family == .synthLead || isSoloModeActive {
+            let soloResult = smartSoloEngine.process(
+                stick: StickCoordinates(x: Double(state.rightStick.x), y: Double(state.rightStick.y)),
+                movementVelocity: Double(state.rightStick.movementVelocity),
+                context: musicalContext(),
+                timestamp: now
+            )
+            if let off = soloResult.noteOff {
+                finishPhysicalVoiceIfUnowned(off)
+                midiEngine.sendNoteOff(port: melodicMIDIPort, channel: 2, note: off.midiNote)
+            }
+            if let on = soloResult.noteOn {
+                beginPhysicalVoice(on, velocity: soloResult.event?.velocity ?? 100, technique: soloResult.event?.technique ?? .normal)
+                midiEngine.sendNoteOn(port: melodicMIDIPort, channel: 2, note: on.midiNote, velocity: soloResult.event?.velocity ?? 100)
+            }
+        }
+
         let frame = performanceEngine.process(
             state: state,
             context: musicalContext(),
@@ -226,7 +253,7 @@ public final class AppState: @unchecked Sendable {
         }
         applyExpression(frame)
 
-        if !frame.suppressStrum {
+        if !frame.suppressStrum && !isSoloModeActive {
             handleStrumming(state, timestamp: now)
         } else if instrumentProfile.family == .synthLead || instrumentProfile.family == .genericMPE {
             applyLeadTimbre(frame.timbre)
@@ -260,9 +287,13 @@ public final class AppState: @unchecked Sendable {
         guard positionWithinSlice > 0.14, positionWithinSlice < 0.86 else { return }
 
         if index != selectedChordIndex {
+            let old = currentChord ?? diatonicChords[selectedChordIndex]
             selectedChordIndex = index
-            currentChord = diatonicChords[index]
+            let new = diatonicChords[index]
+            currentChord = new
             retargetHeldChordTones()
+            multiJamManager.updateSharedHarmony(key: currentKey, scale: currentScale, chord: new)
+            _ = smartSoloEngine.handleChordChange(oldChord: old, newChord: new, context: musicalContext())
         }
     }
 

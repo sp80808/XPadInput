@@ -407,7 +407,15 @@ The transport should remain globally reachable but visually quiet when idle.
 
 Primary order:
 
-**record | stop/play | loop | tempo | metronome | key/scale | MIDI/audio status**
+**record | stop/play | loop | tempo | metronome | harmonic context (key & scale) | instrument profile | MIDI/audio status**
+
+#### Compact XTheme Context Selectors
+
+To avoid bulky macOS SwiftUI `.menu` pickers breaking the compact visual layout:
+- **Unified Control Language:** `InstrumentSelectorView`, `KeySelectorView`, and `ScaleSelectorView` share a consistent compact presentation (`XTheme.surfaceCard` background, subtle rounded border, single primary text value, concise chevron indicator).
+- **No Duplicated Information:** The selected instrument, key, or scale is rendered once within the control. Status labels (e.g. green technique hints) convey real-time expressive state rather than repeating static selection text.
+- **Fixed Height Budget:** Context controls adhere to a standard ~28px height, ensuring the transport footer and chord display remain slim without clipping at narrow macOS window widths.
+- **Full Accessibility:** Preserve keyboard navigation, VoiceOver accessibility traits/labels, and state mutation through `AppState`.
 
 Where screen width is constrained, low-priority routing/status can collapse into an inspector/popover.
 

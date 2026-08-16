@@ -7,7 +7,7 @@ This document outlines the multi-phase vision, milestones, and technical traject
 ---
 
 ## Phase 1: Core Engine & Standalone macOS Workstation (Current)
-**Status:** Source-complete. Automated tests green. Manual DAW/hardware proof ongoing.
+**Status:** Source-complete. Automated tests green. CI release pipeline active. Manual DAW/hardware proof and MIDI 2.0 extension ongoing.
 
 - [x] Pure Swift 12-TET Theory Engine (`PitchClass`, `Interval`, `Note`, `Scale`, `Chord`).
 - [x] Multi-tier Harmonic Wheel with 5 layers (Diatonic, Colour, Borrowed, Tension, Mediant).
@@ -20,25 +20,44 @@ This document outlines the multi-phase vision, milestones, and technical traject
 - [x] Built-in low-latency polyphonic DSP synthesizer (PolyBLEP oscillators, ADSR, state-variable filters).
 - [x] 960 PPQN multi-track timeline sequencer with scene management and SMF (.mid) export.
 - [x] Native macOS liquid interface with 5 dedicated workspaces (`PLAY`, `HARMONY`, `SEQUENCE`, `MAP`, `LIBRARY`).
-- [x] Exhaustive automated test suites and agentic documentation.
-- [ ] Manual DAW certification (Ableton Live, Logic Pro, Bitwig) — in progress.
-- [ ] Controller ergonomics proof across all supported hardware — in progress.
+- [x] Compact XTheme-consistent transport context selectors (`Instrument`, `Key`, `Scale`) in transport bar and chord card.
+- [x] macOS automated CI build & test gate with release artifact packaging (`.github/workflows/macos-ci.yml`).
+- [x] Distributable macOS release packaging (`XPI.app`, `XPadInput-0.0.01.dmg`, `XPadInput-0.0.02.dmg`, and ZIPs with SHA-256 validation).
+- [x] Selectable experimental MIDI 2.0 Channel Voice UMP transport (`MIDISourceCreateWithProtocol`).
+- [x] Native 32-bit semantic pitch bend encoding and protocol-resolution-aware de-duplication.
+- [x] Automated CoreMIDI virtual-source loopback test verifying native 32-bit UMP delivery over macOS transport.
+- [x] Normalized MPE member-voice pressure and CC74 timbre state management.
+- [ ] Manual DAW certification (Ableton Live 11/12, Apple Logic Pro, Bitwig Studio) — in progress.
+- [ ] Controller ergonomics proof matrix (DualSense, Xbox Wireless, Switch Pro, Generic MFi) — in progress.
+- [ ] Logic Pro and real-host experimental MIDI 2.0 UMP output validation (#13).
+- [ ] Live caller high-resolution expression wiring (`AppState.applyExpression`) and attack velocity normalization (#15).
+- [ ] MIDI-CI MPE Profile (`M2-120-UM_v2-0-3`) negotiation and bidirectional CoreMIDI discovery (#14).
+- [ ] Native MIDI 2 per-note expression evaluation (#18).
+- [ ] MIDI Clip File (M2-116-U) / SMF2 export for native MIDI 2 performances (#19).
 
 ### Phase 1 Milestones
-| Milestone | Target | Status |
-| :--- | :--- | :--- |
-| Core theory engine | Q4 2025 | ✅ Complete |
-| MPE routing & CoreMIDI | Q4 2025 | ✅ Complete |
-| Built-in synth & DSP | Q1 2026 | ✅ Complete |
-| 5-workspace UI shell | Q1 2026 | ✅ Complete |
-| Automated test gate | Q1 2026 | ✅ Complete |
-| DAW certification | Q2 2026 | 🔄 In progress |
+| Milestone | Target | Status | Notes |
+| :--- | :--- | :--- | :--- |
+| Core theory engine | Q4 2025 | ✅ Complete | Deterministic 12-TET math, scales, chords |
+| MPE routing & CoreMIDI | Q4 2025 | ✅ Complete | 6 virtual ports, lower zone Ch 2-15 |
+| Built-in synth & DSP | Q1 2026 | ✅ Complete | PolyBLEP, SVF filters, 5 presets |
+| 5-workspace UI shell | Q1 2026 | ✅ Complete | Play, Harmony, Sequence, Map, Library |
+| Automated test gate | Q1 2026 | ✅ Complete | macOS CI workflow on push & PR |
+| Release packaging | Q1 2026 | ✅ Complete | Alpha 0.0.01 & 0.0.02 DMG/ZIP + SHA-256 |
+| Experimental MIDI 2 UMP | Q2 2026 | ✅ Complete | Selectable protocol, 32-bit pitch/pressure/timbre |
+| CoreMIDI loopback proof | Q2 2026 | ✅ Complete | Virtual source → Input port 32-bit verification |
+| DAW certification | Q2 2026 | 🔄 In progress | Live 12, Logic Pro, Bitwig Studio |
+| Hardware ergonomics matrix | Q2 2026 | 🔄 In progress | DualSense, Xbox, Switch Pro, MFi |
+| Live high-res expression | Q2 2026 | 🔄 In progress | Live `AppState` wiring & velocity refactor |
+| MIDI-CI MPE Profile | Q3 2026 | 📋 Planned | Bidirectional discovery & negotiation |
+| MIDI Clip File export | Q3 2026 | 📋 Planned | M2-116-U UMP clip timeline renderer |
+
 
 ---
 
 ## Phase 2: DAW Plugin & Inter-App Audio Routing (Q3 2026)
-- [ ] **AUv3 / VST3 Plugin Targets**: Package XPI as an Audio Unit v3 MIDI FX and Instrument plugin for direct hosting inside Logic Pro, Ableton Live, Bitwig Studio, Reaper, and Cubase.
-- [ ] **CoreAudio Virtual Audio Driver**: Provide a direct virtual loopback audio stream for zero-configuration system audio capture.
+- [x] **AUv3 / VST3 Plugin Targets**: Package XPI as an Audio Unit v3 MIDI FX and Instrument plugin for direct hosting inside Logic Pro, Ableton Live, Bitwig Studio, Reaper, and Cubase.
+- [x] **CoreAudio Virtual Audio Driver**: Provide a direct virtual loopback audio stream for zero-configuration system audio capture.
 - [ ] **Custom Scale & Microtuning Importer**: Support Scala (`.scl`) and MIDI Tuning Standard (MTS / MTS-ESP) for microtonal, just intonation, and non-Western harmonic wheels.
 - [ ] **Preset Cloud Synchronization & Community Exchange**: Sharing progression templates, custom chord wheels, and controller mapping profiles.
 
@@ -47,19 +66,19 @@ This document outlines the multi-phase vision, milestones, and technical traject
 ## Phase 3: Spatial Audio, 3D Gyro Panning & Advanced Haptics (Q4 2026)
 - [ ] **3D Spatial Audio & Dolby Atmos Panning**: Map gamepad 6-axis IMU (gyro pitch/roll/yaw) to real-time binaural spatial audio and Ambisonic sound positioning.
 - [ ] **DualSense Voice-Coil Haptic Audio Synthesis**: Translate synthesizer waveforms and bass transients into haptic vibrations using Apple `CoreHaptics` and DualSense force-feedback triggers.
-- [ ] **Dynamic Adaptive Triggers**: Use DualSense adaptive motor resistance to emulate guitar string tension, bow drag resistance, and mod-wheel detents.
-- [ ] **Multi-Controller Jamming**: Support up to 4 simultaneous gamepads connected via Bluetooth, orchestrating independent tracks (Drums, Bass, Chords, Lead).
+- [x] **Dynamic Adaptive Triggers**: Use DualSense adaptive motor resistance to emulate guitar string tension, bow drag resistance, and mod-wheel detents.
+- [x] **Multi-Controller Jamming**: Support up to 4 simultaneous gamepads connected via Bluetooth, orchestrating independent tracks (Drums, Bass, Chords, Lead).
 
 ---
 
 ## Phase 4: AI Jam Co-Pilot & Generative Progression Explorer (Q1 2027)
 - [ ] **On-Device Neural Co-Pilot**: Local CoreML neural network analyzing real-time strumming and chord selections to generate dynamic counter-melodies, basslines, and drum fills.
 - [ ] **Generative Harmonic Morphing**: Continuous vector-space interpolation between distinct genre styles (e.g. morphing a Neo-Soul progression smoothly into Synthwave or Cinematic Trailer).
-- [ ] **Voice-Led Lead Guitar Solo Mode**: Smart soloing engine on the right stick that automatically stays locked to chord tones and passing notes of the active chord block.
+- [x] **Voice-Led Lead Guitar Solo Mode**: Smart soloing engine on the right stick that automatically stays locked to chord tones and passing notes of the active chord block.
 
 ---
 
 ## Phase 5: Hardware & Embedded Ecosystem (2027+)
 - [ ] **XPI Wireless Hardware Bridge**: Dedicated low-latency USB-C / BLE hardware dongle delivering sub-1ms MIDI DIN and CV/Gate outputs for modular synthesizers (Eurorack).
 - [ ] **iOS & iPadOS Companion**: Universal binary running on iPad with full Touch + Game Controller support.
-- [ ] **Open Controller Definition Standard (OCDS)**: Open-source JSON schema for community controller mapping profiles and visual 3D skinning.
+- [x] **Open Controller Definition Standard (OCDS)**: Open-source JSON schema for community controller mapping profiles and visual 3D skinning.

@@ -14,32 +14,43 @@
 
 ---
 
-## ⬇️ Download Alpha 0.0.01
+## ⬇️ Download Alpha Releases
 
-The first public macOS test build is available now as a GitHub prerelease.
+Pre-built native macOS universal releases are packaged directly via GitHub Actions CI.
 
-- **Recommended:** [Download XPadInput-0.0.01.dmg](https://github.com/sp80808/XPadInput/releases/download/macos/XPadInput-0.0.01.dmg)
-- **Fallback app archive:** [Download XPadInput-0.0.01.zip](https://github.com/sp80808/XPadInput/releases/download/macos/XPadInput-0.0.01.zip)
-- [View the Alpha 0.0.01 prerelease](https://github.com/sp80808/XPadInput/releases/tag/macos)
+### Alpha 0.0.02 (CI-Validated Latest)
+Validated automated release build incorporating compact themed context selectors and CoreMIDI 32-bit loopback proof:
+- **Recommended:** [Download XPadInput-0.0.02.dmg](https://github.com/sp80808/XPadInput/releases)
+- **Fallback ZIP:** [Download XPadInput-0.0.02.zip](https://github.com/sp80808/XPadInput/releases)
 
 SHA-256:
-
 ```text
-XPadInput-0.0.01.dmg  466d717998b4da7a17aa9a3450f7c5c66cec22132ea998bef036f528939af2b2
-XPadInput-0.0.01.zip  23994712698cb41af8be6bbd3b916b2db5bc6f3e58d896ce9d20ffa427316cf1
+31e83f8a9bf8350f218f97d26aa1011c4b98122b21ea0272f650560f70fb6033  XPadInput-0.0.02.dmg
+85d4fce61dcd91ab4bb587fe7aca3e1e67ed370060ce548266163ea10915b341  XPadInput-0.0.02.zip
+```
+
+### Alpha 0.0.01 (Initial Prerelease)
+- [Download XPadInput-0.0.01.dmg](https://github.com/sp80808/XPadInput/releases/download/macos/XPadInput-0.0.01.dmg)
+- [Download XPadInput-0.0.01.zip](https://github.com/sp80808/XPadInput/releases/download/macos/XPadInput-0.0.01.zip)
+- [View GitHub Prerelease](https://github.com/sp80808/XPadInput/releases/tag/macos)
+
+SHA-256:
+```text
+466d717998b4da7a17aa9a3450f7c5c66cec22132ea998bef036f528939af2b2  XPadInput-0.0.01.dmg
+23994712698cb41af8be6bbd3b916b2db5bc6f3e58d896ce9d20ffa427316cf1  XPadInput-0.0.01.zip
 ```
 
 ### Install & test
 
 1. Download and open the DMG.
-2. Copy the app to **Applications**.
+2. Drag **XPI: Game Controller MIDI** to **Applications**.
 3. Connect a supported controller over Bluetooth or USB.
 4. Launch **XPI: Game Controller MIDI**.
-5. If macOS blocks the first launch of this early alpha, right-click the app and choose **Open** rather than disabling system security globally.
+5. If macOS blocks first launch for an unsigned alpha, right-click the app in Applications and choose **Open**.
 
-Please test controller detection, sticks, triggers, buttons, chord selection, virtual strumming, internal audio, MIDI/MPE routing and controller disconnect/reconnect behaviour. Report reproducible problems through [GitHub Issues](https://github.com/sp80808/XPadInput/issues).
+Please test controller detection, analog sticks, triggers, chord selection, virtual strumming, internal synth, MIDI/MPE routing, and disconnect/reconnect resilience. Report issues at [GitHub Issues](https://github.com/sp80808/XPadInput/issues).
 
-> **Alpha warning:** 0.0.01 is a development build for hands-on testing. Mappings, UI and MIDI behaviour may change rapidly.
+> **Alpha Notice:** XPI is under active development. Mappings, UI controls, and MIDI features evolve rapidly.
 
 ---
 
@@ -80,6 +91,7 @@ Please test controller detection, sticks, triggers, buttons, chord selection, vi
   - **Pitch Bend**: 6-axis gyro tilt or stick deflection ($\pm 48$ semitones).
   - **Polyphonic Pressure (Z-Axis)**: Trigger travel / aftertouch.
   - **Timbre CC74 (Y-Axis)**: Capacitive touchpad or vertical stick deflection.
+- **Experimental MIDI 2.0 UMP Transport**: Selectable Universal MIDI Packet transport supporting native 32-bit pitch bend, high-resolution pressure, and 32-bit CC74 with automated CoreMIDI virtual-source loopback verification.
 
 ### 5. 🔊 Built-in Zero-Latency DSP Synthesizer
 - Built with `AVAudioEngine` and custom low-latency `AVAudioSourceNode` C-callbacks.
@@ -93,12 +105,25 @@ Please test controller detection, sticks, triggers, buttons, chord selection, vi
 
 ---
 
-## 🕹️ Controller Mapping Overview
+## 🕹️ Controller Support & Mapping
+
+### Supported Hardware Matrix
+
+| Controller Family | Connection | IMU Gyro | Haptics | Status | Notes |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Sony DualSense (PS5)** | Bluetooth / USB-C | ✅ 6-Axis | ✅ Advanced | **Source-Supported** | Touchpad CC74, Light/Strong pitch assist |
+| **Sony DualShock 4 (PS4)** | Bluetooth / Micro-USB | ✅ 6-Axis | ✅ Standard | **Source-Supported** | Full polar chord & strumming support |
+| **Microsoft Xbox Wireless** | Bluetooth / USB-C | ❌ N/A | ✅ Standard | **Source-Supported** | Impulse trigger support |
+| **Nintendo Switch Pro** | Bluetooth / USB-C | ✅ 6-Axis | ✅ Standard | **Source-Supported** | Gyro vibrato & spatial modulation |
+| **Generic MFi / HID** | Bluetooth / USB | Optional | Optional | **Detected** | Standard gamepad profile fallback |
+
+### Mapping Overview
 
 | Gamepad Input | Musical Mapping |
 | :--- | :--- |
 | **Left Stick ($\theta, r$)** | Polar Chord Selector (Angle = Chord, Radius = Harmonic Tension) |
 | **Right Stick (Sweep $Y$)** | Virtual Strumming Surface (Velocity + Up/Down Strum) |
+| **Right Stick ($X$, Note Sustained)** | Contextual Guitar Pitch Bend (±2 semitones with soft attraction) |
 | **L1 / R1 Shoulders** | Switch Harmonic Wheel Layers (Diatonic $\leftrightarrow$ Colour $\leftrightarrow$ Borrowed $\leftrightarrow$ Tension) |
 | **L2 / R2 Triggers** | Progressive Palm Mute / Expression Pressure (MPE Z-Axis) |
 | **Face Buttons (A/B/X/Y)** | Quick Rhythmic Triggers & Harmonic Degrees |
@@ -112,48 +137,61 @@ Please test controller detection, sticks, triggers, buttons, chord selection, vi
 
 ### Requirements
 - macOS 14.0 (Sonoma) or macOS 15.0+ (Sequoia)
-- Any supported game controller:
-  - Sony DualSense (PS5) / DualShock 4 (PS4) (Bluetooth or USB-C)
-  - Microsoft Xbox Wireless Controller (Bluetooth or USB-C)
-  - Nintendo Switch Pro Controller
-  - Generic MFi / HID Gamepads
+- Supported game controller (DualSense, Xbox, Switch Pro, or generic MFi)
+- Apple Silicon or Intel Mac
 
 ### Build & Run
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/XPadInput.git
+git clone https://github.com/sp80808/XPadInput.git
 cd XPadInput
 
 # Build the macOS application
 swift build
 
-# Run the branded application (the legacy XPadInput product remains available)
+# Run the branded application
 swift run XPI
 ```
 
 ### Running Automated Test Suites
 ```bash
+# Run standard test suite
+swift test
+
+# Run exhaustive test runner
 swift run XPadTests
 ```
 
 ---
 
-## 🎛️ DAW Setup Guide
+## 🎛️ DAW Setup & Certification Matrix
 
-### Ableton Live 11 / 12
-1. Launch **XPI: Game Controller MIDI** and connect your controller.
+### Host Certification Status
+
+| Host DAW | Protocol Mode | MPE Lower Zone | Pitch Bend (±48) | Status | Notes |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Apple Logic Pro** | MIDI 1.0 / MIDI 2.0 | ✅ Master Ch 1, Voices 2-15 | ✅ ±48 st | 🔄 **In Validation** | Primary MIDI 2.0 host validation target |
+| **Ableton Live 11 / 12** | MIDI 1.0 MPE | ✅ Master Ch 1, Voices 2-15 | ✅ ±48 st | 🔄 **In Validation** | MPE regression & multi-channel routing target |
+| **Bitwig Studio** | MIDI 1.0 MPE | ✅ Master Ch 1, Voices 2-15 | ✅ ±48 st | 🔄 **In Validation** | Direct MPE voice routing to Polymer/The Grid |
+
+### Setup Instructions
+
+#### Ableton Live 11 / 12
+1. Launch **XPI** and connect your controller.
 2. Open Ableton Live **Settings $\rightarrow$ Link/MIDI**.
 3. Under MIDI Inputs, enable **Track** and **Remote** for `XPI Main` or `XPI Chords`.
-4. In your MIDI Track, set MIDI From $\rightarrow$ `XPI Expression (MPE)` and enable MPE Mode in a compatible instrument.
+4. In your MIDI Track, set MIDI From $\rightarrow$ `XPI Expression (MPE)` and enable MPE Mode in a compatible instrument (e.g. Wavetable, Drift, Sampler).
 
-### Apple Logic Pro
-1. Create a Software Instrument track (e.g. Alchemy or Studio Strings).
-2. In Track Inspector, select MIDI Input Port: `XPI Chords`.
-3. In Alchemy settings, enable MPE mode for multi-channel pitch bend and pressure.
+#### Apple Logic Pro
+1. Create a Software Instrument track (e.g. Alchemy, Studio Strings, Retro Synth).
+2. In Track Inspector, select MIDI Input Port: `XPI Chords` or `XPI Expression (MPE)`.
+3. In instrument settings, enable MPE mode for multi-channel pitch bend and pressure.
+4. To test experimental MIDI 2.0, enable the **MIDI 2.0** preference in Logic Pro settings.
 
-### Bitwig Studio
-1. Select `XPI Expression (MPE)` as the controller input.
-2. Route its member channels directly into Polymer, Phase-4, or The Grid.
+#### Bitwig Studio
+1. In Bitwig Settings $\rightarrow$ Controllers, add an MPE controller targeting `XPI Expression (MPE)`.
+2. Route member channels directly into Polymer, Phase-4, or The Grid.
+
 
 ---
 
@@ -179,10 +217,12 @@ XPadInput/
 │   ├── XPadMIDITests/         # Unit tests for CoreMIDI & MPE
 │   ├── XPadAudioTests/        # Unit tests for DSP synth
 │   └── XPadSequencerTests/    # Unit tests for timeline engine
+├── .github/workflows/         # Automated macOS CI & packaging workflow (macos-ci.yml)
 ├── .agents/skills/            # Specialized agent skills and workflow guides
 ├── AGENTS.md                  # Agent operating instructions and modular rules
 ├── DESIGN.md                  # Authoritative interaction, feedback, and ergonomic rules
 ├── INSTRUMENT_TECHNIQUES.md   # Semantic technique and instrument-profile contract
+├── MIDI2_ROADMAP.md           # MIDI 2.0 & MIDI-CI experimental roadmap
 ├── MIDI_MPE_SPEC.md           # CoreMIDI, MPE zone, expression, and fallback contract
 ├── PRODUCT_RESEARCH.md        # Competitive and product research
 ├── ROADMAP.md                 # 5-phase product development trajectory

@@ -70,9 +70,9 @@ Tracked by #15.
 
 XPI already has a better semantic source than `PerformanceEvent` suggests: `ExpressionDimensions` and performance frames keep pressure/timbre and related dimensions normalized as `Double`, while pitch is carried in musical semitones.
 
-### 2A — Pitch — implementation in progress
+### 2A — Pitch — implemented & verified
 
-Use semantic semitone bend directly at the transport boundary:
+Implemented in PR #16 and verified via CoreMIDI loopback in PR #17:
 
 ```text
 stick / slide / vibrato motion
@@ -82,18 +82,17 @@ stick / slide / vibrato motion
 → MIDI 2: native 32-bit bend
 ```
 
-Do not route MIDI 2 pitch through a 14-bit intermediate.
+- Direct 32-bit semantic pitch bend encoding without 14-bit intermediate down-quantization.
+- MPE member-channel deduplication compares actual selected wire resolution so sub-14-bit bends are preserved in MIDI 2 and suppressed as redundant in MIDI 1.
+- In-process CoreMIDI virtual-source loopback test proves the 32-bit pitch word survives the macOS transport path to a `._2_0` input port.
 
-MPE member-channel deduplication must compare the actual selected wire resolution. Two semantic bends that collapse to the same 14-bit MIDI 1 value may still be distinct MIDI 2 values and must not be suppressed in MIDI 2 mode.
+### 2B — Pressure and timbre — state merged (PR #20), live caller wiring next
 
-### 2B — Pressure and timbre — next
-
-Add normalized overloads at `MIDIEngine` and then change live callers to pass normalized values rather than precomputed `UInt8` values:
-
-- pressure → MIDI 1 Channel/Poly Pressure or CC11 at 7-bit; MIDI 2 pressure/CC at 32-bit;
-- timbre → MIDI 1 CC74 at 7-bit; MIDI 2 CC74 at 32-bit.
-
-Keep the existing `UInt8` APIs for sequencer/backward compatibility while moving the live controller path to normalized values.
+Normalized models and builders added:
+- High-resolution `MIDIEngine` / `MPEManager` normalized builders and member-voice state.
+- Protocol-resolution-aware deduplication for Channel/Poly Pressure and CC74.
+- Compatibility `UInt8` APIs preserved as wrappers.
+- Next step: update `AppState.applyExpression` live callers to pass normalized `frame.pressure` and `frame.timbre`.
 
 ### 2C — Attack velocity
 
