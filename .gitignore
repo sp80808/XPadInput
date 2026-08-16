@@ -14,6 +14,16 @@ Packages/
 Package.pins
 Package.resolved
 DerivedData/
+
+# Release Builds
+builds/
+*.app
+*.dmg
+*.zip
+*.tar.gz
+*.pkg
+*.dSYM
+*.app.dSYM/
 *.xcodeproj/xcuserdata/
 *.xcodeproj/project.xcworkspace/xcuserdata/
 *.xcodeproj/project.xcworkspace/xcshareddata/
@@ -22,9 +32,22 @@ DerivedData/
 *.xcuserdatad/
 *.xcuserstate
 
+# IDE & Editor Config
+.vscode/
+.cursor/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
 # Logs & Temporary Files
 *.log
 *.tmp
 *.bak
 *.swp
 *~
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
+.beads/proxieddb/
