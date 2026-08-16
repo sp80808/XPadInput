@@ -4,9 +4,9 @@ import XCTest
 
 final class ControlSchemePresetCodableTests: XCTestCase {
     func testStickFeelPresetDecodesLegacyVerboseValues() throws {
-        let legacyPrecise = Data(#"\"Precise (High resolution at center for vibrato & fine bends)\""#.utf8)
-        let legacyBalanced = Data(#"\"Balanced (Natural linear response)\""#.utf8)
-        let legacyResponsive = Data(#"\"Responsive (Immediate output from small thumb movements)\""#.utf8)
+        let legacyPrecise = Data("\"Precise (High resolution at center for vibrato & fine bends)\"".utf8)
+        let legacyBalanced = Data("\"Balanced (Natural linear response)\"".utf8)
+        let legacyResponsive = Data("\"Responsive (Immediate output from small thumb movements)\"".utf8)
 
         XCTAssertEqual(try JSONDecoder().decode(StickFeelPreset.self, from: legacyPrecise), .precise)
         XCTAssertEqual(try JSONDecoder().decode(StickFeelPreset.self, from: legacyBalanced), .balanced)
@@ -14,9 +14,9 @@ final class ControlSchemePresetCodableTests: XCTestCase {
     }
 
     func testTriggerFeelPresetDecodesLegacyVerboseValues() throws {
-        let legacySoft = Data(#"\"Soft (Light initial pull with rapid engagement)\""#.utf8)
-        let legacyLinear = Data(#"\"Linear (Proportional travel with predictable swell)\""#.utf8)
-        let legacyFirm = Data(#"\"Firm (Deep travel threshold for heavy expressive pressure)\""#.utf8)
+        let legacySoft = Data("\"Soft (Light initial pull with rapid engagement)\"".utf8)
+        let legacyLinear = Data("\"Linear (Proportional travel with predictable swell)\"".utf8)
+        let legacyFirm = Data("\"Firm (Deep travel threshold for heavy expressive pressure)\"".utf8)
 
         XCTAssertEqual(try JSONDecoder().decode(TriggerFeelPreset.self, from: legacySoft), .soft)
         XCTAssertEqual(try JSONDecoder().decode(TriggerFeelPreset.self, from: legacyLinear), .linear)
