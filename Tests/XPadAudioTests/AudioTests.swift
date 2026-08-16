@@ -21,16 +21,16 @@ final class AudioTests: XCTestCase {
         XCTAssertEqual(rhodes.osc1Type, .sine)
 
         let pad = SynthPreset.warmPad
-        XCTAssertTrue(pad.attackSeconds > 0.1)
+        XCTAssertTrue(pad.attack > 0.1)
         XCTAssertEqual(pad.id, "warmPad")
 
         let sub = SynthPreset.subBass
         XCTAssertTrue(sub.filterCutoffHz <= 1000.0)
-        
+
         let brass = SynthPreset.analogBrass
         XCTAssertEqual(brass.osc1Type, .saw)
         XCTAssertGreaterThan(brass.filterResonance, 0.4)
-        
+
         let bell = SynthPreset.digitalBell
         XCTAssertEqual(bell.filterType, .lowPass)
         XCTAssertGreaterThan(bell.osc2DetuneCents, 15)
@@ -51,7 +51,7 @@ final class AudioTests: XCTestCase {
     }
 
     func testFilterTypeEnum() {
-        let types: [SynthPreset.FilterType] = [.lowPass, .highPass, .bandPass]
+        let types: [FilterType] = [.lowPass, .highPass, .bandPass]
         XCTAssertEqual(types.count, 3)
         XCTAssertEqual(types.map { $0.rawValue }, ["Low Pass", "High Pass", "Band Pass"])
     }
