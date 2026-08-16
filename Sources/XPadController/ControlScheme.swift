@@ -132,12 +132,47 @@ public enum TriggerFeelPreset: String, Sendable, CaseIterable, Identifiable, Cod
     }
 }
 
-public enum HapticFeedbackIntensity: String, Codable, Sendable, CaseIterable, Identifiable {
+/// Compact menu labels prevent the haptics control from visually crowding or truncating
+/// the settings card. Legacy verbose values remain decodable for saved schemes.
+public enum HapticFeedbackIntensity: String, Sendable, CaseIterable, Identifiable, Codable {
     case off = "Off"
-    case subtle = "Subtle (Sparse musical landmark pulses only)"
-    case normal = "Normal (Full tactile feedback for chords & bends)"
+    case subtle = "Subtle"
+    case normal = "Normal"
+
+    private static let legacyValues: [String: HapticFeedbackIntensity] = [
+        "Subtle (Sparse musical landmark pulses only)": .subtle,
+        "Normal (Full tactile feedback for chords & bends)": .normal,
+    ]
 
     public var id: String { rawValue }
+
+    public var detail: String {
+        switch self {
+        case .off: return "No controller haptic feedback."
+        case .subtle: return "Sparse pulses at useful musical landmarks."
+        case .normal: return "Full tactile feedback for chords, bends and state changes."
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let value = try container.decode(String.self)
+
+        if let intensity = Self(rawValue: value) ?? Self.legacyValues[value] {
+            self = intensity
+            return
+        }
+
+        throw DecodingError.dataCorruptedError(
+            in: container,
+            debugDescription: "Unknown haptic feedback intensity: \(value)"
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 // MARK: - Control Scheme Model
