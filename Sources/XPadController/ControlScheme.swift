@@ -42,19 +42,40 @@ public enum DigitalExpressionBehavior: String, Codable, Sendable, CaseIterable, 
 
 // MARK: - Musician-Facing Stick & Trigger Feel Profiles
 
-public enum StickFeelPreset: String, Codable, Sendable, CaseIterable, Identifiable {
-    case precise = "Precise (High resolution at center for vibrato & fine bends)"
-    case balanced = "Balanced (Natural linear response)"
-    case responsive = "Responsive (Immediate output from small thumb movements)"
+/// Compact persisted values keep segmented controls width-safe while custom decoding
+/// preserves compatibility with schemes saved before the UI-label cleanup.
+public enum StickFeelPreset: String, Sendable, CaseIterable, Identifiable, Codable {
+    case precise = "Precise"
+    case balanced = "Balanced"
+    case responsive = "Responsive"
+
+    private static let legacyValues: [String: StickFeelPreset] = [
+        "Precise (High resolution at center for vibrato & fine bends)": .precise,
+        "Balanced (Natural linear response)": .balanced,
+        "Responsive (Immediate output from small thumb movements)": .responsive,
+    ]
 
     public var id: String { rawValue }
+    public var shortName: String { rawValue }
 
-    public var shortName: String {
-        switch self {
-        case .precise: return "Precise"
-        case .balanced: return "Balanced"
-        case .responsive: return "Responsive"
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let value = try container.decode(String.self)
+
+        if let preset = Self(rawValue: value) ?? Self.legacyValues[value] {
+            self = preset
+            return
         }
+
+        throw DecodingError.dataCorruptedError(
+            in: container,
+            debugDescription: "Unknown stick feel preset: \(value)"
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
     }
 
     public var processingProfile: InputProcessingProfile {
@@ -66,19 +87,40 @@ public enum StickFeelPreset: String, Codable, Sendable, CaseIterable, Identifiab
     }
 }
 
-public enum TriggerFeelPreset: String, Codable, Sendable, CaseIterable, Identifiable {
-    case soft = "Soft (Light initial pull with rapid engagement)"
-    case linear = "Linear (Proportional travel with predictable swell)"
-    case firm = "Firm (Deep travel threshold for heavy expressive pressure)"
+/// Uses short stable labels for segmented controls. Legacy verbose values remain
+/// decodable so existing custom control schemes are not invalidated by the UI fix.
+public enum TriggerFeelPreset: String, Sendable, CaseIterable, Identifiable, Codable {
+    case soft = "Soft"
+    case linear = "Linear"
+    case firm = "Firm"
+
+    private static let legacyValues: [String: TriggerFeelPreset] = [
+        "Soft (Light initial pull with rapid engagement)": .soft,
+        "Linear (Proportional travel with predictable swell)": .linear,
+        "Firm (Deep travel threshold for heavy expressive pressure)": .firm,
+    ]
 
     public var id: String { rawValue }
+    public var shortName: String { rawValue }
 
-    public var shortName: String {
-        switch self {
-        case .soft: return "Soft"
-        case .linear: return "Linear"
-        case .firm: return "Firm"
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let value = try container.decode(String.self)
+
+        if let preset = Self(rawValue: value) ?? Self.legacyValues[value] {
+            self = preset
+            return
         }
+
+        throw DecodingError.dataCorruptedError(
+            in: container,
+            debugDescription: "Unknown trigger feel preset: \(value)"
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
     }
 
     public var activationThreshold: Float {
@@ -90,12 +132,47 @@ public enum TriggerFeelPreset: String, Codable, Sendable, CaseIterable, Identifi
     }
 }
 
-public enum HapticFeedbackIntensity: String, Codable, Sendable, CaseIterable, Identifiable {
+/// Compact menu labels prevent the haptics control from visually crowding or truncating
+/// the settings card. Legacy verbose values remain decodable for saved schemes.
+public enum HapticFeedbackIntensity: String, Sendable, CaseIterable, Identifiable, Codable {
     case off = "Off"
-    case subtle = "Subtle (Sparse musical landmark pulses only)"
-    case normal = "Normal (Full tactile feedback for chords & bends)"
+    case subtle = "Subtle"
+    case normal = "Normal"
+
+    private static let legacyValues: [String: HapticFeedbackIntensity] = [
+        "Subtle (Sparse musical landmark pulses only)": .subtle,
+        "Normal (Full tactile feedback for chords & bends)": .normal,
+    ]
 
     public var id: String { rawValue }
+
+    public var detail: String {
+        switch self {
+        case .off: return "No controller haptic feedback."
+        case .subtle: return "Sparse pulses at useful musical landmarks."
+        case .normal: return "Full tactile feedback for chords, bends and state changes."
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let value = try container.decode(String.self)
+
+        if let intensity = Self(rawValue: value) ?? Self.legacyValues[value] {
+            self = intensity
+            return
+        }
+
+        throw DecodingError.dataCorruptedError(
+            in: container,
+            debugDescription: "Unknown haptic feedback intensity: \(value)"
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 // MARK: - Control Scheme Model
