@@ -80,4 +80,78 @@ final class InputPipelineTests: XCTestCase {
         XCTAssertEqual(duplicate.velocity, 0)
         XCTAssertEqual(recovered.velocity, 10, accuracy: 0.001)
     }
+
+    func testStickSmoothingIsInvariantAcrossCallbackRates() {
+        func finalValue(sampleRate: Double) -> Float {
+            let profile = InputProcessingProfile(
+                id: "test",
+                name: "Test",
+                deadzone: .none,
+                responseCurve: .linear,
+                smoothingFactor: 0.5
+            )
+            var processor = StickProcessor(profile: profile)
+            _ = processor.process(rawX: 0, rawY: 0, timestamp: 0)
+
+            var state = ProcessedStickState()
+            let steps = Int(0.1 * sampleRate)
+            for step in 1...steps {
+                state = processor.process(
+                    rawX: 1,
+                    rawY: 0,
+                    timestamp: Double(step) / sampleRate
+                )
+            }
+            return state.x
+        }
+
+        let at60Hz = finalValue(sampleRate: 60)
+        let at240Hz = finalValue(sampleRate: 240)
+
+        XCTAssertEqual(at60Hz, at240Hz, accuracy: 0.000_01)
+    }
+
+    func testStickSmoothingDoesNotAdvanceForDuplicateTimestamp() {
+        let profile = InputProcessingProfile(
+            id: "test",
+            name: "Test",
+            deadzone: .none,
+            responseCurve: .linear,
+            smoothingFactor: 0.5
+        )
+        var processor = StickProcessor(profile: profile)
+        _ = processor.process(rawX: 0, rawY: 0, timestamp: 0)
+
+        let first = processor.process(rawX: 1, rawY: 0, timestamp: 1.0 / 120.0)
+        let duplicate = processor.process(rawX: 1, rawY: 0, timestamp: 1.0 / 120.0)
+
+        XCTAssertEqual(first.x, duplicate.x, accuracy: 0.000_001)
+        XCTAssertEqual(duplicate.movementVelocity, 0, accuracy: 0.000_001)
+    }
+
+    func testTriggerSmoothingIsInvariantAcrossCallbackRates() {
+        func finalValue(sampleRate: Double) -> Float {
+            var processor = TriggerProcessor(
+                deadzone: 0,
+                responseCurve: .linear,
+                smoothingFactor: 0.5
+            )
+            _ = processor.process(rawValue: 0, timestamp: 0)
+
+            var state = ProcessedTriggerState()
+            let steps = Int(0.1 * sampleRate)
+            for step in 1...steps {
+                state = processor.process(
+                    rawValue: 1,
+                    timestamp: Double(step) / sampleRate
+                )
+            }
+            return state.value
+        }
+
+        let at60Hz = finalValue(sampleRate: 60)
+        let at240Hz = finalValue(sampleRate: 240)
+
+        XCTAssertEqual(at60Hz, at240Hz, accuracy: 0.000_01)
+    }
 }
