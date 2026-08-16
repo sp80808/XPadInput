@@ -23,16 +23,27 @@ final class ControlSchemePresetCodableTests: XCTestCase {
         XCTAssertEqual(try JSONDecoder().decode(TriggerFeelPreset.self, from: legacyFirm), .firm)
     }
 
+    func testHapticFeedbackDecodesLegacyVerboseValues() throws {
+        let legacySubtle = Data("\"Subtle (Sparse musical landmark pulses only)\"".utf8)
+        let legacyNormal = Data("\"Normal (Full tactile feedback for chords & bends)\"".utf8)
+
+        XCTAssertEqual(try JSONDecoder().decode(HapticFeedbackIntensity.self, from: legacySubtle), .subtle)
+        XCTAssertEqual(try JSONDecoder().decode(HapticFeedbackIntensity.self, from: legacyNormal), .normal)
+    }
+
     func testPresetEncodingUsesCompactWidthSafeLabels() throws {
         let stickData = try JSONEncoder().encode(StickFeelPreset.balanced)
         let triggerData = try JSONEncoder().encode(TriggerFeelPreset.linear)
+        let hapticData = try JSONEncoder().encode(HapticFeedbackIntensity.normal)
 
         XCTAssertEqual(String(data: stickData, encoding: .utf8), "\"Balanced\"")
         XCTAssertEqual(String(data: triggerData, encoding: .utf8), "\"Linear\"")
+        XCTAssertEqual(String(data: hapticData, encoding: .utf8), "\"Normal\"")
     }
 
-    func testPresetRawValuesRemainCompactForSegmentedControls() {
+    func testPresetRawValuesRemainCompactForSettingsControls() {
         XCTAssertEqual(StickFeelPreset.allCases.map(\.rawValue), ["Precise", "Balanced", "Responsive"])
         XCTAssertEqual(TriggerFeelPreset.allCases.map(\.rawValue), ["Soft", "Linear", "Firm"])
+        XCTAssertEqual(HapticFeedbackIntensity.allCases.map(\.rawValue), ["Off", "Subtle", "Normal"])
     }
 }
