@@ -28,12 +28,12 @@ This document outlines the multi-phase vision, milestones, and technical traject
 - [x] Automated CoreMIDI virtual-source loopback test verifying native 32-bit UMP delivery over macOS transport.
 - [x] Normalized MPE member-voice pressure and CC74 timbre state management.
 - [ ] Manual DAW certification (Ableton Live 11/12, Apple Logic Pro, Bitwig Studio) — in progress.
-- [ ] Controller ergonomics proof matrix (DualSense, Xbox Wireless, Switch Pro, Generic MFi) — in progress.
+- [x] Controller ergonomics proof matrix (DualSense, Xbox Wireless, Switch Pro, Generic MFi) (`CONTROLLER_MATRIX.md`).
 - [ ] Logic Pro and real-host experimental MIDI 2.0 UMP output validation (#13).
 - [ ] Live caller high-resolution expression wiring (`AppState.applyExpression`) and attack velocity normalization (#15).
-- [ ] MIDI-CI MPE Profile (`M2-120-UM_v2-0-3`) negotiation and bidirectional CoreMIDI discovery (#14).
-- [ ] Native MIDI 2 per-note expression evaluation (#18).
-- [ ] MIDI Clip File (M2-116-U) / SMF2 export for native MIDI 2 performances (#19).
+- [x] MIDI-CI MPE Profile (`M2-120-UM_v2-0-3`) negotiation and bidirectional CoreMIDI discovery (#14).
+- [x] Native MIDI 2 per-note expression evaluation (#18).
+- [x] MIDI Clip File (M2-116-U) / SMF2 export for native MIDI 2 performances (#19).
 
 ### Phase 1 Milestones
 | Milestone | Target | Status | Notes |
@@ -47,7 +47,10 @@ This document outlines the multi-phase vision, milestones, and technical traject
 | Experimental MIDI 2 UMP | Q2 2026 | ✅ Complete | Selectable protocol, 32-bit pitch/pressure/timbre |
 | CoreMIDI loopback proof | Q2 2026 | ✅ Complete | Virtual source → Input port 32-bit verification |
 | DAW certification | Q2 2026 | 🔄 In progress | Live 12, Logic Pro, Bitwig Studio |
-| Hardware ergonomics matrix | Q2 2026 | 🔄 In progress | DualSense, Xbox, Switch Pro, MFi |
+| Hardware ergonomics matrix | Q2 2026 | ✅ Complete | DualSense, Xbox, Switch Pro, MFi (`CONTROLLER_MATRIX.md`) |
+| MIDI-CI MPE Profile | Q2 2026 | ✅ Complete | Bidirectional discovery & `M2-120-UM_v2-0-3` |
+| Native MIDI 2 Per-Note | Q2 2026 | ✅ Complete | 32-bit Per-Note Pitch/Pressure/Timbre UMPs |
+| SMF2 / MIDI Clip File | Q2 2026 | ✅ Complete | Binary encoder & parser (M2-116-U v1.0) |
 | Live high-res expression | Q2 2026 | 🔄 In progress | Live `AppState` wiring & velocity refactor |
 | MIDI-CI MPE Profile | Q3 2026 | 📋 Planned | Bidirectional discovery & negotiation |
 | MIDI Clip File export | Q3 2026 | 📋 Planned | M2-116-U UMP clip timeline renderer |

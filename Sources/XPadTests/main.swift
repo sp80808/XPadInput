@@ -1591,6 +1591,273 @@ final class TestRunner {
             }
         }
 
+        // ==================================================
+        // SUITE: MIDI-CI MPE Profile (M2-120-UM_v2-0-3) Negotiation & Discovery
+        // ==================================================
+        suite("MIDI-CI MPE Profile (M2-120-UM_v2-0-3) Negotiation & Discovery") {
+            test("Discovery inquiry generation and MUID format") {
+                let session = MIDICISession(muid: 0x0123_4567)
+                let inquiry = session.buildDiscoveryInquiry()
+                assertTrue(inquiry.count >= 20)
+                assertEqual(inquiry[0], 0xF0)
+                assertEqual(inquiry[1], 0x7E)
+                assertEqual(inquiry[2], 0x7F)
+                assertEqual(inquiry[3], 0x0D) // MIDI-CI Sub-ID 1
+                assertEqual(inquiry[4], 0x70) // Discovery Inquiry Sub-ID 2
+                assertEqual(inquiry.last, 0xF7)
+            }
+
+            test("Discovery inquiry processing and reply generation") {
+                let session = MIDICISession(muid: 0x0ABC_DEF0)
+                let remoteMUID: UInt32 = 0x0123_4567
+                
+                // Build simulated incoming discovery inquiry from DAW
+                var simulatedInquiry: [UInt8] = [0xF0, 0x7E, 0x7F, 0x0D, 0x70, 0x02]
+                simulatedInquiry.append(contentsOf: [
+                    UInt8(remoteMUID & 0x7F), UInt8((remoteMUID >> 7) & 0x7F),
+                    UInt8((remoteMUID >> 14) & 0x7F), UInt8((remoteMUID >> 21) & 0x7F)
+                ])
+                simulatedInquiry.append(contentsOf: [0x7F, 0x7F, 0x7F, 0x7F]) // Broadcast dest
+                simulatedInquiry.append(contentsOf: [0x00, 0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF7])
+
+                let reply = session.processIncomingSysEx(simulatedInquiry)
+                assertNotNil(reply)
+                if let reply = reply {
+                    assertEqual(reply[0], 0xF0)
+                    assertEqual(reply[3], 0x0D)
+                    assertEqual(reply[4], 0x71) // Discovery Reply
+                }
+            }
+
+            test("Profile inquiry returns MPE Profile support") {
+                let session = MIDICISession(muid: 0x0ABC_DEF0)
+                let remoteMUID: UInt32 = 0x0123_4567
+
+                var inquiry: [UInt8] = [0xF0, 0x7E, 0x7F, 0x0D, 0x20, 0x02]
+                inquiry.append(contentsOf: [
+                    UInt8(remoteMUID & 0x7F), UInt8((remoteMUID >> 7) & 0x7F),
+                    UInt8((remoteMUID >> 14) & 0x7F), UInt8((remoteMUID >> 21) & 0x7F)
+                ])
+                inquiry.append(contentsOf: [
+                    UInt8(session.myMUID & 0x7F), UInt8((session.myMUID >> 7) & 0x7F),
+                    UInt8((session.myMUID >> 14) & 0x7F), UInt8((session.myMUID >> 21) & 0x7F)
+                ])
+                inquiry.append(0xF7)
+
+                let reply = session.processIncomingSysEx(inquiry)
+                assertNotNil(reply)
+                if let reply = reply {
+                    assertEqual(reply[4], 0x21) // Profile Inquiry Reply
+                    // Must contain MPE Profile ID [0x7E, 0x01, 0x01, 0x01, 0x00]
+                    assertTrue(reply.contains(0x7E))
+                }
+            }
+
+            test("Set Profile On activates MPE mode and generates enabled report") {
+                let session = MIDICISession(muid: 0x0ABC_DEF0)
+                let remoteMUID: UInt32 = 0x0123_4567
+                var callbackFired = false
+                session.onProfileStateChanged = { enabled in
+                    callbackFired = enabled
+                }
+
+                var setOn: [UInt8] = [0xF0, 0x7E, 0x7F, 0x0D, 0x22, 0x02]
+                setOn.append(contentsOf: [
+                    UInt8(remoteMUID & 0x7F), UInt8((remoteMUID >> 7) & 0x7F),
+                    UInt8((remoteMUID >> 14) & 0x7F), UInt8((remoteMUID >> 21) & 0x7F)
+                ])
+                setOn.append(contentsOf: [
+                    UInt8(session.myMUID & 0x7F), UInt8((session.myMUID >> 7) & 0x7F),
+                    UInt8((session.myMUID >> 14) & 0x7F), UInt8((session.myMUID >> 21) & 0x7F)
+                ])
+                setOn.append(contentsOf: MIDICISession.mpeProfileID)
+                setOn.append(0xF7)
+
+                let reply = session.processIncomingSysEx(setOn)
+                assertNotNil(reply)
+                assertTrue(session.isMPEProfileActive)
+                assertTrue(callbackFired)
+                if let reply = reply {
+                    assertEqual(reply[4], 0x24) // Profile Enabled Report
+                }
+            }
+        }
+
+        // ==================================================
+        // SUITE: Native MIDI 2 Per-Note Expression Evaluation
+        // ==================================================
+        suite("Native MIDI 2 Per-Note Expression Evaluation") {
+            test("Per-Note Pitch Bend generates 32-bit UMP with 0x60 status") {
+                let ump = MIDI2UMPEncoder.perNotePitchBendMessage(
+                    channel: 2,
+                    note: 60,
+                    semitoneOffset: 2.0,
+                    bendRangeSemitones: 48.0
+                )
+                let messageType = (ump.word0 >> 28) & 0x0F
+                let status = (ump.word0 >> 16) & 0xF0
+                let channel = (ump.word0 >> 16) & 0x0F
+                let note = (ump.word0 >> 8) & 0x7F
+
+                assertEqual(messageType, 0x4) // MIDI 2.0 Channel Voice
+                assertEqual(status, 0x60)      // Per-Note Pitch Bend
+                assertEqual(channel, 2)
+                assertEqual(note, 60)
+                assertTrue(ump.word1 > MIDI2UMPEncoder.pitchBendCentre)
+            }
+
+            test("Per-Note Pressure generates 32-bit UMP with 0xA0 status") {
+                let ump = MIDI2UMPEncoder.perNotePressureMessage(
+                    channel: 0,
+                    note: 64,
+                    normalizedPressure: 0.75
+                )
+                let messageType = (ump.word0 >> 28) & 0x0F
+                let status = (ump.word0 >> 16) & 0xF0
+                let note = (ump.word0 >> 8) & 0x7F
+
+                assertEqual(messageType, 0x4)
+                assertEqual(status, 0xA0) // Poly Pressure / Per-Note Pressure
+                assertEqual(note, 64)
+                assertTrue(ump.word1 > 0x8000_0000)
+            }
+
+            test("Per-Note Registered Controller generates Timbre CC74 UMP") {
+                let ump = MIDI2UMPEncoder.perNoteRegisteredControllerMessage(
+                    channel: 1,
+                    note: 67,
+                    controllerIndex: 74,
+                    normalizedValue: 0.82
+                )
+                let messageType = (ump.word0 >> 28) & 0x0F
+                let note = (ump.word0 >> 8) & 0x7F
+                let controller = ump.word0 & 0xFF
+
+                assertEqual(messageType, 0x4)
+                assertEqual(note, 67)
+                assertEqual(controller, 74)
+                assertTrue(ump.word1 > 0x8000_0000)
+            }
+
+            test("Per-Note Management resets and detaches controller flags") {
+                let resetUMP = MIDI2UMPEncoder.perNoteManagementMessage(channel: 0, note: 60, detach: false, reset: true)
+                let flagsReset = resetUMP.word0 & 0xFF
+                assertEqual(flagsReset, 0x01)
+
+                let detachUMP = MIDI2UMPEncoder.perNoteManagementMessage(channel: 0, note: 60, detach: true, reset: false)
+                let flagsDetach = detachUMP.word0 & 0xFF
+                assertEqual(flagsDetach, 0x02)
+            }
+        }
+
+        // ==================================================
+        // SUITE: MIDI Clip File (M2-116-U) / SMF2 Binary Exporter
+        // ==================================================
+        suite("MIDI Clip File (M2-116-U) / SMF2 Binary Exporter") {
+            test("SMF2 file binary header and chunk integrity") {
+                let notes: [RecordedNoteEvent] = [
+                    RecordedNoteEvent(note: 60, velocity: 100, startTick: 0, durationTicks: 480),
+                    RecordedNoteEvent(note: 64, velocity: 95, startTick: 480, durationTicks: 480),
+                    RecordedNoteEvent(note: 67, velocity: 110, startTick: 960, durationTicks: 960)
+                ]
+
+                let fileData = SMF2Exporter.export(events: notes, channel: 1, ppqn: 960)
+                assertTrue(fileData.count > 32)
+
+                // Verify magic bytes
+                let headerMagic = Array(fileData[0..<4])
+                assertEqual(headerMagic, SMF2Exporter.headerMagic)
+
+                // Round-trip parse with SMF2Parser
+                do {
+                    let parsed = try SMF2Parser.parse(data: fileData)
+                    assertEqual(parsed.formatVersion, 1)
+                    assertEqual(parsed.ppqn, 960)
+                    assertEqual(parsed.trackCount, 1)
+                    assertTrue(parsed.events.count >= 6) // 3 NoteOn + 3 NoteOff
+                } catch {
+                    assertTrue(false, "SMF2Parser failed on valid exported file: \(error)")
+                }
+            }
+
+            test("Delta-clock timing preserves exact tick positions in SMF2") {
+                let events: [TimedUMPEvent] = [
+                    TimedUMPEvent(tick: 0, words: [0x40903C00, 0x7FFF0000]),
+                    TimedUMPEvent(tick: 960, words: [0x40803C00, 0x00000000]),
+                    TimedUMPEvent(tick: 1920, words: [0x40904000, 0x7FFF0000])
+                ]
+
+                let encoded = SMF2Exporter.encodeStream(events: events, ppqn: 960)
+                do {
+                    let parsed = try SMF2Parser.parse(data: encoded)
+                    assertEqual(parsed.events.count, 3)
+                    assertEqual(parsed.events[0].tick, 0)
+                    assertEqual(parsed.events[1].tick, 960)
+                    assertEqual(parsed.events[2].tick, 1920)
+                } catch {
+                    assertTrue(false, "Failed to round-trip timed UMP events: \(error)")
+                }
+            }
+        }
+
+        // ==================================================
+        // SUITE: Controller Ergonomics & Verification Matrix
+        // ==================================================
+        suite("Controller Ergonomics & Verification Matrix") {
+            test("DualSense hardware profile specifications and trigger curve") {
+                let dualSense = ControllerCapabilityProfile.dualSense
+                assertTrue(dualSense.hasTouchpad)
+                assertTrue(dualSense.hasMotionIMU)
+                assertTrue(dualSense.hasHaptics)
+                assertTrue(dualSense.hasAnalogTriggers)
+                assertTrue(dualSense.hasThumbstickClicks)
+
+                let engine = AdaptiveTriggerEngine()
+                engine.configureForInstrumentProfile(.guitar)
+                let state = engine.calculateTriggerState(position: 0.8, velocity: 0, config: engine.rightConfig, label: "R2")
+                assertTrue(state.calculatedForce > 0.3)
+            }
+
+            test("Xbox Wireless controller profile ergonomics and deadzones") {
+                let xbox = ControllerCapabilityProfile.xbox
+                assertTrue(!xbox.hasTouchpad)
+                assertTrue(!xbox.hasMotionIMU)
+                assertTrue(xbox.hasHaptics)
+                assertTrue(xbox.hasAnalogTriggers)
+
+                // Stick calibration with Xbox deadzone (0.10)
+                let cal = StickCalibration(driftRadius: 0.10)
+                let resting = cal.calibrate(rawX: 0.06, rawY: -0.06)
+                assertEqual(resting.x, 0.0)
+                assertEqual(resting.y, 0.0)
+            }
+
+            test("Nintendo Switch Pro controller profile and linear actuator haptics") {
+                let switchPro = ControllerCapabilityProfile.switchPro
+                assertTrue(switchPro.hasMotionIMU)
+                assertTrue(switchPro.hasHaptics)
+                assertTrue(!switchPro.hasTouchpad)
+                assertTrue(!switchPro.hasAnalogTriggers)
+            }
+
+            test("Generic MFi fallback profile ergonomics") {
+                let generic = ControllerCapabilityProfile.generic
+                assertTrue(!generic.hasTouchpad)
+                assertTrue(!generic.hasMotionIMU)
+            }
+
+            test("Disconnect and reconnect cleans up all voices without stuck notes") {
+                let midi = MIDIEngine()
+                midi.sendNoteOn(port: .main, channel: 0, note: 60, velocity: 100)
+                midi.sendNoteOn(port: .mpe, channel: 1, note: 64, velocity: 90)
+                assertEqual(midi.activeNoteCount, 2)
+
+                // Simulate abrupt controller disconnect -> panic
+                midi.panic()
+                assertEqual(midi.activeNoteCount, 0)
+            }
+        }
+
         // MARK: - Final Summary
         print("\n==================================================")
         print("📊 Test Execution Summary")

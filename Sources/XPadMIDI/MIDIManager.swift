@@ -118,7 +118,10 @@ public final class MIDIEngine: @unchecked Sendable {
     private static let messageLogCapacity = 2_048
     private var messageLog: [MIDIMessageRecord] = []
     private var messageLogWriteIndex = 0
+    private var inputDestination: MIDIEndpointRef = 0
     private let lock = NSLock()
+
+    public let ciSession = MIDICISession.shared
 
     private struct ActiveNote: Hashable {
         let port: VirtualPort
@@ -204,16 +207,74 @@ public final class MIDIEngine: @unchecked Sendable {
                 print("⚠️ Failed to create \(port.rawValue) MIDI source: \(status)")
             }
         }
+
+        // Create bidirectional virtual destination for MIDI-CI Profile & Discovery
+        if inputDestination == 0 {
+            var destEndpoint: MIDIEndpointRef = 0
+            let destName = "XPI Input / CI" as CFString
+            let status = MIDIDestinationCreateWithProtocol(
+                midiClient,
+                destName,
+                protocolID,
+                &destEndpoint
+            ) { [weak self] eventList, _ in
+                self?.handleIncomingMIDIEventList(eventList)
+            }
+            if status == noErr {
+                self.inputDestination = destEndpoint
+            }
+        }
     }
 
     private func disposeVirtualSources() {
         lock.lock()
         let endpoints = Array(outputs.values)
         outputs.removeAll()
+        let dest = inputDestination
+        inputDestination = 0
         lock.unlock()
 
         for endpoint in endpoints where endpoint != 0 {
             MIDIEndpointDispose(endpoint)
+        }
+        if dest != 0 {
+            MIDIEndpointDispose(dest)
+        }
+    }
+
+    private func handleIncomingMIDIEventList(_ eventList: UnsafePointer<MIDIEventList>) {
+        // Parse incoming events for MIDI-CI SysEx queries
+        var packet = eventList.pointee.packet
+        for _ in 0..<eventList.pointee.numPackets {
+            let count = Int(packet.wordCount)
+            if count > 0 {
+                let words = withUnsafePointer(to: &packet.words) { ptr in
+                    ptr.withMemoryRebound(to: UInt32.self, capacity: count) { buf in
+                        Array(UnsafeBufferPointer(start: buf, count: count))
+                    }
+                }
+                processIncomingUMPWords(words)
+            }
+            packet = MIDIEventPacketNext(&packet).pointee
+        }
+    }
+
+    private func processIncomingUMPWords(_ words: [UInt32]) {
+        // Process SysEx 7 UMP messages (Type 0x3) or direct MIDI-CI inquiries
+        var sysExBytes: [UInt8] = []
+        for word in words {
+            let messageType = (word >> 28) & 0x0F
+            if messageType == 0x3 { // 64-bit Data / SysEx
+                let b0 = UInt8((word >> 16) & 0xFF)
+                let b1 = UInt8((word >> 8) & 0xFF)
+                let b2 = UInt8(word & 0xFF)
+                sysExBytes.append(contentsOf: [b0, b1, b2])
+            }
+        }
+        if !sysExBytes.isEmpty, sysExBytes.first == 0xF0 {
+            if let response = ciSession.processIncomingSysEx(sysExBytes) {
+                sendSysEx(response, to: .main)
+            }
         }
     }
 
@@ -453,6 +514,87 @@ public final class MIDIEngine: @unchecked Sendable {
             return UInt16((8192.0 + normalized * 8191.0).rounded())
         }
         return UInt16((8192.0 + normalized * 8192.0).rounded())
+    }
+
+    // MARK: - Native MIDI 2 Per-Note & SysEx
+
+    /// Sends high-resolution per-note expression (Pitch Bend, Pressure, and Timbre).
+    /// When MIDI 2.0 transport is active, generates native 32-bit Per-Note UMPs directly for the note.
+    /// When MIDI 1.0 / MPE is active, routes through member channel pitch bend, channel pressure, and CC74.
+    public func sendPerNoteExpression(
+        port: VirtualPort = .mpe,
+        channel: UInt8,
+        note: UInt8,
+        semitoneOffset: Double,
+        normalizedPressure: Double,
+        normalizedTimbre: Double,
+        bendRangeSemitones: Double = 48.0
+    ) {
+        let safeChannel = min(15, channel)
+        let safeNote = min(127, note)
+
+        if transportProtocol == .midi2 {
+            let pbUMP = MIDI2UMPEncoder.perNotePitchBendMessage(
+                channel: safeChannel,
+                note: safeNote,
+                semitoneOffset: semitoneOffset,
+                bendRangeSemitones: bendRangeSemitones
+            )
+            let pressUMP = MIDI2UMPEncoder.perNotePressureMessage(
+                channel: safeChannel,
+                note: safeNote,
+                normalizedPressure: normalizedPressure
+            )
+            let timbreUMP = MIDI2UMPEncoder.perNoteRegisteredControllerMessage(
+                channel: safeChannel,
+                note: safeNote,
+                controllerIndex: 74,
+                normalizedValue: normalizedTimbre
+            )
+            emitRawMIDI2UMP(pbUMP, to: port)
+            emitRawMIDI2UMP(pressUMP, to: port)
+            emitRawMIDI2UMP(timbreUMP, to: port)
+        } else {
+            sendPitchBend(
+                port: port,
+                channel: safeChannel,
+                semitoneOffset: semitoneOffset,
+                bendRangeSemitones: bendRangeSemitones
+            )
+            sendChannelPressure(
+                port: port,
+                channel: safeChannel,
+                normalizedPressure: normalizedPressure
+            )
+            sendTimbreCC74(
+                port: port,
+                channel: safeChannel,
+                normalizedValue: normalizedTimbre
+            )
+        }
+    }
+
+    /// Dispatches a raw 64-bit MIDI 2.0 UMP message to the selected virtual endpoint.
+    public func emitRawMIDI2UMP(_ message: MIDIMessage_64, to port: VirtualPort) {
+        lock.lock()
+        midiActivityTimestamp = Date()
+        let endpoint = virtualMIDIEnabled ? outputs[port] : nil
+        lock.unlock()
+
+        guard let endpoint, endpoint != 0 else { return }
+        sendMIDI2Message(message, endpoint: endpoint)
+    }
+
+    /// Dispatches a Universal SysEx or MIDI-CI byte buffer to the virtual endpoint.
+    public func sendSysEx(_ bytes: [UInt8], to port: VirtualPort = .main) {
+        lock.lock()
+        midiActivityTimestamp = Date()
+        let endpoint = virtualMIDIEnabled ? outputs[port] : nil
+        let protocolID = transportProtocol
+        lock.unlock()
+
+        guard let endpoint, endpoint != 0 else { return }
+        sendMIDIMessage(bytes, endpoint: endpoint, protocolID: protocolID)
     }
 
     private static func midi7(_ normalizedValue: Double) -> UInt8 {

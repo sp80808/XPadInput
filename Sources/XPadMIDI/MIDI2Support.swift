@@ -31,11 +31,11 @@ public enum MIDITransportProtocol: String, CaseIterable, Identifiable, Sendable 
 /// UMP. Legacy byte-shaped events remain supported, while normalized/high-
 /// resolution helpers allow expressive values to bypass unnecessary 7/14-bit
 /// quantization when the selected transport is MIDI 2.0.
-enum MIDI2UMPEncoder {
-    static let group: UInt8 = 0
-    static let pitchBendCentre: UInt32 = 0x8000_0000
+public enum MIDI2UMPEncoder {
+    public static let group: UInt8 = 0
+    public static let pitchBendCentre: UInt32 = 0x8000_0000
 
-    static func message(from bytes: [UInt8]) -> MIDIMessage_64? {
+    public static func message(from bytes: [UInt8]) -> MIDIMessage_64? {
         guard bytes.count == 2 || bytes.count == 3 else { return nil }
 
         let statusByte = bytes[0]
@@ -106,7 +106,7 @@ enum MIDI2UMPEncoder {
         }
     }
 
-    static func pitchBendMessage(
+    public static func pitchBendMessage(
         channel: UInt8,
         semitoneOffset: Double,
         bendRangeSemitones: Double
@@ -121,7 +121,7 @@ enum MIDI2UMPEncoder {
         )
     }
 
-    static func channelPressureMessage(
+    public static func channelPressureMessage(
         channel: UInt8,
         normalizedPressure: Double
     ) -> MIDIMessage_64 {
@@ -132,7 +132,7 @@ enum MIDI2UMPEncoder {
         )
     }
 
-    static func polyPressureMessage(
+    public static func polyPressureMessage(
         channel: UInt8,
         note: UInt8,
         normalizedPressure: Double
@@ -145,7 +145,7 @@ enum MIDI2UMPEncoder {
         )
     }
 
-    static func controlChangeMessage(
+    public static func controlChangeMessage(
         channel: UInt8,
         controller: UInt8,
         normalizedValue: Double
@@ -158,25 +158,98 @@ enum MIDI2UMPEncoder {
         )
     }
 
+    // MARK: - Native MIDI 2 Per-Note Expression
+
+    /// Generates a native 64-bit UMP Per-Note Pitch Bend message (Status 0x60).
+    public static func perNotePitchBendMessage(
+        channel: UInt8,
+        note: UInt8,
+        semitoneOffset: Double,
+        bendRangeSemitones: Double
+    ) -> MIDIMessage_64 {
+        let pitch32 = pitchBend32(
+            semitoneOffset: semitoneOffset,
+            bendRangeSemitones: bendRangeSemitones
+        )
+        return MIDI2PerNotePitchBend(
+            group,
+            min(15, channel),
+            min(127, note),
+            pitch32
+        )
+    }
+
+    /// Generates a native 64-bit UMP Per-Note Pressure (Polyphonic Aftertouch) message (Status 0xA0).
+    public static func perNotePressureMessage(
+        channel: UInt8,
+        note: UInt8,
+        normalizedPressure: Double
+    ) -> MIDIMessage_64 {
+        MIDI2PolyPressure(
+            group,
+            min(15, channel),
+            min(127, note),
+            scaleNormalizedTo32(normalizedPressure)
+        )
+    }
+
+    /// Generates a native 64-bit UMP Registered Per-Note Controller (PNRC, Status 0x00).
+    /// Used for per-note Timbre (Controller 74), Cutoff, Modulation, and Vibrato.
+    public static func perNoteRegisteredControllerMessage(
+        channel: UInt8,
+        note: UInt8,
+        controllerIndex: UInt8,
+        normalizedValue: Double
+    ) -> MIDIMessage_64 {
+        let data32 = scaleNormalizedTo32(normalizedValue)
+        let word0: UInt32 = (0x4 << 28)
+            | (UInt32(group & 0x0F) << 24)
+            | (0x00 << 16) // Status 0x00 = Registered Per-Note Controller
+            | (UInt32(channel & 0x0F) << 16)
+            | (UInt32(note & 0x7F) << 8)
+            | UInt32(controllerIndex)
+        return MIDIMessage_64(word0: word0, word1: data32)
+    }
+
+    /// Generates a native 64-bit UMP Per-Note Management message (Status 0xF0).
+    /// Flags: bit 0 = Reset Per-Note Controllers, bit 1 = Detach Per-Note Controllers.
+    public static func perNoteManagementMessage(
+        channel: UInt8,
+        note: UInt8,
+        detach: Bool = false,
+        reset: Bool = false
+    ) -> MIDIMessage_64 {
+        var flags: UInt8 = 0
+        if reset { flags |= 0x01 }
+        if detach { flags |= 0x02 }
+        let word0: UInt32 = (0x4 << 28)
+            | (UInt32(group & 0x0F) << 24)
+            | (0xF0 << 16) // Status 0xF0 = Per-Note Management
+            | (UInt32(channel & 0x0F) << 16)
+            | (UInt32(note & 0x7F) << 8)
+            | UInt32(flags)
+        return MIDIMessage_64(word0: word0, word1: 0)
+    }
+
     /// Full-range conversion that preserves 0 and 127 exactly.
-    static func scale7To16(_ value: UInt8) -> UInt16 {
+    public static func scale7To16(_ value: UInt8) -> UInt16 {
         let clamped = UInt32(min(127, value))
         return UInt16((clamped * UInt32(UInt16.max) + 63) / 127)
     }
 
     /// Full-range conversion that preserves 0 and 127 exactly.
-    static func scale7To32(_ value: UInt8) -> UInt32 {
+    public static func scale7To32(_ value: UInt8) -> UInt32 {
         let clamped = UInt64(min(127, value))
         return UInt32((clamped * UInt64(UInt32.max) + 63) / 127)
     }
 
-    static func scaleNormalizedTo16(_ value: Double) -> UInt16 {
+    public static func scaleNormalizedTo16(_ value: Double) -> UInt16 {
         guard value.isFinite else { return 0 }
         let normalized = min(1.0, max(0.0, value))
         return UInt16((normalized * Double(UInt16.max)).rounded())
     }
 
-    static func scaleNormalizedTo32(_ value: Double) -> UInt32 {
+    public static func scaleNormalizedTo32(_ value: Double) -> UInt32 {
         guard value.isFinite else { return 0 }
         let normalized = min(1.0, max(0.0, value))
         return UInt32((normalized * Double(UInt32.max)).rounded())
@@ -185,7 +258,7 @@ enum MIDI2UMPEncoder {
     /// Maps a musical bend directly into MIDI 2's 32-bit pitch-bend field.
     /// This deliberately avoids a 14-bit intermediate so subtle vibrato/slide
     /// motion can remain distinct on MIDI 2 destinations.
-    static func pitchBend32(
+    public static func pitchBend32(
         semitoneOffset: Double,
         bendRangeSemitones: Double
     ) -> UInt32 {

@@ -48,6 +48,8 @@ artifacts/
 agent-references/
 *.agent.md
 *.reference.md
+CLAUDE.md
+*.claude.md
 
 # Logs & Temporary Files
 *.log
