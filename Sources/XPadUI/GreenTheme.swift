@@ -153,8 +153,6 @@ public struct XCardModifier: ViewModifier {
 
 /// A compact physical-feeling button treatment for performance controls.
 public struct XTactileButtonStyle: ButtonStyle {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     public var isActive: Bool
     public var activeColor: Color
 
@@ -167,8 +165,7 @@ public struct XTactileButtonStyle: ButtonStyle {
         XTactileButtonChrome(
             isActive: isActive,
             isPressed: configuration.isPressed,
-            activeColor: activeColor,
-            reduceMotion: reduceMotion
+            activeColor: activeColor
         ) {
             configuration.label
         }
@@ -176,13 +173,25 @@ public struct XTactileButtonStyle: ButtonStyle {
 }
 
 private struct XTactileButtonChrome<Label: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
 
     var isActive: Bool
     var isPressed: Bool
     var activeColor: Color
-    var reduceMotion: Bool
     var label: Label
+
+    init(
+        isActive: Bool,
+        isPressed: Bool,
+        activeColor: Color,
+        @ViewBuilder label: () -> Label
+    ) {
+        self.isActive = isActive
+        self.isPressed = isPressed
+        self.activeColor = activeColor
+        self.label = label()
+    }
 
     var body: some View {
         label
