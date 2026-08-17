@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import XPadCore
 import XPadTheory
 import XPadController
@@ -50,6 +51,15 @@ public final class AppState: @unchecked Sendable {
 
     public var instrumentProfile: InstrumentProfile = .guitar
     public var destinationProfile: DestinationCapabilityProfile = .internalSynth
+    public var hostSelection: DAWHostKind = .autoDetect
+    public var activeHostKind: DAWHostKind = .internalSynth
+    public var activeHostContext: HostMIDIContext = .internalSynth
+    public var hostDetectionNote: String = "No DAW detected. Using Internal Synth."
+    public var trackChannelMode: DAWTrackChannelMode = .omni
+    public var resolvedLayout = HostMIDIContextResolver.resolveLayout(
+        context: .internalSynth,
+        trackMode: .omni
+    )
     public var expressionSettings = ExpressionSettings()
     public var performancePreset: PerformancePreset = .guitarCleanExpressive
     public var lastFrame: PerformanceFrame?
@@ -72,6 +82,7 @@ public final class AppState: @unchecked Sendable {
     )
     private var velocityStabilizer = VelocityStabilizer()
     private var duoControlEngine = DuoControlEngine()
+    private var hostDetectionObserver: NSObjectProtocol?
 
     public init() {
         let midiEngine = MIDIEngine()
@@ -108,6 +119,20 @@ public final class AppState: @unchecked Sendable {
         controllerManager.onSchemeChanged = { [weak self] _ in
             self?.panic()
         }
+        applyHostRouting()
+        hostDetectionObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self, self.hostSelection == .autoDetect else { return }
+            let detected = HostMIDIContextResolver.resolve(
+                selection: .autoDetect,
+                signals: HostRuntimeDetector.signals()
+            )
+            guard detected.kind != self.activeHostKind else { return }
+            self.applyHostRouting()
+        }
     }
 
     public func updateDiatonicChords() {
@@ -140,14 +165,113 @@ public final class AppState: @unchecked Sendable {
     }
 
     public func setDestination(_ destination: DestinationCapabilityProfile) {
+        if let kind = DAWHostKind(rawValue: destination.name), kind != .autoDetect {
+            setHostSelection(kind)
+            return
+        }
+        switch destination.name {
+        case DestinationCapabilityProfile.internalSynth.name:
+            setHostSelection(.internalSynth)
+        case DestinationCapabilityProfile.genericMPE.name:
+            setHostSelection(.genericMPE)
+        case DestinationCapabilityProfile.genericMIDI.name:
+            setHostSelection(.genericMIDI)
+        default:
+            applyDestination(destination)
+        }
+    }
+
+    public func setHostSelection(_ kind: DAWHostKind) {
+        hostSelection = kind
+        applyHostRouting()
+    }
+
+    /// `0` means the DAW track is set to All / Any Channels. `1...16` is a filtered track.
+    public func setTrackMIDIChannel(_ displayChannel: Int) {
+        if displayChannel <= 0 {
+            trackChannelMode = .omni
+        } else {
+            trackChannelMode = .filtered(UInt8(min(16, displayChannel) - 1))
+        }
+        applyHostRouting()
+    }
+
+    public var trackMIDIChannelDisplay: Int {
+        switch trackChannelMode {
+        case .omni: return 0
+        case .filtered(let channel): return Int(channel) + 1
+        }
+    }
+
+    public func refreshHostDetection() {
+        applyHostRouting()
+    }
+
+    public func midiChannel(forRole role: MIDISourceRole) -> UInt8 {
+        resolvedLayout.channel(for: role)
+    }
+
+    public func sendAuditionNotes(
+        _ midiNotes: [UInt8],
+        port: VirtualPort,
+        velocity: UInt8,
+        duration: TimeInterval
+    ) {
+        let channel = midiChannel(for: port)
+        for note in midiNotes {
+            midiEngine.sendNoteOn(port: port, channel: channel, note: note, velocity: velocity)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
+            guard let self else { return }
+            let offChannel = self.midiChannel(for: port)
+            for note in midiNotes {
+                self.midiEngine.sendNoteOff(port: port, channel: offChannel, note: note)
+            }
+        }
+    }
+
+    private func applyHostRouting() {
         stopActiveNotes()
+        let detected = HostMIDIContextResolver.resolve(
+            selection: hostSelection,
+            signals: HostRuntimeDetector.signals()
+        )
+        activeHostKind = detected.kind
+        activeHostContext = detected.context
+        hostDetectionNote = detected.note
+        resolvedLayout = HostMIDIContextResolver.resolveLayout(
+            context: detected.context,
+            trackMode: trackChannelMode
+        )
+
+        var destination = detected.context.destinationProfile
+        if !resolvedLayout.usesMPE {
+            destination = DestinationCapabilityProfile(
+                name: detected.context.name,
+                supportsMPE: false,
+                supportsChannelPressure: true,
+                supportsPolyPressure: false,
+                bendRangeSemitones: min(2, detected.context.bendRangeSemitones),
+                supportsCC74: true,
+                supportsKeyswitchArticulations: false,
+                supportsPortamento: false,
+                supportsLegatoOverlap: true,
+                pressureMode: .channelPressure
+            )
+        }
+        applyDestination(destination)
+        mpeManager.applyZoneLayout(
+            resolvedLayout.mpeZone,
+            sendConfiguration: midiEngine.virtualMIDIEnabled && resolvedLayout.usesMPE
+        )
+        multiJamManager.applyChannelMap(resolvedLayout.channels)
+    }
+
+    private func applyDestination(_ destination: DestinationCapabilityProfile) {
         destinationProfile = destination
         midiTranslator.destination = destination
         performanceEngine.setDestination(destination)
         mpeManager.bendRangeSemitones = destination.bendRangeSemitones
-        if midiEngine.virtualMIDIEnabled {
-            mpeManager.sendMPEZoneConfiguration()
-        }
     }
 
     public func setPitchAssist(_ assist: PitchAssistMode) {
@@ -242,11 +366,11 @@ public final class AppState: @unchecked Sendable {
             )
             if let off = soloResult.noteOff {
                 finishPhysicalVoiceIfUnowned(off)
-                midiEngine.sendNoteOff(port: melodicMIDIPort, channel: 2, note: off.midiNote)
+                midiEngine.sendNoteOff(port: melodicMIDIPort, channel: soloMIDIChannel, note: off.midiNote)
             }
             if let on = soloResult.noteOn {
                 beginPhysicalVoice(on, velocity: soloResult.event?.velocity ?? 100, technique: soloResult.event?.technique ?? .normal)
-                midiEngine.sendNoteOn(port: melodicMIDIPort, channel: 2, note: on.midiNote, velocity: soloResult.event?.velocity ?? 100)
+                midiEngine.sendNoteOn(port: melodicMIDIPort, channel: soloMIDIChannel, note: on.midiNote, velocity: soloResult.event?.velocity ?? 100)
             }
         }
 
@@ -401,7 +525,7 @@ public final class AppState: @unchecked Sendable {
         if !destinationProfile.supportsMPE, !alreadyOwnedByFace {
             midiEngine.sendNoteOn(
                 port: melodicMIDIPort,
-                channel: 0,
+                channel: midiChannel(for: melodicMIDIPort),
                 note: event.note.midiNote,
                 velocity: event.velocity
             )
@@ -427,7 +551,7 @@ public final class AppState: @unchecked Sendable {
         let stillOwnedByFace = heldFaceNotes.values.contains { $0.midiNote == held.midiNote }
 
         if !destinationProfile.supportsMPE, !stillOwnedByFace {
-            midiEngine.sendNoteOff(port: melodicMIDIPort, channel: 0, note: held.midiNote)
+            midiEngine.sendNoteOff(port: melodicMIDIPort, channel: midiChannel(for: melodicMIDIPort), note: held.midiNote)
             if heldFaceNotes.isEmpty {
                 resetConventionalExpression(on: melodicMIDIPort)
             }
@@ -457,20 +581,20 @@ public final class AppState: @unchecked Sendable {
             for port in conventionalPorts {
                 midiEngine.sendPitchBend(
                     port: port,
-                    channel: 0,
+                    channel: midiChannel(for: port),
                     semitoneOffset: bend,
                     bendRangeSemitones: destinationProfile.bendRangeSemitones
                 )
             }
             lastMIDITranslation = midiTranslator.translateBend(
                 semitones: bend,
-                channel: 0,
+                channel: midiChannel(for: conventionalPorts.first ?? .main),
                 activeVoiceCount: activeNotes.count
             )
         } else {
             lastMIDITranslation = midiTranslator.translateBend(
                 semitones: bend,
-                channel: 0,
+                channel: midiChannel(for: conventionalPorts.first ?? .main),
                 activeVoiceCount: activeNotes.count
             )
         }
@@ -483,11 +607,11 @@ public final class AppState: @unchecked Sendable {
             for port in conventionalPorts {
                 switch destinationProfile.resolvedPressureMode(preferred: instrumentProfile.pressureMode).mode {
                 case .mpePressure, .channelPressure:
-                    midiEngine.sendChannelPressure(port: port, channel: 0, pressure: pressure)
+                    midiEngine.sendChannelPressure(port: port, channel: midiChannel(for: port), pressure: pressure)
                 case .polyPressure:
-                    midiEngine.sendPolyPressure(port: port, channel: 0, note: lead.midiNote, pressure: pressure)
+                    midiEngine.sendPolyPressure(port: port, channel: midiChannel(for: port), note: lead.midiNote, pressure: pressure)
                 case .cc11:
-                    midiEngine.sendCC(port: port, channel: 0, controller: 11, value: pressure)
+                    midiEngine.sendCC(port: port, channel: midiChannel(for: port), controller: 11, value: pressure)
                 }
             }
         }
@@ -498,7 +622,7 @@ public final class AppState: @unchecked Sendable {
             mpeManager.setTimbre(for: lead.midiNote, value: timbre)
         } else if destinationProfile.supportsCC74 {
             for port in conventionalPorts {
-                midiEngine.sendTimbreCC74(port: port, channel: 0, value: timbre)
+                midiEngine.sendTimbreCC74(port: port, channel: midiChannel(for: port), value: timbre)
             }
         }
 
@@ -530,7 +654,7 @@ public final class AppState: @unchecked Sendable {
             mpeManager.setTimbre(for: lead.midiNote, value: value)
         } else if destinationProfile.supportsCC74 {
             for port in midiPorts(for: lead.midiNote) {
-                midiEngine.sendTimbreCC74(port: port, channel: 0, value: value)
+                midiEngine.sendTimbreCC74(port: port, channel: midiChannel(for: port), value: value)
             }
         }
     }
@@ -722,7 +846,7 @@ public final class AppState: @unchecked Sendable {
                 if !self.destinationProfile.supportsMPE {
                     self.midiEngine.sendNoteOn(
                         port: .chords,
-                        channel: 0,
+                        channel: self.midiChannel(.chords),
                         note: note.midiNote,
                         velocity: UInt8(noteVel)
                     )
@@ -740,7 +864,7 @@ public final class AppState: @unchecked Sendable {
         for note in voice.notes {
             guard soundingChordNotes.remove(note.midiNote) != nil else { continue }
             if !destinationProfile.supportsMPE {
-                midiEngine.sendNoteOff(port: .chords, channel: 0, note: note.midiNote)
+                midiEngine.sendNoteOff(port: .chords, channel: midiChannel(.chords), note: note.midiNote)
                 releasedConventionalVoice = true
             }
             finishPhysicalVoiceIfUnowned(note)
@@ -788,6 +912,22 @@ public final class AppState: @unchecked Sendable {
         instrumentProfile.family == .bass ? .bass : .melody
     }
 
+    private func midiChannel(_ role: MIDISourceRole) -> UInt8 {
+        resolvedLayout.channel(for: role)
+    }
+
+    private func midiChannel(for port: VirtualPort) -> UInt8 {
+        switch port {
+        case .chords: return midiChannel(.chords)
+        case .melody, .main: return midiChannel(.melody)
+        case .bass: return midiChannel(.bass)
+        case .drums: return midiChannel(.drums)
+        case .mpe: return mpeManager.currentZoneLayout.masterChannel
+        }
+    }
+
+    private var soloMIDIChannel: UInt8 { midiChannel(.solo) }
+
     private func midiPorts(for midiNote: UInt8) -> [VirtualPort] {
         var ports: [VirtualPort] = []
         if soundingChordNotes.contains(midiNote) {
@@ -800,11 +940,12 @@ public final class AppState: @unchecked Sendable {
     }
 
     private func resetConventionalExpression(on port: VirtualPort) {
-        midiEngine.sendPitchBend(port: port, channel: 0, value: 8192)
-        midiEngine.sendChannelPressure(port: port, channel: 0, pressure: 0)
-        midiEngine.sendCC(port: port, channel: 0, controller: 11, value: 127)
-        midiEngine.sendCC(port: port, channel: 0, controller: 64, value: 0)
-        midiEngine.sendTimbreCC74(port: port, channel: 0, value: 64)
+        let channel = midiChannel(for: port)
+        midiEngine.sendPitchBend(port: port, channel: channel, value: 8192)
+        midiEngine.sendChannelPressure(port: port, channel: channel, pressure: 0)
+        midiEngine.sendCC(port: port, channel: channel, controller: 11, value: 127)
+        midiEngine.sendCC(port: port, channel: channel, controller: 64, value: 0)
+        midiEngine.sendTimbreCC74(port: port, channel: channel, value: 64)
     }
 
     private func handleDuoDrumHits(_ hits: [DuoDrumHit]) {
@@ -820,7 +961,7 @@ public final class AppState: @unchecked Sendable {
             audioEngine.triggerDrum(sound, velocity: hit.velocity)
             midiEngine.sendNoteOn(
                 port: .drums,
-                channel: 9,
+                channel: midiChannel(.drums),
                 note: hit.voice.generalMIDINote,
                 velocity: hit.velocity
             )
@@ -829,7 +970,7 @@ public final class AppState: @unchecked Sendable {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
                 self?.midiEngine.sendNoteOff(
                     port: .drums,
-                    channel: 9,
+                    channel: self?.midiChannel(.drums) ?? 9,
                     note: hit.voice.generalMIDINote
                 )
             }
@@ -843,10 +984,10 @@ public final class AppState: @unchecked Sendable {
         _ = chordGateEngine.releaseAll()
         audioEngine.panic()
         mpeManager.stopAllNotes()
-        midiEngine.sendAllNotesOff(port: .chords, channel: 0)
-        midiEngine.sendAllNotesOff(port: .melody, channel: 0)
-        midiEngine.sendAllNotesOff(port: .bass, channel: 0)
-        midiEngine.sendAllNotesOff(port: .drums, channel: 9)
+        midiEngine.sendAllNotesOff(port: .chords, channel: midiChannel(.chords))
+        midiEngine.sendAllNotesOff(port: .melody, channel: midiChannel(.melody))
+        midiEngine.sendAllNotesOff(port: .bass, channel: midiChannel(.bass))
+        midiEngine.sendAllNotesOff(port: .drums, channel: midiChannel(.drums))
         activeNotes.removeAll()
         heldFaceNotes.removeAll()
         soundingChordNotes.removeAll()
@@ -900,6 +1041,26 @@ public enum StrumDirection: String, Sendable {
     case up = "Up"
     case down = "Down"
     case none = "—"
+}
+
+enum HostRuntimeDetector {
+    static func signals() -> HostDetectionSignals {
+        let apps = NSWorkspace.shared.runningApplications
+        let front = NSWorkspace.shared.frontmostApplication
+        var bundles: [String] = []
+        if let identifier = front?.bundleIdentifier {
+            bundles.append(identifier)
+        }
+        bundles.append(contentsOf: apps.compactMap(\.bundleIdentifier))
+        let names = apps.compactMap(\.localizedName)
+        return HostDetectionSignals(
+            frontmostBundleIdentifier: front?.bundleIdentifier,
+            frontmostProcessName: front?.localizedName,
+            bundleIdentifiers: bundles,
+            processNames: names,
+            midiClientNames: names
+        )
+    }
 }
 
 public struct StrumState {

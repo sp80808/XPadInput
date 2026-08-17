@@ -50,6 +50,11 @@ public struct LibraryWorkspaceView: View {
 
                     VStack(alignment: .leading, spacing: 10) {
                         dawGuideCard(
+                            daw: "Auto-Detect MIDI Channels (MAP → MIDI Translation)",
+                            steps: "• Leave Host on Auto-Detect to follow the frontmost DAW (Logic, Live, Bitwig, Cubase, Studio One, REAPER, and others).\n• Set DAW track MIDI channel to All / Any for MPE. A filtered track channel (1–16) collapses pitched roles onto that channel so notes are not dropped.\n• Manual host selection always wins over Auto-Detect."
+                        )
+
+                        dawGuideCard(
                             daw: "Apple Logic Pro (AUv3 MIDI FX & Instrument)",
                             steps: "• MIDI FX Slot: Insert 'XPI MIDI FX' on any software instrument track for automatic chord/scale voice-leading.\n• Instrument Slot: Load 'XPI Instrument' (AUv3 Music Device) for direct polyphonic PolyBLEP playback.\n• MPE Track: Select MIDI Input 'XPI Expression (MPE)' to drive Alchemy or Sculpture with ±48st pitch bend."
                         )

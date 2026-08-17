@@ -210,14 +210,14 @@ public struct HarmonyWorkspaceView: View {
 
     private func auditionChord(_ chord: Chord) {
         let notes = chord.voicedNotes()
-        for note in notes {
-            AudioEngine.shared.noteOn(note: note.midiNumber, velocity: 100)
-            MIDIManager.shared.sendNoteOn(port: .chords, channel: 0, note: note.midiNumber, velocity: 100)
+        let midiNotes = notes.map(\.midiNumber)
+        for note in midiNotes {
+            AudioEngine.shared.noteOn(note: note, velocity: 100)
         }
+        appState.sendAuditionNotes(midiNotes, port: .chords, velocity: 100, duration: 1.2)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            for note in notes {
-                AudioEngine.shared.noteOff(note: note.midiNumber)
-                MIDIManager.shared.sendNoteOff(port: .chords, channel: 0, note: note.midiNumber)
+            for note in midiNotes {
+                AudioEngine.shared.noteOff(note: note)
             }
         }
     }
