@@ -57,6 +57,8 @@ All per-note pitch, pressure, timbre, note-on, and note-off messages for an MPE 
 
 The destination must receive this configuration before relying on lower-zone semantics.
 
+Zone configuration is advertised when virtual MIDI sources become enabled and when the destination profile changes. It is **not** re-sent on the first Note On of an idle phrase. That attack path only resets the allocated member channel (pitch bend centre, pressure `0`, CC74 `64`) and then sends Note On. Hosts that attach after enable can toggle virtual MIDI or change destination to receive the zone dump again.
+
 Under the experimental MIDI 2 transport, the existing MPE setup messages are translated at the transport boundary for continuity with the current expression engine. Native MIDI 2 per-note expression is a later phase, not a reason to duplicate the MPE allocator immediately.
 
 ## 3. Bend-Range Contract

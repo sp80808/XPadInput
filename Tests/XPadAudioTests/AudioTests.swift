@@ -12,10 +12,12 @@ final class AudioTests: XCTestCase {
         let lead = SynthPreset.polyLead
         XCTAssertEqual(lead.osc1Type, .saw)
         XCTAssertEqual(lead.osc2Type, .square)
-        XCTAssertEqual(lead.filterCutoffHz, 3200.0)
+        XCTAssertEqual(lead.filterCutoffHz, 2400.0)
         XCTAssertEqual(lead.filterType, .lowPass)
         XCTAssertGreaterThan(lead.filterResonance, 0)
         XCTAssertGreaterThan(lead.saturationAmount, 0)
+        XCTAssertGreaterThan(lead.filterEnvelopeAmount, 0.5)
+        XCTAssertGreaterThan(lead.velocityToFilter, 0.3)
 
         let rhodes = SynthPreset.rhodesEP
         XCTAssertEqual(rhodes.osc1Type, .sine)
@@ -47,6 +49,8 @@ final class AudioTests: XCTestCase {
             XCTAssertTrue(preset.osc2Level >= 0 && preset.osc2Level <= 1, "osc2Level should be 0-1 for \(preset.name)")
             XCTAssertTrue(preset.osc2DetuneCents >= 0, "Detune should be non-negative for \(preset.name)")
             XCTAssertTrue(preset.saturationAmount >= 0 && preset.saturationAmount <= 1, "Saturation should be 0-1 for \(preset.name)")
+            XCTAssertTrue(preset.filterEnvelopeAmount >= 0 && preset.filterEnvelopeAmount <= 1, "Filter envelope should be 0-1 for \(preset.name)")
+            XCTAssertTrue(preset.velocityToFilter >= 0 && preset.velocityToFilter <= 1, "Velocity-to-filter should be 0-1 for \(preset.name)")
         }
     }
 
@@ -95,5 +99,33 @@ final class AudioTests: XCTestCase {
         audio.noteOff(note: 67)
 
         audio.panic()
+    }
+
+    func testVoicePoolRetriggersWithoutGrowingTopology() {
+        let audio = AudioEngine()
+        XCTAssertEqual(audio.pooledVoiceCount, 16)
+        audio.start()
+
+        audio.noteOn(note: 60, velocity: 100)
+        audio.noteOn(note: 60, velocity: 90)
+        XCTAssertEqual(audio.trackedVoiceCount, 1, "Retriggering the same pitch must reuse the pooled voice.")
+
+        audio.noteOff(note: 60)
+        XCTAssertEqual(audio.trackedVoiceCount, 1, "A release tail must remain tracked until it finishes.")
+
+        audio.noteOn(note: 60, velocity: 80)
+        XCTAssertEqual(audio.trackedVoiceCount, 1, "A note-on during release must reclaim the same pooled voice.")
+        XCTAssertEqual(audio.pooledVoiceCount, 16)
+
+        for note: UInt8 in 48..<65 {
+            audio.noteOn(note: note, velocity: 90)
+        }
+        XCTAssertEqual(audio.trackedVoiceCount, 16)
+        XCTAssertEqual(audio.pooledVoiceCount, 16, "Voice stealing must not attach additional source nodes.")
+
+        audio.panic()
+        XCTAssertEqual(audio.trackedVoiceCount, 0)
+        XCTAssertEqual(audio.pooledVoiceCount, 16)
+        audio.stop()
     }
 }

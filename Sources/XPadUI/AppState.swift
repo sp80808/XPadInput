@@ -699,10 +699,10 @@ public final class AppState: @unchecked Sendable {
     }
 
     private func beginPhysicalVoice(_ note: Note, velocity: UInt8, technique: MusicalTechnique) {
-        audioEngine.noteOn(note: note.midiNote, velocity: velocity, technique: technique)
         if destinationProfile.supportsMPE {
             mpeManager.noteOn(note: note.midiNote, velocity: velocity, technique: technique)
         }
+        audioEngine.noteOn(note: note.midiNote, velocity: velocity, technique: technique)
         lastMIDITranslation = midiTranslator.translate(
             InstrumentPerformanceEvent(note: note, phase: .began, technique: technique, velocity: velocity),
             memberChannel: mpeManager.voice(for: note.midiNote)?.channel
@@ -711,10 +711,10 @@ public final class AppState: @unchecked Sendable {
 
     private func finishPhysicalVoiceIfUnowned(_ note: Note) {
         guard !isNoteOwned(note.midiNote) else { return }
-        audioEngine.noteOff(note: note.midiNote)
         if destinationProfile.supportsMPE {
             mpeManager.noteOff(note: note.midiNote)
         }
+        audioEngine.noteOff(note: note.midiNote)
         activeNotes.removeAll { $0.midiNote == note.midiNote }
         if activeNotes.isEmpty {
             performanceEngine.pitchEngine.reset()
@@ -765,13 +765,13 @@ public final class AppState: @unchecked Sendable {
             case .openHat: sound = .openHiHat
             }
 
-            audioEngine.triggerDrum(sound, velocity: hit.velocity)
             midiEngine.sendNoteOn(
                 port: .drums,
                 channel: 9,
                 note: hit.voice.generalMIDINote,
                 velocity: hit.velocity
             )
+            audioEngine.triggerDrum(sound, velocity: hit.velocity)
             lastDrumHit = hit
 
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
@@ -789,8 +789,8 @@ public final class AppState: @unchecked Sendable {
         chordGateReleaseWorkItem = nil
         cancelPendingStrumNotes()
         _ = chordGateEngine.releaseAll()
-        audioEngine.panic()
         mpeManager.stopAllNotes()
+        audioEngine.panic()
         midiEngine.sendAllNotesOff(port: .chords, channel: 0)
         midiEngine.sendAllNotesOff(port: .melody, channel: 0)
         midiEngine.sendAllNotesOff(port: .bass, channel: 0)
