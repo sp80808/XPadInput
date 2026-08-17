@@ -266,9 +266,6 @@ final class InputPipelineTests: XCTestCase {
         snapshot.rightStickX = 1
         pipeline.process(snapshot: snapshot, changedPhysicalControls: [.rightStick], timestamp: 0.02)
 
-        snapshot.rightStickX = 1
-        pipeline.process(snapshot: snapshot, changedPhysicalControls: [.rightStick], timestamp: 0.02)
-
         XCTAssertEqual(pipeline.leftStick.movementVelocity, leftVelocity, accuracy: 0.000_001)
         XCTAssertGreaterThan(pipeline.rightStick.movementVelocity, 1)
     }
