@@ -247,7 +247,7 @@ struct ControllerPerformanceHUD: View {
             TactileStickView(
                 state: state.rightStick,
                 label: "R",
-                role: labels.rightStick,
+                role: frame?.ownedGesture.hudRole ?? labels.rightStick,
                 tint: XTheme.expression,
                 showsStrings: instrument.supportsStrumming,
                 direction: lastStrumDirection,

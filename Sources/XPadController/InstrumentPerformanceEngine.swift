@@ -106,6 +106,7 @@ public struct PerformanceFrame: Sendable {
     public var bowSpeed: Double
     public var bowDirection: Double
     public var suppressStrum: Bool
+    public var ownedGesture: RightStickOwnedGesture
     public var faceEvents: [FaceButtonNoteEvent]
     public var expressionEvents: [InstrumentPerformanceEvent]
 }
@@ -122,6 +123,7 @@ public struct InstrumentPerformanceEngine: Sendable {
     public var slideEngine: SlideEngine
     public var stringModel: VirtualStringModel
     public var intervalMemory = IntervalMemory()
+    public var stickOwnership = RightStickGestureOwnership()
 
     private var lastTimestamp: TimeInterval = 0
     private var previousFace: (a: Bool, x: Bool, y: Bool, b: Bool) = (false, false, false, false)
@@ -150,6 +152,7 @@ public struct InstrumentPerformanceEngine: Sendable {
         self.stringModel = profile.family == .bass ? .bassStandard() : .guitarStandard()
         pitchEngine.configure(profile: profile, destination: destination, assist: settings.pitchAssist)
         vibratoEngine.configure(profile: profile)
+        stickOwnership.configure(profile: profile)
     }
 
     public mutating func setProfile(_ profile: InstrumentProfile) {
@@ -158,6 +161,8 @@ public struct InstrumentPerformanceEngine: Sendable {
         pressureEngine.curve = profile.defaultPressureCurve
         vibratoEngine.configure(profile: profile)
         stringModel = profile.family == .bass ? .bassStandard() : .guitarStandard()
+        stickOwnership.configure(profile: profile)
+        stickOwnership.reset()
         pitchEngine.reset()
         pressureEngine.reset()
         vibratoEngine.reset()
@@ -187,9 +192,10 @@ public struct InstrumentPerformanceEngine: Sendable {
         let rightX = Double(state.rightStick.x)
         let rightY = Double(state.rightStick.y)
         let notesHeld = held != nil
-        let lateral = abs(rightX) > 0.12 && abs(rightX) >= abs(rightY) * 0.7
+        stickOwnership.evaluate(x: rightX, y: rightY, notesHeld: notesHeld)
+        let independentAxes = stickOwnership.policy.independentAxes
         let bendingNow = notesHeld && profile.supportsPitchBend && (
-            profile.family == .synthLead || profile.family == .genericMPE || lateral
+            stickOwnership.owned == .bend || independentAxes
         )
 
         let pickAttack = detectPickAttack(state: state, timestamp: timestamp)
@@ -334,7 +340,8 @@ public struct InstrumentPerformanceEngine: Sendable {
             timbre: timbre,
             bowSpeed: bowSpeed,
             bowDirection: bowDirection,
-            suppressStrum: bendingNow || profile.supportsBowing || !profile.supportsStrumming,
+            suppressStrum: stickOwnership.suppressesStrum || profile.supportsBowing || !profile.supportsStrumming,
+            ownedGesture: stickOwnership.owned,
             faceEvents: faceEvents,
             expressionEvents: expressionEvents
         )

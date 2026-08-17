@@ -1,5 +1,6 @@
 import SwiftUI
 import XPadCore
+import XPadTheory
 import XPadController
 import XPadMIDI
 
@@ -159,6 +160,8 @@ struct ExpressionMapWorkspaceView: View {
             labeled("Pressure", appState.destinationProfile.pressureMode.rawValue)
             labeled("Articulation", appState.instrumentProfile.midiArticulationStrategy.rawValue)
             labeled("Slide", appState.instrumentProfile.slideMIDIStrategy.rawValue)
+            labeled("Right stick", appState.lastFrame?.ownedGesture.rawValue ?? "idle")
+            labeled("Harmonic region", appState.harmonicSelection.region.rawValue)
 
             Text("If a destination lacks a feature, XPI falls back in this order: MPE → poly pressure → channel pressure → CC11. Per-note bend is refused on conventional MIDI chords.")
                 .font(.caption)

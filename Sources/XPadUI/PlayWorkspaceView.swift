@@ -290,7 +290,7 @@ private struct HarmonicTabbedWorkspace: View {
                 switch tab {
                 case .chords:
                     DiatonicChordPadsRow(chords: diatonicChords, activeChord: appState.currentChord, onSelect: { c in
-                        appState.currentChord = c; onAuditionChord(c)
+                        appState.selectChord(c); onAuditionChord(c)
                     })
                 case .progression:
                     ChordProgressionBuilderSection(progression: $activeProgression, selectedBlockIndex: $selectedBlockIndex, isPlaying: $isPlayingProgression, currentChord: currentOrSelectedChord, onAuditionChord: onAuditionChord, onSendToSequencer: onSendToSequencer)

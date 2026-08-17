@@ -443,6 +443,25 @@ public struct ControlSchemeSettingsView: View {
     
     private var liveTestStudioView: some View {
         VStack(spacing: 16) {
+            settingsCard(title: "Action → Sound Timing", icon: "timer") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle("Collect software timing", isOn: Binding(
+                        get: { appState.latencyProbe.isEnabled },
+                        set: { appState.latencyProbe.isEnabled = $0 }
+                    ))
+                    Text(appState.latencyProbe.snapshot().summaryLine)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(XTheme.textSecondary)
+                    Text("Host-time from controller callback through internal synth Note On return. This is not acoustic hardware latency. Graph mutation is attach/connect cost on the attack path.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(XTheme.textTertiary)
+                    Button("Reset samples") {
+                        appState.latencyProbe.reset()
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+
             // Live Stick Vectors
             HStack(spacing: 16) {
                 stickTestBox(

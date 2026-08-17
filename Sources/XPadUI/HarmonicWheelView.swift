@@ -1,5 +1,6 @@
 import SwiftUI
 import XPadCore
+import XPadTheory
 import XPadController
 
 /// Interactive harmonic wheel showing diatonic chords arranged radially.
@@ -19,16 +20,10 @@ struct HarmonicWheelView: View {
             let innerRadius = maxRadius * 0.40
             
             ZStack {
-                // Background rings
                 backgroundRings(center: center, maxRadius: maxRadius)
-                
-                // Chord segments
+                selectedSector(center: center, innerRadius: innerRadius, outerRadius: maxRadius)
                 chordSegments(center: center, radius: chordRadius, innerRadius: innerRadius)
-                
-                // Center info
                 centerDisplay(center: center, innerRadius: innerRadius)
-                
-                // Left stick indicator
                 stickIndicator(center: center, maxRadius: maxRadius)
             }
         }
@@ -38,17 +33,30 @@ struct HarmonicWheelView: View {
     
     @ViewBuilder
     private func backgroundRings(center: CGPoint, maxRadius: CGFloat) -> some View {
-        // Outer ring
+        let magnitude = min(1, max(0, appState.controllerManager.controllerState.leftStickMagnitude))
+        let inRisk = appState.harmonicSelection.region == .risk
+        let inRest = appState.harmonicSelection.region == .rest
+
         Circle()
             .stroke(XTheme.border, lineWidth: 1)
             .frame(width: maxRadius * 2, height: maxRadius * 2)
             .position(center)
-        
-        // Subtle radial gradient
+
+        Circle()
+            .stroke(
+                inRisk ? XTheme.tense.opacity(0.55) : XTheme.tense.opacity(0.08 + magnitude * 0.22),
+                lineWidth: inRisk ? 3 : 1.5
+            )
+            .frame(width: maxRadius * 2, height: maxRadius * 2)
+            .position(center)
+
         Circle()
             .fill(
                 RadialGradient(
-                    colors: [XTheme.primary.opacity(0.03), .clear],
+                    colors: [
+                        (inRest ? XTheme.primary.opacity(0.10) : XTheme.primary.opacity(0.03)),
+                        .clear
+                    ],
                     center: .center,
                     startRadius: 0,
                     endRadius: maxRadius
@@ -56,6 +64,34 @@ struct HarmonicWheelView: View {
             )
             .frame(width: maxRadius * 2, height: maxRadius * 2)
             .position(center)
+    }
+
+    @ViewBuilder
+    private func selectedSector(center: CGPoint, innerRadius: CGFloat, outerRadius: CGFloat) -> some View {
+        let chords = appState.diatonicChords
+        let count = chords.count
+        if count > 0, appState.selectedChordIndex >= 0, appState.selectedChordIndex < count {
+            let slice = (2 * CGFloat.pi) / CGFloat(count)
+            let mid = -CGFloat.pi / 2 + CGFloat(appState.selectedChordIndex) * slice
+            Path { path in
+                path.addArc(
+                    center: center,
+                    radius: outerRadius,
+                    startAngle: Angle(radians: Double(mid - slice / 2)),
+                    endAngle: Angle(radians: Double(mid + slice / 2)),
+                    clockwise: false
+                )
+                path.addArc(
+                    center: center,
+                    radius: innerRadius,
+                    startAngle: Angle(radians: Double(mid + slice / 2)),
+                    endAngle: Angle(radians: Double(mid - slice / 2)),
+                    clockwise: true
+                )
+                path.closeSubpath()
+            }
+            .fill(XTheme.primary.opacity(appState.harmonicSelection.region == .rest ? 0.06 : 0.12))
+        }
     }
     
     // MARK: - Chord Segments
@@ -89,8 +125,7 @@ struct HarmonicWheelView: View {
             .position(x: x, y: y)
             .onTapGesture {
                 withAnimation(reduceMotion ? nil : .easeOut(duration: 0.12)) {
-                    appState.selectedChordIndex = index
-                    appState.currentChord = chord
+                    appState.selectDiatonicChord(at: index)
                 }
             }
             
@@ -154,8 +189,6 @@ struct HarmonicWheelView: View {
                 .frame(width: 14, height: 14)
                 .xGlow(isActive: true, color: XTheme.accent)
                 .position(x: x, y: y)
-                .animation(.linear(duration: 0.05), value: x)
-                .animation(.linear(duration: 0.05), value: y)
         }
     }
 }

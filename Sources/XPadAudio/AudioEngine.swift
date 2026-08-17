@@ -218,6 +218,8 @@ public final class AudioEngine: @unchecked Sendable {
     public var currentPreset: SynthPreset = .polyLead
     public private(set) var velocityCurve: SynthVelocityCurve = .balanced
     public private(set) var effectsSettings: SynthEffectsSettings = .polished
+    /// Host-time spent attaching/connecting a voice on the last Note On. Not acoustic latency.
+    public private(set) var lastGraphMutationMs: Double = 0
 
     public func setPreset(_ preset: SynthPreset) {
         self.currentPreset = preset
@@ -446,6 +448,7 @@ public final class AudioEngine: @unchecked Sendable {
             start()
         }
         
+        let mutationStart = ProcessInfo.processInfo.systemUptime
         lock.lock()
         
         // Stop existing voice on same note
@@ -481,6 +484,7 @@ public final class AudioEngine: @unchecked Sendable {
         voices[note] = voice
         
         lock.unlock()
+        lastGraphMutationMs = max(0, (ProcessInfo.processInfo.systemUptime - mutationStart) * 1000.0)
     }
 
     /// Plays a short one-shot through the same EQ, compressor, reverb and
