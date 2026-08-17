@@ -281,12 +281,15 @@ public struct OCDSProfileManagerView: View {
             HStack {
                 Text(title)
                     .font(.headline)
-                Spacer()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Spacer(minLength: 8)
                 Button("Done") {
                     showingSchemaSheet = false
                     showingJSONExportSheet = false
                 }
                 .buttonStyle(.borderedProminent)
+                .fixedSize()
             }
             .padding()
 
@@ -303,8 +306,11 @@ public struct OCDSProfileManagerView: View {
             HStack {
                 Text("Import OCDS JSON Profile")
                     .font(.headline)
-                Spacer()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Spacer(minLength: 8)
                 Button("Cancel") { showingImportSheet = false }
+                    .fixedSize()
             }
             .padding()
 

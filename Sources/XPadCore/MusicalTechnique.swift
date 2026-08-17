@@ -52,7 +52,7 @@ public enum MusicalTechnique: String, CaseIterable, Codable, Hashable, Sendable,
     }
 }
 
-public enum RealismMode: String, CaseIterable, Codable, Sendable {
+public enum RealismMode: String, CaseIterable, Codable, Sendable, Hashable {
     case relaxed = "Relaxed"
     case natural = "Natural"
     case strict = "Strict"

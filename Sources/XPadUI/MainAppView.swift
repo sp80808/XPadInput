@@ -29,19 +29,23 @@ public struct ContentView: View {
         }
         .sheet(isPresented: $isShowingSettings) {
             VStack(spacing: 0) {
-                HStack {
+                HStack(spacing: 12) {
                     HStack(spacing: 8) {
                         Image(systemName: "slider.horizontal.3")
                             .foregroundColor(XTheme.primary)
                         Text("Controller & Hardware Configuration")
                             .font(.system(size: 16, weight: .bold))
                             .foregroundStyle(XTheme.textPrimary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
                     }
-                    Spacer()
+                    .layoutPriority(1)
+                    Spacer(minLength: 8)
                     Button("Done") {
                         isShowingSettings = false
                     }
                     .keyboardShortcut(.defaultAction)
+                    .fixedSize()
                 }
                 .padding(16)
                 .background(XTheme.surfaceElevated)
@@ -49,8 +53,9 @@ public struct ContentView: View {
                 Divider().overlay(XTheme.border)
 
                 ControlSchemeSettingsView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(minWidth: 780, minHeight: 600)
+            .frame(minWidth: 720, idealWidth: 840, minHeight: 560, idealHeight: 680)
         }
         .background {
             ZStack {
