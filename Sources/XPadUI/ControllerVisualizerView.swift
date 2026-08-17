@@ -54,7 +54,8 @@ struct ControllerVisualizerView: View {
                 duoMode: appState.duoPerformanceMode,
                 currentChord: appState.currentChord,
                 lastVelocity: hasLiveInput ? displayState.lastVelocity : 0,
-                lastStrumDirection: hasLiveInput ? displayState.lastStrumDirection : .none
+                lastStrumDirection: hasLiveInput ? displayState.lastStrumDirection : .none,
+                remapSnapshot: appState.controllerManager.remapSnapshot
             )
         }
         .padding(18)

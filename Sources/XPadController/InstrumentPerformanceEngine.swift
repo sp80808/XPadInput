@@ -73,19 +73,25 @@ public struct FaceButtonNoteEvent: Sendable, Equatable {
     public var isOn: Bool
     public var technique: MusicalTechnique
     public var velocity: UInt8
+    public var confidence: Double?
+    public var evidence: [String]
 
     public init(
         role: ChordToneRole,
         note: Note,
         isOn: Bool,
         technique: MusicalTechnique,
-        velocity: UInt8
+        velocity: UInt8,
+        confidence: Double? = nil,
+        evidence: [String] = []
     ) {
         self.role = role
         self.note = note
         self.isOn = isOn
         self.technique = technique
         self.velocity = velocity
+        self.confidence = confidence
+        self.evidence = evidence
     }
 }
 
@@ -109,6 +115,7 @@ public struct PerformanceFrame: Sendable {
     public var ownedGesture: RightStickOwnedGesture
     public var faceEvents: [FaceButtonNoteEvent]
     public var expressionEvents: [InstrumentPerformanceEvent]
+    public var techniqueInference: TechniqueInference?
 }
 
 /// Orchestrates gesture → technique for the active instrument profile.
@@ -214,14 +221,17 @@ public struct InstrumentPerformanceEngine: Sendable {
         if bendingNow { candidates.append(.bend) }
         if palmMute > 0.35 { candidates.append(.palmMute) }
 
-        let gyro = hypot(state.gyroX, hypot(state.gyroY, state.gyroZ))
+        let dedicatedBend = stickOwnership.owned == .bend
+        let motionEnabled = state.hasMotion
         let vibrato = vibratoEngine.process(
-            stickX: rightX,
+            stickX: dedicatedBend ? 0 : rightX,
             stickY: rightY,
-            gyroMagnitude: gyro,
+            gyroPitch: state.gyroX,
+            gyroYaw: state.gyroZ,
             triggerMicro: Double(state.rightTrigger.velocity),
             noteHeld: notesHeld,
-            bending: bendingNow,
+            dedicatedBend: dedicatedBend,
+            motionEnabled: motionEnabled,
             dt: dt
         )
         if vibrato.isActive { candidates.append(.vibrato) }
@@ -231,13 +241,14 @@ public struct InstrumentPerformanceEngine: Sendable {
 
         let slide = slideEngine.advance(dt: dt)
 
-        let faceEvents = interpretFaceButtons(
+        let faceResult = interpretFaceButtons(
             state: state,
             context: context,
             heldNotes: heldNotes,
             pickAttack: pickAttack,
             timestamp: timestamp
         )
+        let faceEvents = faceResult.events
         for event in faceEvents where event.isOn && event.technique.isLegatoFamily {
             candidates.append(event.technique)
         }
@@ -343,7 +354,8 @@ public struct InstrumentPerformanceEngine: Sendable {
             suppressStrum: stickOwnership.suppressesStrum || profile.supportsBowing || !profile.supportsStrumming,
             ownedGesture: stickOwnership.owned,
             faceEvents: faceEvents,
-            expressionEvents: expressionEvents
+            expressionEvents: expressionEvents,
+            techniqueInference: faceResult.inference
         )
     }
 
@@ -367,8 +379,8 @@ public struct InstrumentPerformanceEngine: Sendable {
         heldNotes: [Note],
         pickAttack: Bool,
         timestamp: TimeInterval
-    ) -> [FaceButtonNoteEvent] {
-        guard let chord = context.chord else { return [] }
+    ) -> (events: [FaceButtonNoteEvent], inference: TechniqueInference?) {
+        guard let chord = context.chord else { return ([], nil) }
         let targeter = ContextualPitchTargeter()
         let pairs: [(pressed: Bool, was: Bool, role: ChordToneRole)] = [
             (state.buttonA, previousFace.a, .root),
@@ -377,6 +389,7 @@ public struct InstrumentPerformanceEngine: Sendable {
             (state.buttonB, previousFace.b, .seventh)
         ]
         var events: [FaceButtonNoteEvent] = []
+        var latestInference: TechniqueInference?
         for pair in pairs {
             if pair.pressed && !pair.was {
                 let note = targeter.note(for: pair.role, chord: chord, previous: intervalMemory.lastNote, baseOctave: context.registerOctave)
@@ -384,7 +397,7 @@ public struct InstrumentPerformanceEngine: Sendable {
                 _ = stringModel.assign(note: note)
                 let gapMs = (timestamp - lastMelodicTime) * 1000.0
                 let overlap = !heldNotes.isEmpty
-                let legato = LegatoGestureInterpreter().interpret(
+                let inferred = LegatoGestureInterpreter().infer(
                     previous: lastMelodicNote,
                     current: note,
                     overlap: overlap,
@@ -396,7 +409,8 @@ public struct InstrumentPerformanceEngine: Sendable {
                     sameString: sameString,
                     preparedLowerNote: preparedLowerNote?.pitchClass == note.pitchClass
                 )
-                var technique = legato?.technique ?? .normal
+                latestInference = inferred.inference
+                var technique = inferred.interpretation.technique
                 if state.rightShoulder && profile.supportsPinchHarmonics {
                     technique = pickAttack ? .pinchHarmonic : .harmonic
                 }
@@ -417,7 +431,9 @@ public struct InstrumentPerformanceEngine: Sendable {
                     note: note,
                     isOn: true,
                     technique: technique,
-                    velocity: legato?.velocity ?? 110
+                    velocity: inferred.interpretation.velocity,
+                    confidence: inferred.inference.confidence,
+                    evidence: inferred.inference.evidence
                 ))
             } else if !pair.pressed && pair.was {
                 let note = targeter.note(for: pair.role, chord: chord, previous: intervalMemory.lastNote, baseOctave: context.registerOctave)
@@ -431,7 +447,7 @@ public struct InstrumentPerformanceEngine: Sendable {
                 ))
             }
         }
-        return events
+        return (events, latestInference)
     }
 
     private func timbreValue(state: ControllerState, pressure: PressureEnvelopeState) -> Double {

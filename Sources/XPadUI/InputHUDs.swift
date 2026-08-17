@@ -249,6 +249,11 @@ public struct AdaptiveTriggerVisualizerHUD: View {
                         .foregroundStyle(XTheme.textPrimary)
                         .lineLimit(2)
 
+                    Text(hardwareCaption(for: feedbackState))
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(XTheme.textTertiary)
+                        .lineLimit(2)
+
                     if feedbackState.isInDetent, let idx = feedbackState.activeDetentIndex {
                         HStack(spacing: 4) {
                             Image(systemName: "circle.circle.fill")
@@ -272,5 +277,19 @@ public struct AdaptiveTriggerVisualizerHUD: View {
             RoundedRectangle(cornerRadius: XTheme.radiusSmall)
                 .stroke(XTheme.border, lineWidth: 1)
         )
+    }
+
+    private func hardwareCaption(for state: AdaptiveTriggerFeedbackState) -> String {
+        if !state.hardwareSupported {
+            return "Hardware: unsupported · semantic \(state.activeMode.displayName) unchanged"
+        }
+        var line = "Hardware \(state.hardwareMode) · semantic \(state.activeMode.displayName)"
+        if state.semanticDetentCount > 0 {
+            line += " · detents \(state.renderedDetentCount)/\(state.semanticDetentCount)"
+            if !state.isHardwareAccurate {
+                line += " (not 1:1)"
+            }
+        }
+        return line
     }
 }

@@ -1565,10 +1565,11 @@ final class TestRunner {
                 manager.selectControlScheme(ControlSchemePreset.xpiPerformance)
                 assertEqual(manager.activeScheme.id, "xpi_performance")
 
-                // Switch to low-fatigue scheme
+                manager.applySurfaceProfile(ControlSurfaceProfile(feel: .fastArcade), persist: false)
+                assertEqual(manager.leftStickProcessor.profile.id, "fast")
+
                 manager.selectControlScheme(ControlSchemePreset.lowFatigue)
                 assertEqual(manager.activeScheme.id, "xpi_low_fatigue")
-                assertEqual(manager.leftStickProcessor.profile.id, "fast")
                 assertEqual(manager.leftTriggerProcessor.deadzone, 0.04)
             }
 
@@ -1810,6 +1811,7 @@ final class TestRunner {
                 assertTrue(dualSense.hasMotionIMU)
                 assertTrue(dualSense.hasHaptics)
                 assertTrue(dualSense.hasAnalogTriggers)
+                assertTrue(dualSense.hasAdaptiveTriggers)
                 assertTrue(dualSense.hasThumbstickClicks)
 
                 let engine = AdaptiveTriggerEngine()
@@ -1821,6 +1823,7 @@ final class TestRunner {
             test("Xbox Wireless controller profile ergonomics and deadzones") {
                 let xbox = ControllerCapabilityProfile.xbox
                 assertTrue(!xbox.hasTouchpad)
+                assertTrue(!xbox.hasAdaptiveTriggers)
                 assertTrue(!xbox.hasMotionIMU)
                 assertTrue(xbox.hasHaptics)
                 assertTrue(xbox.hasAnalogTriggers)
@@ -1855,6 +1858,70 @@ final class TestRunner {
                 // Simulate abrupt controller disconnect -> panic
                 midi.panic()
                 assertEqual(midi.activeNoteCount, 0)
+            }
+        }
+
+        suite("Guitar ownership follow-on: surface, vibrato, technique, remap") {
+            test("Natural surface uses role-specific stick profiles") {
+                let surface = ControlSurfaceProfile(feel: .natural)
+                assertEqual(surface.harmonyStick.id, "expressive")
+                assertEqual(surface.strumStick.id, "fast")
+                assertEqual(surface.bendStick.id, "precision")
+            }
+
+            test("Remap resolver maps alias to physical input and analog fallback") {
+                let snapshot = ControllerRemapSnapshot(
+                    hasRemappedElements: true,
+                    physicalNameByAlias: [ControllerRemapResolver.southAlias: "Button X"]
+                )
+                assertEqual(ControllerRemapResolver.displayedInput(for: .buttonSouth, snapshot: snapshot), .buttonWest)
+                assertTrue(ControllerRemapResolver.analogValue(for: .buttonEast, snapshot: snapshot, digitalPressed: true) == 1)
+            }
+
+            test("Factory guitar layout is an intentional right-thumb tradeoff") {
+                let warnings = ErgonomicMappingAnalyzer.analyze(
+                    scheme: ControlSchemePreset.xpiPerformance,
+                    grip: .standardTwoIndex,
+                    hasTouchpad: true
+                )
+                assertTrue(warnings.contains { $0.kind == .intentionalTradeoff })
+                assertTrue(warnings.allSatisfy { !$0.blocksSave })
+            }
+
+            test("Xbox capability profile does not advertise touchpad") {
+                assertTrue(!ControllerCapabilityProfile.preset(for: .xbox).hasTouchpad)
+                assertTrue(ControllerCapabilityProfile.preset(for: .dualSense).hasTouchpad)
+            }
+
+            test("Hammer-on at 80ms natural same-string still commits") {
+                let result = LegatoGestureInterpreter().interpret(
+                    previous: Note(pitchClass: .e, octave: 4),
+                    current: Note(pitchClass: .g, octave: 4),
+                    overlap: true,
+                    intervalMs: 80,
+                    hasPickAttack: false,
+                    slideModifier: false,
+                    profile: .guitar,
+                    realism: .natural,
+                    sameString: true,
+                    preparedLowerNote: false
+                )
+                assertEqual(result?.technique ?? .normal, .hammerOn)
+            }
+
+            test("Trigger force-off keeps semantic force and hardware off") {
+                let engine = AdaptiveTriggerEngine()
+                let config = AdaptiveTriggerConfig(mode: .guitarStringTension, resistiveStrength: 0.7)
+                let state = engine.calculateTriggerState(
+                    position: 0.6,
+                    velocity: 0,
+                    config: config,
+                    label: "R2",
+                    forceScale: 0,
+                    hardwareSupported: true
+                )
+                assertEqual(state.hardwareMode, "off")
+                assertTrue(state.calculatedForce > 0)
             }
         }
 

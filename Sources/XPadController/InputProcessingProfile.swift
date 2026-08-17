@@ -61,7 +61,7 @@ public struct InputProcessingProfile: Sendable, Equatable {
     )
     
     public static let allPresets: [InputProcessingProfile] = [
-        .expressive, .precision, .fast, .stable, .accessible
+        .expressive, .precision, .fast, .stable, .accessible, .reducedTravel
     ]
     
     // Custom equality to allow Picker selection (DeadzoneStrategy/ResponseCurve are not natively Equatable easily with associated values, but we can compare IDs)

@@ -220,6 +220,8 @@ public final class AudioEngine: @unchecked Sendable {
     public private(set) var effectsSettings: SynthEffectsSettings = .polished
     /// Host-time spent attaching/connecting a voice on the last Note On. Not acoustic latency.
     public private(set) var lastGraphMutationMs: Double = 0
+    /// Host-time from Note On return to the first audio render callback. Gated probe; not acoustic latency.
+    public private(set) var lastFirstBufferMs: Double = 0
 
     public func setPreset(_ preset: SynthPreset) {
         self.currentPreset = preset
@@ -482,6 +484,10 @@ public final class AudioEngine: @unchecked Sendable {
         
         voice.start()
         voices[note] = voice
+        let armedAt = ProcessInfo.processInfo.systemUptime
+        voice.firstBufferGate.arm { [weak self] t in
+            self?.lastFirstBufferMs = max(0, (t - armedAt) * 1000.0)
+        }
         
         lock.unlock()
         lastGraphMutationMs = max(0, (ProcessInfo.processInfo.systemUptime - mutationStart) * 1000.0)
@@ -764,12 +770,55 @@ private final class VoiceControlState: @unchecked Sendable {
     }
 }
 
+public final class FirstBufferGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var pending = true
+    private var alreadyFired = false
+    private var firedAt: TimeInterval = 0
+    private var work: DispatchWorkItem?
+
+    public init() {}
+
+    public func arm(handler: @escaping (TimeInterval) -> Void) {
+        lock.lock()
+        work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.lock.lock()
+            let t = self.firedAt
+            self.lock.unlock()
+            handler(t)
+        }
+        let shouldDispatch = alreadyFired
+        let item = work
+        lock.unlock()
+        if shouldDispatch, let item {
+            DispatchQueue.main.async(execute: item)
+        }
+    }
+
+    public func signalIfNeeded() {
+        lock.lock()
+        let shouldFire = pending
+        if shouldFire {
+            pending = false
+            alreadyFired = true
+            firedAt = ProcessInfo.processInfo.systemUptime
+        }
+        let item = work
+        lock.unlock()
+        if shouldFire, let item {
+            DispatchQueue.main.async(execute: item)
+        }
+    }
+}
+
 /// Individual synth voice generating a single note.
 public final class SynthVoice: @unchecked Sendable {
     public let note: UInt8
     public let sourceNode: AVAudioSourceNode
     public let startTime: Date
     public var releaseTime: Double = 0.4
+    public let firstBufferGate = FirstBufferGate()
     
     private let baseFrequency: Double
     private var targetAmplitude: Double
@@ -823,6 +872,7 @@ public final class SynthVoice: @unchecked Sendable {
         }
         
         let control = self.controlState
+        let gate = self.firstBufferGate
         let baseFrequency = self.baseFrequency
         let attack = self.attackTime
         let decay = self.decayTime
@@ -867,6 +917,7 @@ public final class SynthVoice: @unchecked Sendable {
             if let latest = control.trySnapshot() {
                 cachedControlSnapshot = latest
             }
+            gate.signalIfNeeded()
             let controlSnapshot = cachedControlSnapshot
             if controlSnapshot.isStopped {
                 for frame in 0..<Int(frameCount) {

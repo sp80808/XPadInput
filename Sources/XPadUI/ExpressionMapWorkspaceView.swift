@@ -80,8 +80,23 @@ struct ExpressionMapWorkspaceView: View {
 
     private var physicalSection: some View {
         Group {
-            labeled("Left stick", appState.controllerManager.leftStickProcessor.profile.name)
-            labeled("Right stick", appState.controllerManager.rightStickProcessor.profile.name)
+            labeled("Surface feel", appState.controllerManager.surfaceProfile.feel.rawValue)
+            labeled("Harmony stick", appState.controllerManager.leftStickProcessor.profile.name)
+            labeled("Strum (right Y)", appState.controllerManager.rightStickProcessor.profile.name)
+            labeled("Bend (right X)", appState.controllerManager.rightStickBendProcessor.profile.name)
+            labeled("Left rest", String(format: "%+.3f, %+.3f", appState.controllerManager.hardwareCalibration.leftStick.restCenterX, appState.controllerManager.hardwareCalibration.leftStick.restCenterY))
+            labeled("Right rest", String(format: "%+.3f, %+.3f", appState.controllerManager.hardwareCalibration.rightStick.restCenterX, appState.controllerManager.hardwareCalibration.rightStick.restCenterY))
+            labeled("Remap", appState.controllerManager.remapSnapshot.hasRemappedElements ? "System remap active" : "Factory aliases")
+            labeled("Owned gesture", appState.lastFrame?.ownedGesture.rawValue ?? "idle")
+            if let inference = appState.lastFrame?.techniqueInference {
+                labeled("Technique confidence", String(format: "%.2f %@", inference.confidence, inference.committed.rawValue))
+                Text(inference.evidence.joined(separator: " · "))
+                    .font(.caption)
+                    .foregroundStyle(XTheme.textTertiary)
+            }
+            labeled("L2 hardware", appState.controllerManager.adaptiveTriggerEngine.leftState.hardwareMode)
+            labeled("R2 hardware", appState.controllerManager.adaptiveTriggerEngine.rightState.hardwareMode)
+            labeled("Latency p50", appState.latencyProbe.snapshot().summaryLine)
             Text("Deadzone, response, and smoothing are owned by the stick processors. PLAY never shows these numbers.")
                 .font(.caption)
                 .foregroundStyle(XTheme.textTertiary)

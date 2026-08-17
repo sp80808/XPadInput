@@ -186,4 +186,28 @@ public struct ProcessedStickState: Sendable, Codable, Equatable {
         self.isInDeadzone = isInDeadzone
         self.isNearEdge = isNearEdge
     }
+
+    /// Right-stick Y uses the strum processor; X uses the bend processor.
+    public static func composing(strum: ProcessedStickState, bend: ProcessedStickState) -> ProcessedStickState {
+        let x = bend.x
+        let y = strum.y
+        let radius = sqrt(x * x + y * y)
+        return ProcessedStickState(
+            rawX: bend.rawX,
+            rawY: strum.rawY,
+            calibratedX: bend.calibratedX,
+            calibratedY: strum.calibratedY,
+            x: x,
+            y: y,
+            radius: radius,
+            angle: atan2(Double(y), Double(x)),
+            movementVelocity: max(strum.movementVelocity, bend.movementVelocity),
+            xVelocity: bend.xVelocity,
+            yVelocity: strum.yVelocity,
+            radialVelocity: strum.radialVelocity,
+            angularVelocity: bend.angularVelocity,
+            isInDeadzone: strum.isInDeadzone && bend.isInDeadzone,
+            isNearEdge: radius > 0.94
+        )
+    }
 }

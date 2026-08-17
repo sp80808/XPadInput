@@ -44,6 +44,7 @@ final class ControllerTests: XCTestCase {
         XCTAssertFalse(state.buttonY)
         XCTAssertFalse(state.dpadUp)
         XCTAssertFalse(state.isTouching)
+        XCTAssertFalse(state.touchpadButtonPressed)
         XCTAssertEqual(state.gyroPitch, 0.0)
     }
 
@@ -54,10 +55,12 @@ final class ControllerTests: XCTestCase {
         XCTAssertTrue(ps5.hasMotionIMU)
         XCTAssertTrue(ps5.hasHaptics)
         XCTAssertTrue(ps5.hasAnalogTriggers)
+        XCTAssertTrue(ps5.hasAdaptiveTriggers)
         XCTAssertTrue(ps5.buttonLabels.contains("Cross (✕)"))
 
         let xbox = ControllerCapabilityProfile.xbox
         XCTAssertFalse(xbox.hasTouchpad)
+        XCTAssertFalse(xbox.hasAdaptiveTriggers)
         XCTAssertFalse(xbox.hasMotionIMU)
         XCTAssertTrue(xbox.hasHaptics)
         XCTAssertTrue(xbox.buttonLabels.contains("A"))

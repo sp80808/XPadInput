@@ -63,13 +63,86 @@ public struct AdaptiveTriggerConfig: Codable, Sendable, Equatable {
     }
 }
 
-public struct AdaptiveTriggerFeedbackState: Sendable, Codable, Equatable {
+public struct DualSenseHardwareCommand: Equatable, Sendable {
+    public enum Kind: Equatable, Sendable {
+        case off
+        case slope(start: Float, end: Float, startStrength: Float, endStrength: Float)
+        case feedback(start: Float, strength: Float)
+    }
+
+    public var kind: Kind
+
+    public init(kind: Kind) {
+        self.kind = kind
+    }
+
+    public var modeLabel: String {
+        switch kind {
+        case .off: return "off"
+        case .slope: return "slope"
+        case .feedback: return "slope-shelf"
+        }
+    }
+
+    public static func command(
+        for config: AdaptiveTriggerConfig,
+        forceScale: Float
+    ) -> DualSenseHardwareCommand {
+        let scale = max(0, min(1, forceScale))
+        if scale <= 0.001 || config.mode == .off {
+            return DualSenseHardwareCommand(kind: .off)
+        }
+        let strength = config.resistiveStrength * scale
+        switch config.mode {
+        case .off:
+            return DualSenseHardwareCommand(kind: .off)
+        case .guitarStringTension:
+            let gauge = config.stringGauge.stiffness
+            return DualSenseHardwareCommand(kind: .slope(
+                start: config.startPosition,
+                end: 1,
+                startStrength: 0.1 * scale,
+                endStrength: strength * gauge
+            ))
+        case .bowDragResistance:
+            return DualSenseHardwareCommand(kind: .slope(
+                start: 0,
+                end: 1,
+                startStrength: strength * 0.6,
+                endStrength: strength
+            ))
+        case .palmMuteShelf, .modWheelDetents:
+            return DualSenseHardwareCommand(kind: .slope(
+                start: config.startPosition,
+                end: 1,
+                startStrength: strength * 0.85,
+                endStrength: strength
+            ))
+        case .customSlope:
+            return DualSenseHardwareCommand(kind: .slope(
+                start: config.startPosition,
+                end: config.endPosition,
+                startStrength: 0,
+                endStrength: strength
+            ))
+        }
+    }
+
+    public static let maxPhysicalPositions = 10
+}
+
+public struct AdaptiveTriggerFeedbackState: Sendable, Equatable {
     public var triggerPosition: Float
     public var calculatedForce: Float
     public var isInDetent: Bool
     public var activeDetentIndex: Int?
     public var activeMode: AdaptiveTriggerMode
     public var statusDescription: String
+    public var hardwareMode: String
+    public var renderedDetentCount: Int
+    public var semanticDetentCount: Int
+    public var isHardwareAccurate: Bool
+    public var hardwareSupported: Bool
 
     public init(
         triggerPosition: Float = 0.0,
@@ -77,7 +150,12 @@ public struct AdaptiveTriggerFeedbackState: Sendable, Codable, Equatable {
         isInDetent: Bool = false,
         activeDetentIndex: Int? = nil,
         activeMode: AdaptiveTriggerMode = .off,
-        statusDescription: String = "Inactive"
+        statusDescription: String = "Inactive",
+        hardwareMode: String = "off",
+        renderedDetentCount: Int = 0,
+        semanticDetentCount: Int = 0,
+        isHardwareAccurate: Bool = true,
+        hardwareSupported: Bool = false
     ) {
         self.triggerPosition = triggerPosition
         self.calculatedForce = calculatedForce
@@ -85,6 +163,11 @@ public struct AdaptiveTriggerFeedbackState: Sendable, Codable, Equatable {
         self.activeDetentIndex = activeDetentIndex
         self.activeMode = activeMode
         self.statusDescription = statusDescription
+        self.hardwareMode = hardwareMode
+        self.renderedDetentCount = renderedDetentCount
+        self.semanticDetentCount = semanticDetentCount
+        self.isHardwareAccurate = isHardwareAccurate
+        self.hardwareSupported = hardwareSupported
     }
 }
 
@@ -93,7 +176,10 @@ public struct AdaptiveTriggerFeedbackState: Sendable, Codable, Equatable {
 public final class AdaptiveTriggerEngine: @unchecked Sendable {
     public var leftConfig: AdaptiveTriggerConfig
     public var rightConfig: AdaptiveTriggerConfig
+    public var forcePolicy: AdaptiveTriggerForcePolicy = .reduced
     public private(set) var isEnabled: Bool = true
+    private var lastLeftCommand: DualSenseHardwareCommand?
+    private var lastRightCommand: DualSenseHardwareCommand?
 
     public private(set) var leftState = AdaptiveTriggerFeedbackState()
     public private(set) var rightState = AdaptiveTriggerFeedbackState()
@@ -129,21 +215,41 @@ public final class AdaptiveTriggerEngine: @unchecked Sendable {
         previousLeftPos = leftTrigger
         previousRightPos = rightTrigger
 
+        let forceScale = isEnabled ? forcePolicy.strengthScale : 0
+        let hardwareSupported = Self.supportsAdaptiveTriggers(controller)
+
         leftState = calculateTriggerState(
             position: leftTrigger,
             velocity: leftVelocity,
             config: leftConfig,
-            label: "Left Trigger (L2)"
+            label: "Left Trigger (L2)",
+            forceScale: forceScale,
+            hardwareSupported: hardwareSupported
         )
 
         rightState = calculateTriggerState(
             position: rightTrigger,
             velocity: rightVelocity,
             config: rightConfig,
-            label: "Right Trigger (R2)"
+            label: "Right Trigger (R2)",
+            forceScale: forceScale,
+            hardwareSupported: hardwareSupported
         )
 
         applyToHardware(controller: controller)
+    }
+
+    public static func supportsAdaptiveTriggers(_ controller: GCController?) -> Bool {
+        guard let controller else { return false }
+        if #available(macOS 12.0, *) {
+            return controller.physicalInputProfile is GCDualSenseGamepad
+        }
+        return false
+    }
+
+    public func resetHardwareCache() {
+        lastLeftCommand = nil
+        lastRightCommand = nil
     }
 
     /// Evaluates resistance curve and detents for an individual trigger.
@@ -151,13 +257,22 @@ public final class AdaptiveTriggerEngine: @unchecked Sendable {
         position: Float,
         velocity: Float,
         config: AdaptiveTriggerConfig,
-        label: String
+        label: String,
+        forceScale: Float = 1,
+        hardwareSupported: Bool = true
     ) -> AdaptiveTriggerFeedbackState {
         let pos = max(0.0, min(1.0, position))
         var force: Float = 0.0
         var inDetent = false
         var detentIdx: Int? = nil
         var desc = "Off"
+        let hardware = DualSenseHardwareCommand.command(for: config, forceScale: hardwareSupported ? forceScale : 0)
+        let semanticDetents = config.mode == .modWheelDetents ? config.detentCount : 0
+        let renderedDetents = config.mode == .modWheelDetents
+            ? min(config.detentCount, DualSenseHardwareCommand.maxPhysicalPositions)
+            : 0
+        let accurate = hardwareSupported
+            && (config.mode != .modWheelDetents || semanticDetents <= DualSenseHardwareCommand.maxPhysicalPositions)
 
         switch config.mode {
         case .off:
@@ -185,7 +300,7 @@ public final class AdaptiveTriggerEngine: @unchecked Sendable {
             desc = String(format: "%@: Bow Viscous Drag (%.0f%%)", label, force * 100)
 
         case .modWheelDetents:
-            let steps = max(2, config.detentCount)
+            let steps = max(2, min(config.detentCount, DualSenseHardwareCommand.maxPhysicalPositions))
             let stepSize = 1.0 / Float(steps)
             let nearestStep = roundf(pos / stepSize)
             let targetPos = nearestStep * stepSize
@@ -195,7 +310,7 @@ public final class AdaptiveTriggerEngine: @unchecked Sendable {
                 inDetent = true
                 detentIdx = Int(nearestStep)
                 force = config.resistiveStrength * 0.9
-                desc = "\(label): Detent Step #\(Int(nearestStep)) / \(steps)"
+                desc = "\(label): Detent Step #\(Int(nearestStep)) / \(steps) (hardware \(hardware.modeLabel))"
             } else {
                 force = config.resistiveStrength * 0.2
                 desc = String(format: "%@: Pitch/Mod Glide (%.0f%%)", label, pos * 100)
@@ -230,7 +345,12 @@ public final class AdaptiveTriggerEngine: @unchecked Sendable {
             isInDetent: inDetent,
             activeDetentIndex: detentIdx,
             activeMode: config.mode,
-            statusDescription: desc
+            statusDescription: desc,
+            hardwareMode: hardware.modeLabel,
+            renderedDetentCount: renderedDetents,
+            semanticDetentCount: semanticDetents,
+            isHardwareAccurate: accurate,
+            hardwareSupported: hardwareSupported
         )
     }
 
@@ -241,45 +361,54 @@ public final class AdaptiveTriggerEngine: @unchecked Sendable {
         // Dynamic inspection for DualSense Adaptive Trigger support
         if #available(macOS 12.0, *) {
             if let ds = controller.physicalInputProfile as? GCDualSenseGamepad {
-                applyConfig(config: leftConfig, to: ds.leftTrigger)
-                applyConfig(config: rightConfig, to: ds.rightTrigger)
+                let scale = isEnabled ? forcePolicy.strengthScale : 0
+                applyCached(command: DualSenseHardwareCommand.command(for: leftConfig, forceScale: scale),
+                            previous: &lastLeftCommand,
+                            to: ds.leftTrigger)
+                applyCached(command: DualSenseHardwareCommand.command(for: rightConfig, forceScale: scale),
+                            previous: &lastRightCommand,
+                            to: ds.rightTrigger)
             }
+        }
+        // Non-DualSense controllers are a no-op: musical trigger values are unchanged.
+    }
+
+    @available(macOS 12.3, *)
+    private func applyCached(
+        command: DualSenseHardwareCommand,
+        previous: inout DualSenseHardwareCommand?,
+        to trigger: GCDualSenseAdaptiveTrigger
+    ) {
+        if previous == command { return }
+        previous = command
+        apply(command: command, to: trigger)
+    }
+
+    @available(macOS 12.3, *)
+    private func apply(command: DualSenseHardwareCommand, to trigger: GCDualSenseAdaptiveTrigger) {
+        switch command.kind {
+        case .off:
+            trigger.setModeOff()
+        case .slope(let start, let end, let startStrength, let endStrength):
+            trigger.setModeSlopeFeedback(
+                startPosition: start,
+                endPosition: end,
+                startStrength: startStrength,
+                endStrength: endStrength
+            )
+        case .feedback(let start, let strength):
+            trigger.setModeSlopeFeedback(
+                startPosition: start,
+                endPosition: 1.0,
+                startStrength: strength * 0.85,
+                endStrength: strength
+            )
         }
     }
 
     @available(macOS 12.3, *)
     private func applyConfig(config: AdaptiveTriggerConfig, to trigger: GCDualSenseAdaptiveTrigger) {
-        switch config.mode {
-        case .off:
-            trigger.setModeOff()
-
-        case .guitarStringTension:
-            let start = Float(config.startPosition)
-            let strength = Float(config.resistiveStrength * config.stringGauge.stiffness)
-            trigger.setModeSlopeFeedback(startPosition: start, endPosition: 1.0, startStrength: 0.1, endStrength: strength)
-
-        case .bowDragResistance:
-            let strength = Float(config.resistiveStrength)
-            trigger.setModeSlopeFeedback(startPosition: 0.0, endPosition: 1.0, startStrength: strength * 0.6, endStrength: strength)
-
-        case .modWheelDetents:
-            let start = Float(config.startPosition)
-            let strength = Float(config.resistiveStrength)
-            trigger.setModeSlopeFeedback(startPosition: start, endPosition: 0.9, startStrength: strength, endStrength: strength)
-
-        case .palmMuteShelf:
-            let start = Float(config.startPosition)
-            let strength = Float(config.resistiveStrength)
-            trigger.setModeSlopeFeedback(startPosition: start, endPosition: 1.0, startStrength: strength * 0.8, endStrength: strength)
-
-        case .customSlope:
-            trigger.setModeSlopeFeedback(
-                startPosition: Float(config.startPosition),
-                endPosition: Float(config.endPosition),
-                startStrength: 0.0,
-                endStrength: Float(config.resistiveStrength)
-            )
-        }
+        apply(command: DualSenseHardwareCommand.command(for: config, forceScale: forcePolicy.strengthScale), to: trigger)
     }
 
     public func configureForInstrumentProfile(_ profile: InstrumentProfile) {

@@ -66,16 +66,16 @@
 - [x] **Step 2: Mark input / gesture / dispatch / synth return**
 - [x] **Step 3: Live Test Studio card (off by default)**
 - [ ] **Step 4: Record a DualSense baseline on macOS hardware (p50/p95/p99, 1/4/8/16 voices)** — needs hardware, not this agent
-- [ ] **Step 5: First-buffer render timestamp** — only if Task 3 numbers show attach/connect is the variance
+- [x] **Step 5: First-buffer render timestamp** — preallocated gate + main-queue hop; no voice-pool rewrite
 - [ ] **Step 6: Voice pool** — gated on Step 4 evidence (#26)
 
 ### Task 4: Remaining guitar-ownership issues (not this PR)
 
-- [ ] #24 `ControlSurfaceProfile` + passive calibration
-- [ ] #27 periodic vibrato vs motion energy
-- [ ] #28 technique confidence + RealismMode as acceptance policy
-- [ ] #29/#30 DualSense adaptive triggers and touchpad gating
-- [ ] #25/#32 remapping + mapping-conflict analysis
+- [x] #24 `ControlSurfaceProfile` + passive calibration
+- [x] #27 periodic vibrato vs motion energy
+- [x] #28 technique confidence + RealismMode as acceptance policy
+- [x] #29/#30 DualSense adaptive triggers and touchpad gating
+- [x] #25/#32 remapping + mapping-conflict analysis
 - [ ] #3/#13/#15 DAW / MIDI 2 / live expression certification
 
 ## Verification

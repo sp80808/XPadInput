@@ -56,6 +56,15 @@ public enum RealismMode: String, CaseIterable, Codable, Sendable {
     case relaxed = "Relaxed"
     case natural = "Natural"
     case strict = "Strict"
+
+    /// Minimum inference confidence required before a guessed technique is accepted.
+    public var acceptanceThreshold: Double {
+        switch self {
+        case .relaxed: return 0.35
+        case .natural: return 0.55
+        case .strict: return 0.75
+        }
+    }
 }
 
 public enum TechniqueHaptic: String, Codable, Sendable, Equatable {

@@ -96,4 +96,19 @@ final class AudioTests: XCTestCase {
 
         audio.panic()
     }
+
+    func testFirstBufferGateFiresOnce() {
+        let gate = FirstBufferGate()
+        let expectation = expectation(description: "first buffer")
+        var times: [TimeInterval] = []
+        gate.arm { t in
+            times.append(t)
+            expectation.fulfill()
+        }
+        gate.signalIfNeeded()
+        gate.signalIfNeeded()
+        wait(for: [expectation], timeout: 1.0)
+        XCTAssertEqual(times.count, 1)
+        XCTAssertGreaterThan(times[0], 0)
+    }
 }

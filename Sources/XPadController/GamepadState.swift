@@ -81,6 +81,7 @@ public struct ControllerCapabilityProfile: Codable, Sendable {
     public var hasMotionIMU: Bool
     public var hasHaptics: Bool
     public var hasAnalogTriggers: Bool
+    public var hasAdaptiveTriggers: Bool
     public var hasThumbstickClicks: Bool
     public var hasRotaryEncoders: Bool
     public var hasTurntable: Bool
@@ -96,6 +97,7 @@ public struct ControllerCapabilityProfile: Codable, Sendable {
         hasMotionIMU: Bool = false,
         hasHaptics: Bool = false,
         hasAnalogTriggers: Bool = false,
+        hasAdaptiveTriggers: Bool = false,
         hasThumbstickClicks: Bool = false,
         hasRotaryEncoders: Bool = false,
         hasTurntable: Bool = false,
@@ -110,6 +112,7 @@ public struct ControllerCapabilityProfile: Codable, Sendable {
         self.hasMotionIMU = hasMotionIMU
         self.hasHaptics = hasHaptics
         self.hasAnalogTriggers = hasAnalogTriggers
+        self.hasAdaptiveTriggers = hasAdaptiveTriggers
         self.hasThumbstickClicks = hasThumbstickClicks
         self.hasRotaryEncoders = hasRotaryEncoders
         self.hasTurntable = hasTurntable
@@ -127,6 +130,7 @@ public struct ControllerCapabilityProfile: Codable, Sendable {
         if hasMotionIMU { caps.append("IMU") }
         if hasHaptics { caps.append("Haptics") }
         if hasAnalogTriggers { caps.append("Triggers") }
+        if hasAdaptiveTriggers { caps.append("Adaptive") }
         return caps.isEmpty ? "Basic" : caps.joined(separator: " · ")
     }
 
@@ -135,6 +139,17 @@ public struct ControllerCapabilityProfile: Codable, Sendable {
         hasMotionIMU: true,
         hasHaptics: true,
         hasAnalogTriggers: true,
+        hasAdaptiveTriggers: true,
+        hasThumbstickClicks: true,
+        buttonLabels: ["Cross (✕)", "Circle (○)", "Square (□)", "Triangle (△)"]
+    )
+
+    public static let dualShock4 = ControllerCapabilityProfile(
+        hasTouchpad: true,
+        hasMotionIMU: true,
+        hasHaptics: true,
+        hasAnalogTriggers: true,
+        hasAdaptiveTriggers: false,
         hasThumbstickClicks: true,
         buttonLabels: ["Cross (✕)", "Circle (○)", "Square (□)", "Triangle (△)"]
     )
@@ -230,7 +245,7 @@ public struct ControllerCapabilityProfile: Codable, Sendable {
         if name.contains("dualsense") || name.contains("ps5") {
             return .dualSense
         } else if name.contains("dualshock") || name.contains("ps4") {
-            return .dualSense
+            return .dualShock4
         } else if name.contains("xbox") {
             return .xbox
         } else if name.contains("switch") || name.contains("pro controller") {
@@ -239,6 +254,17 @@ public struct ControllerCapabilityProfile: Codable, Sendable {
             return .steamDeck
         }
         return .generic
+    }
+
+    public static func preset(for kind: ControllerKind) -> ControllerCapabilityProfile {
+        switch kind {
+        case .dualSense: return .dualSense
+        case .dualShock4: return .dualShock4
+        case .xbox: return .xbox
+        case .switchPro: return .switchPro
+        case .steamDeck: return .steamDeck
+        default: return .generic
+        }
     }
 }
 
@@ -296,10 +322,11 @@ public struct GamepadState: Codable, Sendable {
     public var leftStickClick: Bool
     public var rightStickClick: Bool
 
-    // Touchpad (if supported, -1.0 to 1.0)
+    // Touchpad (if supported, -1.0 to 1.0). Button click is distinct from surface contact.
     public var touchX: Double
     public var touchY: Double
     public var isTouching: Bool
+    public var touchpadButtonPressed: Bool
 
     // Motion / Gyro
     public var gyroPitch: Double
@@ -350,6 +377,7 @@ public struct GamepadState: Codable, Sendable {
         touchX: Double = 0.0,
         touchY: Double = 0.0,
         isTouching: Bool = false,
+        touchpadButtonPressed: Bool = false,
         gyroPitch: Double = 0.0,
         gyroRoll: Double = 0.0,
         gyroYaw: Double = 0.0,
@@ -392,6 +420,7 @@ public struct GamepadState: Codable, Sendable {
         self.touchX = touchX
         self.touchY = touchY
         self.isTouching = isTouching
+        self.touchpadButtonPressed = touchpadButtonPressed
         self.gyroPitch = gyroPitch
         self.gyroRoll = gyroRoll
         self.gyroYaw = gyroYaw
@@ -467,6 +496,12 @@ public final class ControllerState: @unchecked Sendable {
     public var touchpadX: Float = 0
     public var touchpadY: Float = 0
     public var touchpadActive: Bool = false
+    public var touchpadButtonPressed: Bool = false
+
+    public var buttonAValue: Float = 0
+    public var buttonBValue: Float = 0
+    public var buttonXValue: Float = 0
+    public var buttonYValue: Float = 0
     
     public var gyroX: Double = 0
     public var gyroY: Double = 0
