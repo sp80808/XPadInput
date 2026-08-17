@@ -1380,7 +1380,7 @@ Controller Hardware Calibration (Rest Center, Drift Radius, Max Reach Radius)
             ↓
 Input Processing Pipeline (Deadzones with Hysteresis, Curves: Precise/Balanced/Responsive, Smoothing)
             ↓
-Control Scheme (XPI Performance, XPI Classic, Low-Fatigue, One-Hand Left, One-Hand Right, Custom)
+Control Scheme (XPI Performance, XPI Classic, Low-Fatigue, Left-Handed, One-Hand Left, One-Hand Right, Custom)
             ↓
 Semantic Musical Actions (primaryExcitation, pitchExpression, pressureExpression, harmonyNavigate2D...)
             ↓
@@ -1392,10 +1392,13 @@ Performance Event → MIDI/MPE & Audio Synthesizer
 ### 33.1 Built-in Schemes
 1. **XPI Performance (Recommended Default)**: Balanced two-hand layout. Left thumb navigates the Harmonic Wheel; Right thumb performs Pitch Expression ($X$) and Strum Excitation ($Y$); Triggers govern Palm Mute Damping (L2) and Pressure Swell (R2); Bumpers govern Legato Technique (L1) and Ringing Sustain Latch (R1); Face buttons articulate direct chord voices or solo notes.
 2. **XPI Classic (Compatibility)**: Exact legacy XPadInput mapping layout.
-3. **Low-Fatigue Ergonomics**: Eliminates stick clicks, replaces long holds with toggles, and uses light trigger thresholds for low-strain playing.
-4. **One-Hand (Left)**: Full single-handed performance on the left side with 6-axis gyro tilt pitch expression.
-5. **One-Hand (Right)**: Full single-handed performance on the right side with right-stick expression and face button chord triggers.
-6. **Custom Schemes**: User-editable copies with full remapping, axis inversion, and conflict detection.
+3. **Low-Fatigue Ergonomics**: Eliminates stick clicks, replaces long holds with toggles, keeps octave/voicing on the D-Pad, and uses light trigger thresholds for low-strain playing.
+4. **Left-Handed Performance**: Mirrors the recommended two-hand layout so the left thumb strums and bends while the right thumb steers the harmonic wheel.
+5. **One-Hand (Left)**: Full single-handed performance on the left side with trigger excitation, bumper damping, and 6-axis gyro pitch expression.
+6. **One-Hand (Right)**: Full single-handed performance on the right side: stick steers harmony, trigger strums, face buttons play chord tones, gyro bends.
+7. **Custom Schemes**: User-editable copies with full remapping, axis inversion, digital-expression behaviour, and conflict / coverage detection.
+
+Runtime remapping is applied by `ControlSurfaceResolver`, which evaluates scheme bindings (including inversion, sensitivity, deadzone overrides, and digital ramps/latches) and projects them onto the canonical performance layout so engines always see left-stick harmony and right-stick excitation regardless of physical assignment.
 
 ### 33.2 Single Source of Truth for Control Prompts
 All UI tooltips, HUD badges, and onboarding cues query `controllerManager.controlLabel(for: .action)` to dynamically reflect active rebindings and controller hardware glyphs (DualSense $\to$ L2/R2, Xbox $\to$ LT/RT, Switch $\to$ ZL/ZR).

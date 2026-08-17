@@ -26,6 +26,9 @@ public final class ControllerManager: @unchecked Sendable {
     public var rightTriggerProcessor = TriggerProcessor()
     public var adaptiveTriggerEngine = AdaptiveTriggerEngine()
     public var smartSoloEngine = SmartSoloEngine()
+    public var surfaceResolver = ControlSurfaceResolver()
+    public let performanceState = ControllerState()
+    public private(set) var surfaceFrame = ControlSurfaceFrame()
     
     // Input Learn Mode
     public var learningAction: SemanticMusicalAction? = nil
@@ -34,6 +37,7 @@ public final class ControllerManager: @unchecked Sendable {
     // Input callbacks
     public var onStateChanged: ((ControllerState) -> Void)?
     public var onDisconnected: (() -> Void)?
+    public var onSchemeChanged: ((ControlScheme) -> Void)?
     
     private var observers: [Any] = []
     private var hapticEngine: CHHapticEngine?
@@ -60,6 +64,7 @@ public final class ControllerManager: @unchecked Sendable {
         }
         
         applySchemeToProcessors(self.activeScheme)
+        surfaceResolver.scheme = self.activeScheme
     }
     
     private func setupNotifications() {
@@ -137,11 +142,15 @@ public final class ControllerManager: @unchecked Sendable {
         self.activeScheme = scheme
         ControllerSettingsStore.shared.saveActiveSchemeId(scheme.id)
         applySchemeToProcessors(scheme)
+        surfaceResolver.scheme = scheme
+        surfaceResolver.reset()
+        refreshPerformanceSurface()
         
         // Motion enable/disable
         if let motion = connectedController?.motion {
             motion.sensorsActive = scheme.isMotionEnabled
         }
+        onSchemeChanged?(scheme)
     }
     
     public func applyHardwareCalibration(_ cal: ControllerHardwareCalibration) {
@@ -155,6 +164,8 @@ public final class ControllerManager: @unchecked Sendable {
         rightStickProcessor.profile = scheme.stickFeel.processingProfile
         leftTriggerProcessor.deadzone = scheme.triggerFeel.activationThreshold
         rightTriggerProcessor.deadzone = scheme.triggerFeel.activationThreshold
+        leftTriggerProcessor.responseCurve = scheme.triggerFeel.responseCurve
+        rightTriggerProcessor.responseCurve = scheme.triggerFeel.responseCurve
     }
     
     private func applyCalibrationToProcessors() {
@@ -244,7 +255,8 @@ public final class ControllerManager: @unchecked Sendable {
             )
 
             self.currentState = Self.gamepadState(from: state)
-            self.onStateChanged?(state)
+            self.refreshPerformanceSurface()
+            self.onStateChanged?(self.performanceState)
         }
         
         // Motion handling
@@ -262,40 +274,44 @@ public final class ControllerManager: @unchecked Sendable {
                 state.accelZ = motion.userAcceleration.z
                 state.hasMotion = true
                 self.currentState = Self.gamepadState(from: state)
-                self.onStateChanged?(state)
+                self.refreshPerformanceSurface()
+                self.onStateChanged?(self.performanceState)
             }
         }
     }
     
     /// Detects a deliberate button press or stick excursion while ignoring resting drift (<0.20).
     private func detectDeliberateInput(gamepad: GCExtendedGamepad) -> PhysicalControlInput? {
-        if gamepad.buttonA.isPressed { return .buttonSouth }
-        if gamepad.buttonB.isPressed { return .buttonEast }
-        if gamepad.buttonX.isPressed { return .buttonWest }
-        if gamepad.buttonY.isPressed { return .buttonNorth }
-        
-        if gamepad.leftShoulder.isPressed { return .leftShoulder }
-        if gamepad.rightShoulder.isPressed { return .rightShoulder }
-        if gamepad.leftTrigger.value > 0.40 { return .leftTrigger }
-        if gamepad.rightTrigger.value > 0.40 { return .rightTrigger }
-        
-        if gamepad.dpad.up.isPressed { return .dpadUp }
-        if gamepad.dpad.down.isPressed { return .dpadDown }
-        if gamepad.dpad.left.isPressed { return .dpadLeft }
-        if gamepad.dpad.right.isPressed { return .dpadRight }
-        
-        if gamepad.leftThumbstickButton?.isPressed == true { return .leftStickClick }
-        if gamepad.rightThumbstickButton?.isPressed == true { return .rightStickClick }
-        
-        if abs(gamepad.leftThumbstick.xAxis.value) > 0.55 { return .leftStickX }
-        if abs(gamepad.leftThumbstick.yAxis.value) > 0.55 { return .leftStickY }
-        if abs(gamepad.rightThumbstick.xAxis.value) > 0.55 { return .rightStickX }
-        if abs(gamepad.rightThumbstick.yAxis.value) > 0.55 { return .rightStickY }
-        
-        if gamepad.buttonOptions?.isPressed == true { return .buttonOptions }
-        if gamepad.buttonMenu.isPressed { return .buttonShare }
-        
-        return nil
+        InputLearnDetector.detect(
+            leftStickX: gamepad.leftThumbstick.xAxis.value,
+            leftStickY: gamepad.leftThumbstick.yAxis.value,
+            rightStickX: gamepad.rightThumbstick.xAxis.value,
+            rightStickY: gamepad.rightThumbstick.yAxis.value,
+            leftTrigger: gamepad.leftTrigger.value,
+            rightTrigger: gamepad.rightTrigger.value,
+            leftShoulder: gamepad.leftShoulder.isPressed,
+            rightShoulder: gamepad.rightShoulder.isPressed,
+            buttonSouth: gamepad.buttonA.isPressed,
+            buttonEast: gamepad.buttonB.isPressed,
+            buttonWest: gamepad.buttonX.isPressed,
+            buttonNorth: gamepad.buttonY.isPressed,
+            dpadUp: gamepad.dpad.up.isPressed,
+            dpadDown: gamepad.dpad.down.isPressed,
+            dpadLeft: gamepad.dpad.left.isPressed,
+            dpadRight: gamepad.dpad.right.isPressed,
+            leftStickClick: gamepad.leftThumbstickButton?.isPressed == true,
+            rightStickClick: gamepad.rightThumbstickButton?.isPressed == true,
+            options: gamepad.buttonMenu.isPressed,
+            share: gamepad.buttonOptions?.isPressed ?? false,
+            prefer2D: learningAction?.compatibilityType == .continuous2D
+        )
+    }
+
+    public func refreshPerformanceSurface(timestamp: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+        surfaceResolver.scheme = activeScheme
+        surfaceFrame = surfaceResolver.evaluate(state: controllerState, timestamp: timestamp)
+        surfaceResolver.project(frame: surfaceFrame, physical: controllerState, onto: performanceState)
+        currentState = Self.gamepadState(from: performanceState)
     }
 
     // MARK: - Dynamic Prompt Single-Source-of-Truth
@@ -360,8 +376,8 @@ public final class ControllerManager: @unchecked Sendable {
     public func injectSimulatedState(_ mutate: (ControllerState) -> Void) {
         let state = controllerState
         mutate(state)
-        currentState = Self.gamepadState(from: state)
-        onStateChanged?(state)
+        refreshPerformanceSurface()
+        onStateChanged?(performanceState)
     }
 
     public func configureForInstrumentProfile(_ profile: InstrumentProfile) {
