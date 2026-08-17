@@ -8,6 +8,16 @@ public enum ControlSurfaceFeel: String, Codable, Sendable, CaseIterable, Identif
     case reducedTravel = "Reduced Travel"
 
     public var id: String { rawValue }
+
+    /// Short enough for a four-segment Feel picker without clipping the sheet chrome.
+    public var pickerLabel: String {
+        switch self {
+        case .natural: return "Natural"
+        case .precision: return "Precision"
+        case .fastArcade: return "Fast"
+        case .reducedTravel: return "Reduced"
+        }
+    }
 }
 
 public enum AdaptiveTriggerForcePolicy: String, Codable, Sendable, CaseIterable, Identifiable {

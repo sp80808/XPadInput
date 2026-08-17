@@ -111,15 +111,15 @@ public struct HarmonicSelectionState: Sendable, Equatable {
     /// PLAY stick angle whose sector centre is `index` (north = 0, clockwise).
     public static func stickAngle(forIndex index: Int, sectorCount: Int) -> Double {
         let count = max(1, sectorCount)
-        let slice = (2.0 * .pi) / Double(count)
-        return .pi / 2.0 - Double(clampIndex(index, count: count)) * slice
+        let slice = (2.0 * Double.pi) / Double(count)
+        return Double.pi / 2.0 - Double(clampIndex(index, count: count)) * slice
     }
 
     public static func rawIndex(angle: Double, sectorCount: Int) -> Int {
         let count = max(1, sectorCount)
-        var normalised = -(angle - .pi / 2.0)
+        var normalised = -(angle - Double.pi / 2.0)
         normalised = wrap2pi(normalised)
-        let slice = (2.0 * .pi) / Double(count)
+        let slice = (2.0 * Double.pi) / Double(count)
         let centred = wrap2pi(normalised + slice / 2.0)
         return Int(centred / slice) % count
     }
@@ -143,13 +143,13 @@ public struct HarmonicSelectionState: Sendable, Equatable {
     }
 
     private func isInsideCommittedBand(angle: Double) -> Bool {
-        let slice = (2.0 * .pi) / Double(sectorCount)
+        let slice = (2.0 * Double.pi) / Double(sectorCount)
         let margin = slice * hysteresisFraction
-        var normalised = wrap2pi(-(angle - .pi / 2.0))
+        var normalised = Self.wrap2pi(-(angle - Double.pi / 2.0))
         let center = Double(committedIndex) * slice
         var delta = normalised - center
-        if delta > .pi { delta -= 2.0 * .pi }
-        if delta < -.pi { delta += 2.0 * .pi }
+        if delta > Double.pi { delta -= 2.0 * Double.pi }
+        if delta < -Double.pi { delta += 2.0 * Double.pi }
         return abs(delta) <= (slice / 2.0 + margin)
     }
 
@@ -160,8 +160,8 @@ public struct HarmonicSelectionState: Sendable, Equatable {
     }
 
     private static func wrap2pi(_ value: Double) -> Double {
-        var x = value.truncatingRemainder(dividingBy: 2.0 * .pi)
-        if x < 0 { x += 2.0 * .pi }
+        var x = value.truncatingRemainder(dividingBy: 2.0 * Double.pi)
+        if x < 0 { x += 2.0 * Double.pi }
         return x
     }
 }

@@ -241,8 +241,8 @@ public final class AdaptiveTriggerEngine: @unchecked Sendable {
 
     public static func supportsAdaptiveTriggers(_ controller: GCController?) -> Bool {
         guard let controller else { return false }
-        if #available(macOS 12.0, *) {
-            return controller.physicalInputProfile is GCDualSenseGamepad
+        if #available(macOS 12.3, *) {
+            return controller.extendedGamepad is GCDualSenseGamepad
         }
         return false
     }
@@ -359,8 +359,8 @@ public final class AdaptiveTriggerEngine: @unchecked Sendable {
         guard let controller else { return }
 
         // Dynamic inspection for DualSense Adaptive Trigger support
-        if #available(macOS 12.0, *) {
-            if let ds = controller.physicalInputProfile as? GCDualSenseGamepad {
+        if #available(macOS 12.3, *) {
+            if let ds = controller.extendedGamepad as? GCDualSenseGamepad {
                 let scale = isEnabled ? forcePolicy.strengthScale : 0
                 applyCached(command: DualSenseHardwareCommand.command(for: leftConfig, forceScale: scale),
                             previous: &lastLeftCommand,

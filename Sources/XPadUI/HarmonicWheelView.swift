@@ -33,7 +33,7 @@ struct HarmonicWheelView: View {
     
     @ViewBuilder
     private func backgroundRings(center: CGPoint, maxRadius: CGFloat) -> some View {
-        let magnitude = min(1, max(0, appState.controllerManager.controllerState.leftStickMagnitude))
+        let magnitude = min(1, max(0, appState.controllerManager.performanceState.leftStickMagnitude))
         let inRisk = appState.harmonicSelection.region == .risk
         let inRest = appState.harmonicSelection.region == .rest
 
@@ -175,7 +175,7 @@ struct HarmonicWheelView: View {
     
     @ViewBuilder
     private func stickIndicator(center: CGPoint, maxRadius: CGFloat) -> some View {
-        let state = appState.controllerManager.controllerState
+        let state = appState.controllerManager.performanceState
         let magnitude = state.leftStickMagnitude
         let angle = state.leftStickAngle
         

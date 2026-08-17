@@ -61,7 +61,7 @@ enum ControllerRemapCapture {
         var names: [String: String] = [:]
         if profile.hasRemappedElements {
             for alias in watchedAliases {
-                if let physical = profile.mappedPhysicalInputNames(forElementAlias: alias).first {
+                if let physical = profile.mappedPhysicalInputNames(forElementAlias: alias).sorted().first {
                     names[alias] = physical
                 }
             }

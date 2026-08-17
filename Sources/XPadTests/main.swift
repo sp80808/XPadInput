@@ -353,6 +353,7 @@ final class TestRunner {
 
             test("Simulated Face Button Sustains Without Retrigger") {
                 let manager = ControllerManager()
+                manager.selectControlScheme(ControlSchemePreset.xpiPerformance)
                 var engine = InstrumentPerformanceEngine(profile: .guitar)
                 let context = MusicalContext(
                     key: .d,
@@ -1439,14 +1440,22 @@ final class TestRunner {
                 assertEqual(lowFatigue.id, "xpi_low_fatigue")
                 assertEqual(lowFatigue.stickFeel, .responsive)
                 assertEqual(lowFatigue.triggerFeel, .soft)
+                assertEqual(lowFatigue.bindings[.voicingNext]?.input, .dpadRight)
+                assertEqual(lowFatigue.bindings[.soloModeToggle]?.input, .buttonCenter)
 
                 let oneHandL = ControlSchemePreset.oneHandLeft
                 assertEqual(oneHandL.bindings[.primaryExcitation]?.input, .leftTrigger)
                 assertEqual(oneHandL.bindings[.harmonyNavigate2D]?.input, .leftStick2D)
 
                 let oneHandR = ControlSchemePreset.oneHandRight
-                assertEqual(oneHandR.bindings[.primaryExcitation]?.input, .rightStickY)
-                assertEqual(oneHandR.bindings[.pitchExpression]?.input, .rightStickX)
+                assertEqual(oneHandR.bindings[.primaryExcitation]?.input, .rightTrigger)
+                assertEqual(oneHandR.bindings[.harmonyNavigate2D]?.input, .rightStick2D)
+
+                let leftHanded = ControlSchemePreset.leftHandedPerformance
+                assertEqual(leftHanded.id, "xpi_left_handed")
+                assertEqual(leftHanded.bindings[.harmonyNavigate2D]?.input, .rightStick2D)
+                assertEqual(leftHanded.bindings[.primaryExcitation]?.input, .leftStickY)
+                assertEqual(ControlSchemePreset.allBuiltIn.count, 6)
             }
 
             test("Semantic musical action categories and compatibility") {
@@ -1543,6 +1552,23 @@ final class TestRunner {
                 assertTrue(conflicts.contains { $0.severity == .critical }, "Mutually exclusive primary actions on the same control must be flagged as critical.")
             }
 
+            test("Control surface resolver remaps one-hand left trigger onto strum axis") {
+                var resolver = ControlSurfaceResolver(scheme: ControlSchemePreset.oneHandLeft)
+                let physical = ControllerState()
+                physical.leftTrigger = ProcessedTriggerState(rawValue: 0.88, calibratedValue: 0.88, value: 0.88, isPressed: true)
+                physical.leftStick = ProcessedStickState(x: 0.1, y: 0.6, radius: hypot(Float(0.1), Float(0.6)), angle: atan2(0.6, 0.1))
+                let frame = resolver.evaluate(state: physical, timestamp: 1)
+                let logical = ControllerState()
+                resolver.project(frame: frame, physical: physical, onto: logical)
+                assertTrue(logical.rightStick.y > 0.8)
+                assertTrue(abs(logical.leftStick.y - 0.6) < 0.001)
+            }
+
+            test("Input learn prefers 2D stick when both axes move together") {
+                let detected = InputLearnDetector.detect(leftStickX: 0.62, leftStickY: 0.58, prefer2D: true)
+                assertTrue(detected == .leftStick2D)
+            }
+
             test("Dynamic prompt and glyph single-source-of-truth generation") {
                 let manager = ControllerManager()
                 manager.selectControllerKind(.dualSense)
@@ -1571,6 +1597,7 @@ final class TestRunner {
                 manager.selectControlScheme(ControlSchemePreset.lowFatigue)
                 assertEqual(manager.activeScheme.id, "xpi_low_fatigue")
                 assertEqual(manager.leftTriggerProcessor.deadzone, 0.04)
+                manager.selectControlScheme(ControlSchemePreset.xpiPerformance)
             }
 
             test("ControlScheme and HardwareCalibration JSON persistence and roundtrip") {

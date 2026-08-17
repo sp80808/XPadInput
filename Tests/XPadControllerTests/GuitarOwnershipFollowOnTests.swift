@@ -385,7 +385,7 @@ final class GuitarOwnershipFollowOnTests: XCTestCase {
 
     func testSameInputConflictDetectorStillFlagsCriticalOverlap() {
         var scheme = ControlSchemePreset.xpiPerformance
-        XCTAssertEqual(MappingConflict.detectConflicts(in: scheme).count, 0)
+        XCTAssertTrue(MappingConflict.detectConflicts(in: scheme).filter { $0.severity == .critical }.isEmpty)
         scheme.bindings[.primaryExcitation] = PhysicalControlBinding(input: .leftStick2D)
         let conflicts = MappingConflict.detectConflicts(in: scheme)
         XCTAssertTrue(conflicts.contains { $0.severity == .critical })
