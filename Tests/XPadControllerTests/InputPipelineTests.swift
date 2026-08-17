@@ -252,11 +252,19 @@ final class InputPipelineTests: XCTestCase {
             rightStickProcessor: StickProcessor(profile: unsmoothedTestProfile())
         )
         var snapshot = RawAnalogSnapshot()
-        pipeline.process(snapshot: snapshot, changedPhysicalControls: [.leftStick], timestamp: 0)
+        pipeline.process(
+            snapshot: snapshot,
+            changedPhysicalControls: [.leftStick, .rightStick],
+            timestamp: 0
+        )
 
         snapshot.leftStickX = 1
         pipeline.process(snapshot: snapshot, changedPhysicalControls: [.leftStick], timestamp: 0.01)
         let leftVelocity = pipeline.leftStick.movementVelocity
+        XCTAssertGreaterThan(leftVelocity, 1)
+
+        snapshot.rightStickX = 1
+        pipeline.process(snapshot: snapshot, changedPhysicalControls: [.rightStick], timestamp: 0.02)
 
         snapshot.rightStickX = 1
         pipeline.process(snapshot: snapshot, changedPhysicalControls: [.rightStick], timestamp: 0.02)
