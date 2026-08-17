@@ -271,7 +271,7 @@ Tracked by GitHub issues #3 and #13:
 
 ### Planned compatibility work
 
-- carry genuinely high-resolution expression through live `AppState.applyExpression` callers before MIDI 2 encoding (#15);
+- carry genuinely high-resolution expression through live `AppState.applyExpression` callers before MIDI 2 encoding (#15) — **pressure/timbre live caller wired**; attack-velocity normalization remaining;
 - evaluate native MIDI 2 per-note pitch/controllers where they improve instrument techniques (#18);
 - UMP Endpoint and Function Block discovery/topology;
 - MIDI-CI MPE Profile (`M2-120-UM_v2-0-3`) negotiation using CoreMIDI `MIDICIDevice` / `MIDICIDeviceManager` (#14);

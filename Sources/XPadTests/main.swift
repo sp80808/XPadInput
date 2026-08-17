@@ -519,6 +519,66 @@ final class TestRunner {
                 assertEqual(midi.sentMessages.count, 3)
             }
 
+            test("Live expression dispatch keeps MIDI 2 MPE pressure below 7-bit quantization") {
+                let midi = MIDIEngine()
+                midi.transportProtocol = .midi2
+                let mpe = MPEManager(midiEngine: midi)
+                mpe.noteOn(note: 60, velocity: 100)
+                midi.clearMessageLog()
+
+                LiveExpressionDispatch.sendPressure(
+                    mpe: mpe,
+                    midi: midi,
+                    destination: .genericMPE,
+                    preferredPressureMode: .mpePressure,
+                    note: 60,
+                    ports: [.melody],
+                    normalizedPressure: 0.5001
+                )
+                LiveExpressionDispatch.sendPressure(
+                    mpe: mpe,
+                    midi: midi,
+                    destination: .genericMPE,
+                    preferredPressureMode: .mpePressure,
+                    note: 60,
+                    ports: [.melody],
+                    normalizedPressure: 0.5002
+                )
+
+                assertEqual(mpe.voice(for: 60)?.currentPressureNormalized, Optional(0.5002))
+                assertEqual(mpe.voice(for: 60)?.currentPressure, Optional(UInt8(64)))
+            }
+
+            test("Live expression dispatch conventional MIDI 2 path uses normalized pressure") {
+                let midi = MIDIEngine()
+                midi.transportProtocol = .midi2
+                let mpe = MPEManager(midiEngine: midi)
+                midi.clearMessageLog()
+
+                LiveExpressionDispatch.sendPressure(
+                    mpe: mpe,
+                    midi: midi,
+                    destination: .genericMIDI,
+                    preferredPressureMode: .channelPressure,
+                    note: 60,
+                    ports: [.melody],
+                    normalizedPressure: 0.5001
+                )
+                LiveExpressionDispatch.sendPressure(
+                    mpe: mpe,
+                    midi: midi,
+                    destination: .genericMIDI,
+                    preferredPressureMode: .channelPressure,
+                    note: 60,
+                    ports: [.melody],
+                    normalizedPressure: 0.5002
+                )
+
+                assertEqual(midi.sentMessages.count, 2)
+                assertEqual(midi.sentMessages[0].bytes, [0xD0, 64])
+                assertEqual(midi.sentMessages[1].port, .melody)
+            }
+
             test("Repeated MPE Attack Reuses Its Saturated Member Channel") {
                 let midi = MIDIEngine()
                 let mpe = MPEManager(midiEngine: midi)
@@ -1504,6 +1564,67 @@ final class TestRunner {
                 let processed = processor.process(rawX: 0.4, rawY: 0.4, timestamp: 1.0)
                 assertTrue(processed.calibratedX > 0.5, "Sensitivity multiplier should increase effective excursion.")
                 assertTrue(processed.calibratedY < 0.0, "Y inversion must reverse axis direction.")
+            }
+
+            test("Analog pipeline isolates stick history from digital and trigger events") {
+                let profile = InputProcessingProfile(
+                    id: "test",
+                    name: "Test",
+                    deadzone: .none,
+                    responseCurve: .linear,
+                    smoothingFactor: 1
+                )
+                var pipeline = AnalogControlPipeline(
+                    leftStickProcessor: StickProcessor(profile: profile),
+                    leftTriggerProcessor: TriggerProcessor(deadzone: 0, smoothingFactor: 1)
+                )
+                var snapshot = RawAnalogSnapshot()
+                pipeline.process(snapshot: snapshot, changedPhysicalControls: [.leftStick], timestamp: 0)
+
+                snapshot.leftStickX = 1
+                pipeline.process(snapshot: snapshot, changedPhysicalControls: [.leftStick], timestamp: 0.01)
+                let velocityAfterMove = pipeline.leftStick.movementVelocity
+                assertTrue(velocityAfterMove > 1)
+
+                pipeline.process(snapshot: snapshot, changedPhysicalControls: [], timestamp: 0.02)
+                assertEqual(pipeline.leftStick.movementVelocity, velocityAfterMove)
+
+                snapshot.leftTrigger = 1
+                pipeline.process(snapshot: snapshot, changedPhysicalControls: [.leftTrigger], timestamp: 0.03)
+                assertEqual(pipeline.leftStick.movementVelocity, velocityAfterMove)
+                assertEqual(pipeline.leftTrigger.value, 1.0)
+            }
+
+            test("Left/right swap routes physical left stick onto the musical right processor") {
+                let profile = InputProcessingProfile(
+                    id: "test",
+                    name: "Test",
+                    deadzone: .none,
+                    responseCurve: .linear,
+                    smoothingFactor: 1
+                )
+                var pipeline = AnalogControlPipeline(
+                    leftStickProcessor: StickProcessor(profile: profile),
+                    rightStickProcessor: StickProcessor(profile: profile)
+                )
+                var snapshot = RawAnalogSnapshot()
+                pipeline.process(
+                    snapshot: snapshot,
+                    changedPhysicalControls: [.leftStick],
+                    swapLeftRight: true,
+                    timestamp: 0
+                )
+                snapshot.leftStickX = 1
+                pipeline.process(
+                    snapshot: snapshot,
+                    changedPhysicalControls: [.leftStick],
+                    swapLeftRight: true,
+                    timestamp: 0.01
+                )
+
+                assertEqual(pipeline.leftStick.x, 0.0)
+                assertTrue(pipeline.rightStick.x > 0.9)
+                assertTrue(pipeline.rightStick.movementVelocity > 1)
             }
 
             test("Interactive calibration wizard step progression and capture") {

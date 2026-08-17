@@ -86,13 +86,13 @@ stick / slide / vibrato motion
 - MPE member-channel deduplication compares actual selected wire resolution so sub-14-bit bends are preserved in MIDI 2 and suppressed as redundant in MIDI 1.
 - In-process CoreMIDI virtual-source loopback test proves the 32-bit pitch word survives the macOS transport path to a `._2_0` input port.
 
-### 2B — Pressure and timbre — state merged (PR #20), live caller wiring next
+### 2B — Pressure and timbre — live caller wired
 
 Normalized models and builders added:
 - High-resolution `MIDIEngine` / `MPEManager` normalized builders and member-voice state.
 - Protocol-resolution-aware deduplication for Channel/Poly Pressure and CC74.
 - Compatibility `UInt8` APIs preserved as wrappers.
-- Next step: update `AppState.applyExpression` live callers to pass normalized `frame.pressure` and `frame.timbre`.
+- `AppState.applyExpression` and `applyLeadTimbre` now dispatch normalized `frame.pressure.smoothed` and `frame.timbre` through `LiveExpressionDispatch`, so MIDI 2 keeps sub-7-bit changes that a `UInt8` caller would collapse.
 
 ### 2C — Attack velocity
 
@@ -226,7 +226,8 @@ Primary sources used for this plan:
 
 1. Keep macOS CI green for every transport change.
 2. Finish the direct high-resolution pitch slice without changing MIDI 1 byte behaviour.
-3. Wire normalized pressure and timbre into the live caller path.
+3. Wire normalized pressure and timbre into the live caller path. **Done** (`LiveExpressionDispatch` + `AppState.applyExpression`).
 4. Perform #13 against at least one genuinely MIDI-2-aware destination.
 5. Only then prototype MIDI 2 per-note messages or UMP Endpoint/MIDI-CI topology.
 6. Prefer the standardized MPE Profile as the first CI feature because it solves an existing XPI configuration problem.
+7. Refactor attack velocity so MIDI 2 can use 16-bit values without expanding a 7-bit source (#15 remaining).
