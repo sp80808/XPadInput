@@ -185,6 +185,7 @@ final class ControlSurfaceResolverTests: XCTestCase {
     func testManagerProjectsInjectedStateThroughActiveScheme() {
         let manager = ControllerManager()
         manager.selectControlScheme(ControlSchemePreset.oneHandLeft)
+        defer { manager.selectControlScheme(ControlSchemePreset.xpiPerformance) }
         manager.injectSimulatedState { state in
             state.leftTrigger = ProcessedTriggerState(rawValue: 0.9, calibratedValue: 0.9, value: 0.9, isPressed: true)
         }

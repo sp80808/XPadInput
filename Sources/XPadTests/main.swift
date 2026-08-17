@@ -353,6 +353,7 @@ final class TestRunner {
 
             test("Simulated Face Button Sustains Without Retrigger") {
                 let manager = ControllerManager()
+                manager.selectControlScheme(ControlSchemePreset.xpiPerformance)
                 var engine = InstrumentPerformanceEngine(profile: .guitar)
                 let context = MusicalContext(
                     key: .d,
@@ -1595,6 +1596,7 @@ final class TestRunner {
                 assertEqual(manager.activeScheme.id, "xpi_low_fatigue")
                 assertEqual(manager.leftStickProcessor.profile.id, "fast")
                 assertEqual(manager.leftTriggerProcessor.deadzone, 0.04)
+                manager.selectControlScheme(ControlSchemePreset.xpiPerformance)
             }
 
             test("ControlScheme and HardwareCalibration JSON persistence and roundtrip") {
