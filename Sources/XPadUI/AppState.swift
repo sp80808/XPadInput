@@ -24,6 +24,8 @@ public final class AppState: @unchecked Sendable {
     public var ocdsManager = OCDSManager.shared
     public var sequencer = Sequencer()
     public var isSoloModeActive: Bool = false
+    public var performanceOctaveOffset: Int = 0
+    public var voicingInversion: Int = 0
 
     public var currentKey: PitchClass = .d
     public var currentScale: Scale = .naturalMinor
@@ -101,6 +103,9 @@ public final class AppState: @unchecked Sendable {
             self?.handleControllerInput(state)
         }
         controllerManager.onDisconnected = { [weak self] in
+            self?.panic()
+        }
+        controllerManager.onSchemeChanged = { [weak self] _ in
             self?.panic()
         }
     }
@@ -212,12 +217,15 @@ public final class AppState: @unchecked Sendable {
             currentNote: currentNote ?? activeNotes.max(),
             chromaticMode: expressionSettings.chromaticMode,
             pitchAssist: expressionSettings.pitchAssist,
-            registerOctave: instrumentProfile.family == .bass ? 2 : 3
+            registerOctave: (instrumentProfile.family == .bass ? 2 : 3) + performanceOctaveOffset
         )
     }
 
     private func handleControllerInput(_ state: ControllerState) {
         let now = ProcessInfo.processInfo.systemUptime
+        let surface = controllerManager.surfaceFrame
+        applySurfaceActions(surface)
+        if surface.didRise(.panic) { return }
         handleChordSelection(state)
 
         let drumVelocity = UInt8(clamping: 72 + Int(Double(state.rightTrigger.value) * 48))
@@ -269,6 +277,49 @@ public final class AppState: @unchecked Sendable {
         lastInputTime = now
     }
 
+    private func applySurfaceActions(_ frame: ControlSurfaceFrame) {
+        if frame.didRise(.octaveUp) {
+            performanceOctaveOffset = min(2, performanceOctaveOffset + 1)
+        }
+        if frame.didRise(.octaveDown) {
+            performanceOctaveOffset = max(-2, performanceOctaveOffset - 1)
+        }
+        if frame.didRise(.voicingNext) {
+            cycleVoicing(by: 1)
+        }
+        if frame.didRise(.voicingPrevious) {
+            cycleVoicing(by: -1)
+        }
+        if frame.didRise(.soloModeToggle) {
+            isSoloModeActive.toggle()
+        }
+        if frame.didRise(.duoModeToggle) {
+            setDuoPerformanceMode(
+                duoPerformanceMode == .instrumentOnly ? .drumsAndInstrument : .instrumentOnly
+            )
+        }
+        if frame.didRise(.panic) {
+            panic()
+            return
+        }
+        if frame.didRise(.metronomeToggle) {
+            metronomeEnabled.toggle()
+        }
+    }
+
+    private func cycleVoicing(by delta: Int) {
+        guard var chord = currentChord else { return }
+        let toneCount = max(1, chord.quality.intervals.count)
+        let next = (chord.inversion + delta) % toneCount
+        chord.inversion = next < 0 ? next + toneCount : next
+        voicingInversion = chord.inversion
+        currentChord = chord
+        if selectedChordIndex < diatonicChords.count {
+            diatonicChords[selectedChordIndex].inversion = chord.inversion
+        }
+        previousVoicing = nil
+    }
+
     private func handleChordSelection(_ state: ControllerState) {
         guard state.leftStickMagnitude > 0.3 else { return }
 
@@ -292,7 +343,8 @@ public final class AppState: @unchecked Sendable {
         if index != selectedChordIndex {
             let old = currentChord ?? diatonicChords[selectedChordIndex]
             selectedChordIndex = index
-            let new = diatonicChords[index]
+            var new = diatonicChords[index]
+            new.inversion = voicingInversion
             currentChord = new
             retargetHeldChordTones()
             multiJamManager.updateSharedHarmony(key: currentKey, scale: currentScale, chord: new)
@@ -648,7 +700,7 @@ public final class AppState: @unchecked Sendable {
         if direction == .up {
             notes.reverse()
         }
-        let technique: MusicalTechnique = controllerManager.controllerState.leftTrigger.value > 0.35 ? .palmMute : .normal
+        let technique: MusicalTechnique = controllerManager.performanceState.leftTrigger.value > 0.35 ? .palmMute : .normal
         let strumDelay = 0.012
         let generation = strumGeneration
         for (i, note) in notes.enumerated() {
@@ -828,7 +880,7 @@ public final class AppState: @unchecked Sendable {
     }
 
     public var hudLabels: GestureHUDLabels {
-        instrumentProfile.defaultGestureMapping
+        controllerManager.activeScheme.overlayHUDLabels(instrumentProfile.defaultGestureMapping)
     }
 
     public var activeTechniqueLabel: String? {

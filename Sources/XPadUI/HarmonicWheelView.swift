@@ -140,7 +140,7 @@ struct HarmonicWheelView: View {
     
     @ViewBuilder
     private func stickIndicator(center: CGPoint, maxRadius: CGFloat) -> some View {
-        let state = appState.controllerManager.controllerState
+        let state = appState.controllerManager.performanceState
         let magnitude = state.leftStickMagnitude
         let angle = state.leftStickAngle
         
