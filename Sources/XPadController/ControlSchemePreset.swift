@@ -52,7 +52,7 @@ public enum ControlSchemePreset {
             name: "XPI Performance (Recommended)",
             description: "Balanced two-hand layout with complementary roles: Left thumb steers harmony, Right thumb drives strumming & pitch bends, Triggers shape pressure & damping.",
             isBuiltIn: true,
-            version: 1,
+            version: 2,
             bindings: bindings,
             stickFeel: .balanced,
             triggerFeel: .linear,
@@ -128,21 +128,24 @@ public enum ControlSchemePreset {
         bindings[.voiceDegree5] = .defaultBinding(for: .buttonNorth)
         bindings[.voiceDegree7] = .defaultBinding(for: .buttonEast)
         
-        // D-Pad handles mode switching instead of stick clicks
+        // D-Pad: Octave & Inversion stay musical. Mode switches move off stick-clicks
+        // onto the centre pad so long sessions never require L3/R3.
         bindings[.octaveUp] = .defaultBinding(for: .dpadUp)
         bindings[.octaveDown] = .defaultBinding(for: .dpadDown)
-        bindings[.soloModeToggle] = .defaultBinding(for: .dpadRight)
-        bindings[.duoModeToggle] = .defaultBinding(for: .dpadLeft)
+        bindings[.voicingNext] = .defaultBinding(for: .dpadRight)
+        bindings[.voicingPrevious] = .defaultBinding(for: .dpadLeft)
+        
+        bindings[.soloModeToggle] = .defaultBinding(for: .buttonCenter)
+        bindings[.duoModeToggle] = .defaultBinding(for: .buttonShare)
         
         bindings[.panic] = .defaultBinding(for: .buttonOptions)
-        bindings[.metronomeToggle] = .defaultBinding(for: .buttonShare)
 
         return ControlScheme(
             id: "xpi_low_fatigue",
             name: "Low-Fatigue Ergonomics",
-            description: "Minimizes finger strain, eliminates thumbstick clicks, uses soft trigger engagement, and replaces long holds with toggles.",
+            description: "Minimizes finger strain, eliminates thumbstick clicks, uses soft trigger engagement, keeps voicing on the D-Pad, and replaces long holds with toggles.",
             isBuiltIn: true,
-            version: 1,
+            version: 2,
             bindings: bindings,
             stickFeel: .responsive,
             triggerFeel: .soft,
@@ -158,11 +161,12 @@ public enum ControlSchemePreset {
     public static var oneHandLeft: ControlScheme {
         var bindings: [SemanticMusicalAction: PhysicalControlBinding] = [:]
         
-        // Left Thumb navigates harmony; Radial flick or click excites sound
+        // Left Thumb navigates harmony; trigger flick excites sound
         bindings[.harmonyNavigate2D] = .defaultBinding(for: .leftStick2D)
         bindings[.primaryExcitation] = .defaultBinding(for: .leftTrigger)
-        bindings[.pressureExpression] = .defaultBinding(for: .leftShoulder)
-        bindings[.motionExpression] = .defaultBinding(for: .motionPitch)
+        bindings[.dampingExpression] = .defaultBinding(for: .leftShoulder)
+        bindings[.pitchExpression] = .defaultBinding(for: .motionPitch)
+        bindings[.motionExpression] = .defaultBinding(for: .motionRoll)
         
         // D-Pad handles pitch octave & direct root/third triggers
         bindings[.octaveUp] = .defaultBinding(for: .dpadUp)
@@ -170,15 +174,15 @@ public enum ControlSchemePreset {
         bindings[.voiceDegree1] = .defaultBinding(for: .dpadLeft)
         bindings[.voiceDegree3] = .defaultBinding(for: .dpadRight)
         
-        bindings[.sustainLatch] = .defaultBinding(for: .leftStickClick)
+        bindings[.sustainLatch] = PhysicalControlBinding(input: .leftStickClick, digitalBehavior: .stepped)
         bindings[.panic] = .defaultBinding(for: .buttonShare)
         
         return ControlScheme(
             id: "xpi_one_hand_left",
             name: "One-Hand (Left)",
-            description: "Complete single-handed performance layout on the left side of the controller with gyro pitch expression.",
+            description: "Complete single-handed performance on the left side: stick steers harmony, trigger strums, bumper damps, gyro bends.",
             isBuiltIn: true,
-            version: 1,
+            version: 2,
             bindings: bindings,
             stickFeel: .responsive,
             triggerFeel: .soft,
@@ -194,11 +198,12 @@ public enum ControlSchemePreset {
     public static var oneHandRight: ControlScheme {
         var bindings: [SemanticMusicalAction: PhysicalControlBinding] = [:]
         
-        bindings[.primaryExcitation] = .defaultBinding(for: .rightStickY)
-        bindings[.pitchExpression] = .defaultBinding(for: .rightStickX)
-        bindings[.pressureExpression] = .defaultBinding(for: .rightTrigger)
-        bindings[.sustainLatch] = .defaultBinding(for: .rightShoulder)
-        bindings[.motionExpression] = .defaultBinding(for: .motionPitch)
+        bindings[.harmonyNavigate2D] = .defaultBinding(for: .rightStick2D)
+        bindings[.primaryExcitation] = .defaultBinding(for: .rightTrigger)
+        bindings[.pitchExpression] = .defaultBinding(for: .motionPitch)
+        bindings[.pressureExpression] = PhysicalControlBinding(input: .rightShoulder, digitalBehavior: .linearRamp)
+        bindings[.sustainLatch] = PhysicalControlBinding(input: .rightStickClick, digitalBehavior: .stepped)
+        bindings[.motionExpression] = .defaultBinding(for: .motionRoll)
         
         // Face buttons handle direct chord degrees
         bindings[.voiceDegree1] = .defaultBinding(for: .buttonSouth)
@@ -206,15 +211,14 @@ public enum ControlSchemePreset {
         bindings[.voiceDegree5] = .defaultBinding(for: .buttonNorth)
         bindings[.voiceDegree7] = .defaultBinding(for: .buttonEast)
         
-        bindings[.soloModeToggle] = .defaultBinding(for: .rightStickClick)
         bindings[.panic] = .defaultBinding(for: .buttonOptions)
         
         return ControlScheme(
             id: "xpi_one_hand_right",
             name: "One-Hand (Right)",
-            description: "Complete single-handed performance layout on the right side with full right-stick expression and face button chords.",
+            description: "Complete single-handed performance on the right side: stick steers harmony, trigger strums, face buttons play chord tones, gyro bends.",
             isBuiltIn: true,
-            version: 1,
+            version: 2,
             bindings: bindings,
             stickFeel: .responsive,
             triggerFeel: .soft,
@@ -224,8 +228,57 @@ public enum ControlSchemePreset {
         )
     }
 
+    // MARK: - 6. Left-Handed Performance
+    
+    /// Mirrors the recommended two-hand layout so the left thumb strums and the right thumb steers harmony.
+    public static var leftHandedPerformance: ControlScheme {
+        var bindings: [SemanticMusicalAction: PhysicalControlBinding] = [:]
+        
+        bindings[.harmonyNavigate2D] = .defaultBinding(for: .rightStick2D)
+        bindings[.primaryExcitation] = .defaultBinding(for: .leftStickY)
+        bindings[.pitchExpression] = .defaultBinding(for: .leftStickX)
+        
+        bindings[.dampingExpression] = .defaultBinding(for: .rightTrigger)
+        bindings[.pressureExpression] = .defaultBinding(for: .leftTrigger)
+        
+        bindings[.techniqueModifier] = .defaultBinding(for: .rightShoulder)
+        bindings[.sustainLatch] = .defaultBinding(for: .leftShoulder)
+        
+        bindings[.voiceDegree1] = .defaultBinding(for: .buttonSouth)
+        bindings[.voiceDegree3] = .defaultBinding(for: .buttonWest)
+        bindings[.voiceDegree5] = .defaultBinding(for: .buttonNorth)
+        bindings[.voiceDegree7] = .defaultBinding(for: .buttonEast)
+        
+        bindings[.octaveUp] = .defaultBinding(for: .dpadUp)
+        bindings[.octaveDown] = .defaultBinding(for: .dpadDown)
+        bindings[.voicingNext] = .defaultBinding(for: .dpadRight)
+        bindings[.voicingPrevious] = .defaultBinding(for: .dpadLeft)
+        
+        bindings[.soloModeToggle] = .defaultBinding(for: .leftStickClick)
+        bindings[.duoModeToggle] = .defaultBinding(for: .rightStickClick)
+        
+        bindings[.motionExpression] = .defaultBinding(for: .motionPitch)
+        bindings[.timbreExpression] = .defaultBinding(for: .touchpad2D)
+        bindings[.panic] = .defaultBinding(for: .buttonOptions)
+        bindings[.metronomeToggle] = .defaultBinding(for: .buttonShare)
+        
+        return ControlScheme(
+            id: "xpi_left_handed",
+            name: "Left-Handed Performance",
+            description: "Mirrored two-hand layout: Right thumb steers the harmonic wheel, Left thumb strums and bends. Triggers and bumpers are swapped to match.",
+            isBuiltIn: true,
+            version: 1,
+            bindings: bindings,
+            stickFeel: .balanced,
+            triggerFeel: .linear,
+            haptics: .normal,
+            isMotionEnabled: true,
+            isLeftRightSwapped: false
+        )
+    }
+
     /// All factory built-in schemes.
     public static var allBuiltIn: [ControlScheme] {
-        [xpiPerformance, xpiClassic, lowFatigue, oneHandLeft, oneHandRight]
+        [xpiPerformance, xpiClassic, lowFatigue, leftHandedPerformance, oneHandLeft, oneHandRight]
     }
 }

@@ -155,6 +155,7 @@ final class ControllerTests: XCTestCase {
     @MainActor
     func testControllerManagerSimulatedState() {
         let manager = ControllerManager()
+        manager.selectControlScheme(ControlSchemePreset.xpiPerformance)
         XCTAssertTrue(manager.controllerKind == .simulated || manager.isConnected)
 
         var callbackTriggered = false

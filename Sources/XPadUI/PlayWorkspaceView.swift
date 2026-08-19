@@ -170,14 +170,14 @@ public struct PlayView: View {
     
     private func auditionChord(_ chord: Chord) {
         let notes = chord.voicedNotes(baseOctave: 3)
-        for note in notes {
-            AudioEngine.shared.noteOn(note: note.midiNumber, velocity: 95)
-            MIDIManager.shared.sendNoteOn(port: .chords, channel: 0, note: note.midiNumber, velocity: 95)
+        let midiNotes = notes.map(\.midiNumber)
+        for note in midiNotes {
+            AudioEngine.shared.noteOn(note: note, velocity: 95)
         }
+        appState.sendAuditionNotes(midiNotes, port: .chords, velocity: 95, duration: 0.9)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
-            for note in notes {
-                AudioEngine.shared.noteOff(note: note.midiNumber)
-                MIDIManager.shared.sendNoteOff(port: .chords, channel: 0, note: note.midiNumber)
+            for note in midiNotes {
+                AudioEngine.shared.noteOff(note: note)
             }
         }
     }
