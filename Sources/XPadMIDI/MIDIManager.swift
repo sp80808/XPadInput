@@ -253,7 +253,11 @@ public final class MIDIEngine: @unchecked Sendable {
         var packetPtr = UnsafeMutablePointer(mutating: eventList)
             .pointer(to: \.packet)!
         for _ in 0..<numPackets {
-            let count = min(Int(packetPtr.pointee.wordCount), wordCapacity)
+            let count = Int(packetPtr.pointee.wordCount)
+            // MIDIEventPacketNext advances using the packet's stored wordCount,
+            // so a list whose count exceeds the fixed word storage cannot be
+            // traversed safely.
+            guard count <= wordCapacity else { return }
             if count > 0 {
                 let words = packetPtr.pointer(to: \.words)!.withMemoryRebound(
                     to: UInt32.self,
