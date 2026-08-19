@@ -17,9 +17,16 @@ public struct ContentView: View {
             Divider()
                 .background(XTheme.border)
             
-            // Unified Main Play & Chord Building Stage
-            PlayView(onOpenSettings: { isShowingSettings = true })
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Play is the launch workspace. Practice is swapped in only after
+            // an explicit request (View > Show Practice) so it never occupies
+            // first-launch screenspace.
+            if appState.isPracticeRequested {
+                PracticeWorkspaceView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                PlayView(onOpenSettings: { isShowingSettings = true })
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
             
             Divider()
                 .background(XTheme.border)

@@ -29,6 +29,12 @@ struct XPadInputApp: App {
                 Toggle("Enable Virtual MIDI", isOn: $appState.midiEngine.virtualMIDIEnabled)
                     .keyboardShortcut("m", modifiers: [.command, .shift])
             }
+            CommandMenu("View") {
+                Button(appState.isPracticeRequested ? "Exit Practice" : "Show Practice") {
+                    appState.togglePractice()
+                }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+            }
             CommandMenu("Controller") {
                 Button("Refresh Controllers") {
                     appState.controllerManager.scanForControllers()

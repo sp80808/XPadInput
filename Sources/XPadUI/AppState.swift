@@ -6,6 +6,7 @@ import XPadController
 import XPadMIDI
 import XPadAudio
 import XPadSequencer
+import XPadPractice
 
 /// Central application state coordinating all engines.
 @Observable
@@ -24,6 +25,8 @@ public final class AppState: @unchecked Sendable {
     public var smartSoloEngine = SmartSoloEngine()
     public var ocdsManager = OCDSManager.shared
     public var sequencer = Sequencer()
+    public var practiceEngine = PracticeEngine()
+    public var progressTracker = ProgressTracker.shared
     public var isSoloModeActive: Bool = false
     public var performanceOctaveOffset: Int = 0
     public var voicingInversion: Int = 0
@@ -48,6 +51,31 @@ public final class AppState: @unchecked Sendable {
 
     public var selectedWorkspace: Workspace = .play
     public var showDiagnostics: Bool = false
+
+    /// Practice is opt-in: it is never the launch workspace and does not occupy
+    /// persistent chrome until the user explicitly requests it.
+    public var isPracticeRequested: Bool {
+        selectedWorkspace == .practice
+    }
+
+    public func requestPractice() {
+        selectedWorkspace = .practice
+    }
+
+    public func dismissPractice() {
+        if practiceEngine.isPracticeActive {
+            practiceEngine.stopPractice()
+        }
+        selectedWorkspace = .play
+    }
+
+    public func togglePractice() {
+        if isPracticeRequested {
+            dismissPractice()
+        } else {
+            requestPractice()
+        }
+    }
 
     public var instrumentProfile: InstrumentProfile = .guitar
     public var destinationProfile: DestinationCapabilityProfile = .internalSynth
@@ -473,6 +501,9 @@ public final class AppState: @unchecked Sendable {
             retargetHeldChordTones()
             multiJamManager.updateSharedHarmony(key: currentKey, scale: currentScale, chord: new)
             _ = smartSoloEngine.handleChordChange(oldChord: old, newChord: new, context: musicalContext())
+            if selectedWorkspace == .practice && practiceEngine.isPracticeActive {
+                practiceEngine.evaluateChordInput(new)
+            }
         }
     }
 
@@ -599,30 +630,32 @@ public final class AppState: @unchecked Sendable {
             )
         }
 
-        let pressure = frame.pressure.midiValue
-        audioEngine.setPressure(for: lead.midiNote, pressure: frame.pressure.smoothed)
+        let pressure = frame.pressure.smoothed
+        audioEngine.setPressure(for: lead.midiNote, pressure: pressure)
         if destinationProfile.supportsMPE {
-            mpeManager.setPressure(for: lead.midiNote, pressure: pressure)
+            mpeManager.setPressure(for: lead.midiNote, normalizedPressure: pressure)
         } else {
+            let pressure7 = UInt8(min(127, Int(pressure * 127)))
             for port in conventionalPorts {
                 switch destinationProfile.resolvedPressureMode(preferred: instrumentProfile.pressureMode).mode {
                 case .mpePressure, .channelPressure:
-                    midiEngine.sendChannelPressure(port: port, channel: midiChannel(for: port), pressure: pressure)
+                    midiEngine.sendChannelPressure(port: port, channel: midiChannel(for: port), pressure: pressure7)
                 case .polyPressure:
-                    midiEngine.sendPolyPressure(port: port, channel: midiChannel(for: port), note: lead.midiNote, pressure: pressure)
+                    midiEngine.sendPolyPressure(port: port, channel: midiChannel(for: port), note: lead.midiNote, pressure: pressure7)
                 case .cc11:
-                    midiEngine.sendCC(port: port, channel: midiChannel(for: port), controller: 11, value: pressure)
+                    midiEngine.sendCC(port: port, channel: midiChannel(for: port), controller: 11, value: pressure7)
                 }
             }
         }
 
-        let timbre = UInt8(min(127, Int(frame.timbre * 127)))
-        audioEngine.setTimbre(for: lead.midiNote, timbre: frame.timbre)
+        let timbre = frame.timbre
+        audioEngine.setTimbre(for: lead.midiNote, timbre: timbre)
         if destinationProfile.supportsMPE {
-            mpeManager.setTimbre(for: lead.midiNote, value: timbre)
+            mpeManager.setTimbre(for: lead.midiNote, normalizedValue: timbre)
         } else if destinationProfile.supportsCC74 {
+            let timbre7 = UInt8(min(127, Int(timbre * 127)))
             for port in conventionalPorts {
-                midiEngine.sendTimbreCC74(port: port, channel: midiChannel(for: port), value: timbre)
+                midiEngine.sendTimbreCC74(port: port, channel: midiChannel(for: port), value: timbre7)
             }
         }
 
@@ -1033,7 +1066,10 @@ public final class AppState: @unchecked Sendable {
     }
 
     public var contextualHint: String? {
-        lastFrame?.hint ?? lastHint
+        if selectedWorkspace == .practice {
+            return practiceEngine.feedbackMessage.isEmpty ? nil : practiceEngine.feedbackMessage
+        }
+        return lastFrame?.hint ?? lastHint
     }
 }
 
@@ -1077,8 +1113,15 @@ public enum Workspace: String, CaseIterable, Identifiable {
     case sequence = "Sequence"
     case map = "Map"
     case library = "Library"
+    case practice = "Practice"
 
     public var id: String { rawValue }
+
+    /// Workspaces allowed in persistent chrome. Practice is omitted so first
+    /// launch does not spend screenspace on an unrequested learning mode.
+    public static var persistentCases: [Workspace] {
+        allCases.filter { $0 != .practice }
+    }
 
     public var icon: String {
         switch self {
@@ -1087,6 +1130,7 @@ public enum Workspace: String, CaseIterable, Identifiable {
         case .sequence: return "rectangle.3.group.fill"
         case .map: return "slider.horizontal.3"
         case .library: return "books.vertical.fill"
+        case .practice: return "graduationcap.fill"
         }
     }
 }

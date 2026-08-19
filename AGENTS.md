@@ -34,6 +34,11 @@ Sources/
 │   ├── ModulationEngine.swift
 │   └── Progression.swift
 │
+├── XPadPractice/      # Practice mode for chord progression learning
+│   ├── PracticeLesson.swift
+│   ├── PracticeEngine.swift
+│   └── ProgressTracker.swift
+│
 ├── XPadController/    # GameController hardware abstraction & gesture DSP
 │   ├── GamepadState.swift
 │   ├── VirtualStrummer.swift
@@ -52,10 +57,11 @@ Sources/
 ├── XPadSequencer/     # Tick-based 960 PPQN multi-track timeline engine
 │   └── Sequencer.swift
 │
-├── XPadUI/            # Native SwiftUI 5-workspace interface & visualizers
+├── XPadUI/            # Native SwiftUI 6-workspace interface & visualizers
 │   ├── MainAppView.swift
 │   ├── TransportBarView.swift
 │   ├── PlayWorkspaceView.swift
+│   ├── PracticeWorkspaceView.swift
 │   ├── HarmonyWorkspaceView.swift
 │   ├── SequenceWorkspaceView.swift
 │   ├── MapWorkspaceView.swift
@@ -74,6 +80,7 @@ Sources/
 - **No Third-Party Dependencies**: Do not introduce CocoaPods, Carthage, or third-party SPM packages unless explicitly requested. Use native Apple APIs (`GameController`, `CoreMIDI`, `AVFAudio`).
 - **Clean Separation of Concerns**:
   - `XPadCore` and `XPadTheory` must remain deterministic, pure Swift models with zero audio or UI dependencies.
+  - `XPadPractice` depends only on `XPadCore` and `XPadTheory` to maintain theory/practice separation from UI and audio concerns.
   - `XPadMIDI` and `XPadAudio` are isolated from UI state and communicate via thread-safe callbacks or Swift Concurrency.
   - UI components reside strictly in `XPadUI`.
 - **Concurrency & MainActor**:
@@ -92,6 +99,7 @@ Sources/
 Every module is accompanied by an exhaustive test suite under `Tests/`:
 - `XPadCoreTests`: Tests pitch class math, enharmonics, intervals, note frequencies, scale quantization, and chord voicings.
 - `XPadTheoryTests`: Tests harmonic wheels, polar lookups, SATB/smooth voice leading, suggestions, modulations, and progressions.
+- `XPadPracticeTests`: Tests practice lesson creation, chord evaluation, timing accuracy, and progress tracking.
 - `XPadControllerTests`: Tests deadzones, strum velocity, direction heuristics, rhythm compass polar sectors, and gesture capture.
 - `XPadMIDITests`: Tests virtual port lifecycles, MPE multi-channel distribution, and SMF binary encoding.
 - `XPadAudioTests`: Tests synth preset configurations and ADSR state machine transitions.
@@ -101,6 +109,8 @@ Every module is accompanied by an exhaustive test suite under `Tests/`:
 ```bash
 swift test
 ```
+
+**Note**: Tests require XCTest which may not be available in all build environments. Use `swift build` for compilation verification.
 
 ### Building the Project
 ```bash
