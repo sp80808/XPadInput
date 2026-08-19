@@ -53,10 +53,11 @@ public struct MPEVoice: Equatable, Sendable {
     }
 }
 
-/// Deterministic lower-zone MPE voice allocation and expression lifecycle.
+/// Deterministic MPE voice allocation and expression lifecycle.
 public final class MPEManager: @unchecked Sendable {
     private let midiEngine: MIDIEngine
-    private let memberChannels: [UInt8] = Array(1...14)
+    private var zoneLayout = MPEZoneLayout.lowerFourteen
+    private var memberChannels: [UInt8]
     private var activeVoices: [UInt8: MPEVoice] = [:]
     private var nextChannelIndex = 0
     private var configuredBendRangeSemitones: Double
@@ -68,6 +69,27 @@ public final class MPEManager: @unchecked Sendable {
     ) {
         self.midiEngine = midiEngine
         self.configuredBendRangeSemitones = max(1, bendRangeSemitones)
+        self.memberChannels = zoneLayout.memberChannels
+    }
+
+    public var currentZoneLayout: MPEZoneLayout {
+        lock.lock()
+        let value = zoneLayout
+        lock.unlock()
+        return value
+    }
+
+    /// Rebuilds member-channel allocation to match a DAW host zone. Callers must
+    /// silence notes first; this resets the round-robin pointer.
+    public func applyZoneLayout(_ layout: MPEZoneLayout, sendConfiguration: Bool = true) {
+        lock.lock()
+        zoneLayout = layout
+        memberChannels = layout.memberChannels
+        nextChannelIndex = 0
+        lock.unlock()
+        if sendConfiguration {
+            sendMPEZoneConfiguration()
+        }
     }
 
     public convenience init(
@@ -113,12 +135,18 @@ public final class MPEManager: @unchecked Sendable {
         activeVoice(for: note)
     }
 
-    /// Initializes a lower MPE zone (master Ch 1, member Ch 2...15) and bend range.
+    /// Initializes the active MPE zone (lower: master Ch 1; upper: master Ch 16).
     public func sendMPEZoneConfiguration() {
-        midiEngine.sendCC(port: .mpe, channel: 0, controller: 101, value: 0)
-        midiEngine.sendCC(port: .mpe, channel: 0, controller: 100, value: 6)
-        midiEngine.sendCC(port: .mpe, channel: 0, controller: 6, value: 14)
-        resetRPN(on: 0)
+        lock.lock()
+        let layout = zoneLayout
+        lock.unlock()
+
+        let master = layout.masterChannel
+        let members = UInt8(layout.memberCount)
+        midiEngine.sendCC(port: .mpe, channel: master, controller: 101, value: 0)
+        midiEngine.sendCC(port: .mpe, channel: master, controller: 100, value: 6)
+        midiEngine.sendCC(port: .mpe, channel: master, controller: 6, value: members)
+        resetRPN(on: master)
         sendPitchBendRangeConfiguration()
     }
 
@@ -126,12 +154,13 @@ public final class MPEManager: @unchecked Sendable {
     public func sendPitchBendRangeConfiguration() {
         lock.lock()
         let range = configuredBendRangeSemitones
+        let channels = memberChannels
         lock.unlock()
 
         let semitones = UInt8(max(1, min(96, Int(range.rounded(.down)))))
         let cents = UInt8(max(0, min(99, Int(((range - floor(range)) * 100).rounded()))))
 
-        for channel in memberChannels {
+        for channel in channels {
             midiEngine.sendCC(port: .mpe, channel: channel, controller: 101, value: 0)
             midiEngine.sendCC(port: .mpe, channel: channel, controller: 100, value: 0)
             midiEngine.sendCC(port: .mpe, channel: channel, controller: 6, value: semitones)
@@ -382,6 +411,7 @@ public final class MPEManager: @unchecked Sendable {
     public func stopAllNotes() {
         lock.lock()
         let voices = activeVoices.values.sorted { $0.channel < $1.channel }
+        let channels = memberChannels
         activeVoices.removeAll()
         nextChannelIndex = 0
         lock.unlock()
@@ -392,7 +422,7 @@ public final class MPEManager: @unchecked Sendable {
 
         // Tracked Note Offs are the musical path; channel mode messages are the
         // safety net for a DAW that attached late or lost an earlier packet.
-        for channel in memberChannels {
+        for channel in channels {
             midiEngine.sendAllNotesOff(port: .mpe, channel: channel)
         }
     }

@@ -12,6 +12,7 @@ public struct ControlSchemeSettingsView: View {
     @State private var isShowingCalibrationWizard = false
     @State private var learningTargetAction: SemanticMusicalAction? = nil
     @State private var conflictList: [MappingConflict] = []
+    @State private var coverageIssues: [SchemeCoverageIssue] = []
     @State private var customSchemeName: String = ""
     @State private var isCreatingCustom = false
     
@@ -257,12 +258,12 @@ public struct ControlSchemeSettingsView: View {
             }
             Spacer()
             
-            if !conflictList.isEmpty {
+            if !conflictList.isEmpty || !coverageIssues.isEmpty {
                 HStack(spacing: 4) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 10))
                         .foregroundStyle(XTheme.warning)
-                    Text("\(conflictList.count) Mapping Warning\(conflictList.count > 1 ? "s" : "")")
+                    Text(warningSummary)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(XTheme.warning)
                 }
@@ -286,7 +287,7 @@ public struct ControlSchemeSettingsView: View {
                     ))
                     .font(.system(size: 13))
                     
-                    Text("Reverses thumbstick and trigger tasks (Left hand drives strumming & bends, Right hand steers harmony). Ideal for left-handed musicians.")
+                    Text("Reverses thumbstick and trigger tasks at the hardware layer (Left hand drives strumming & bends, Right hand steers harmony). For a fully remappable mirror, choose the Left-Handed Performance scheme.")
                         .font(.system(size: 11))
                         .foregroundStyle(XTheme.textTertiary)
                 }
@@ -305,7 +306,7 @@ public struct ControlSchemeSettingsView: View {
                     }
                     .pickerStyle(.segmented)
                     
-                    Text("• Precise: Expanded resolution near center (ideal for fine pitch vibrato and chromatic bends).\n• Balanced: Natural proportional response for all-round playing.\n• Responsive: Rapid output from light thumb gestures (ideal for high-energy solos).")
+                    Text("• Precise: Expanded resolution near center for fine vibrato.\n• Balanced: Natural proportional response for all-round playing.\n• Responsive: Rapid output from light thumb gestures.")
                         .font(.system(size: 11))
                         .foregroundStyle(XTheme.textTertiary)
                 }
@@ -349,6 +350,10 @@ public struct ControlSchemeSettingsView: View {
                         .pickerStyle(.menu)
                         .frame(width: 200)
                     }
+
+                    Text(currentScheme.haptics.detail)
+                        .font(.system(size: 11))
+                        .foregroundStyle(XTheme.textTertiary)
                     
                     Divider().overlay(XTheme.border)
                     
@@ -366,6 +371,18 @@ public struct ControlSchemeSettingsView: View {
     
     private var remappingView: some View {
         VStack(spacing: 16) {
+            if !coverageIssues.isEmpty {
+                settingsCard(title: "Scheme Coverage", icon: "checklist") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(coverageIssues) { issue in
+                            Text(issue.message)
+                                .font(.system(size: 11))
+                                .foregroundStyle(issue.severity == .critical ? XTheme.tense : XTheme.textTertiary)
+                        }
+                    }
+                }
+            }
+
             ForEach(SemanticMusicalAction.ActionCategory.allCases) { cat in
                 let actions = SemanticMusicalAction.allCases.filter { $0.category == cat }
                 
@@ -433,6 +450,52 @@ public struct ControlSchemeSettingsView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+
+                Menu {
+                    Button {
+                        updateScheme { scheme in
+                            var next = scheme.binding(for: action) ?? .defaultBinding(for: .unassigned)
+                            next.isInverted.toggle()
+                            scheme.bindings[action] = next
+                        }
+                    } label: {
+                        Label(
+                            binding?.isInverted == true ? "Inversion On" : "Invert Axis / Polarity",
+                            systemImage: binding?.isInverted == true ? "checkmark" : "arrow.up.arrow.down"
+                        )
+                    }
+
+                    if let binding, !boundInput.isContinuous {
+                        Picker("Held Behaviour", selection: Binding(
+                            get: { binding.digitalBehavior },
+                            set: { behavior in
+                                updateScheme { scheme in
+                                    var next = scheme.binding(for: action) ?? .defaultBinding(for: boundInput)
+                                    next.digitalBehavior = behavior
+                                    scheme.bindings[action] = next
+                                }
+                            }
+                        )) {
+                            ForEach(DigitalExpressionBehavior.allCases, id: \.self) { behavior in
+                                Text(behavior.rawValue).tag(behavior)
+                            }
+                        }
+                    }
+
+                    Button(role: .destructive) {
+                        updateScheme { scheme in
+                            scheme.bindings[action] = PhysicalControlBinding(input: .unassigned)
+                        }
+                    } label: {
+                        Label("Unassign", systemImage: "xmark.circle")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.system(size: 13))
+                        .foregroundStyle(XTheme.textSecondary)
+                }
+                .menuStyle(.borderlessButton)
+                .frame(width: 22)
             }
         }
         .padding(.vertical, 6)
@@ -477,7 +540,7 @@ public struct ControlSchemeSettingsView: View {
             settingsCard(title: "Active Mapped Gesture Interpretation", icon: "waveform.badge.magnifyingglass") {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Active Technqiue / Action:")
+                        Text("Active Technique / Action:")
                             .font(.system(size: 11))
                             .foregroundStyle(XTheme.textTertiary)
                         
@@ -824,6 +887,19 @@ public struct ControlSchemeSettingsView: View {
     
     private func validateConflicts() {
         conflictList = MappingConflict.detectConflicts(in: currentScheme)
+        coverageIssues = currentScheme.coverageIssues(
+            capabilities: appState.controllerManager.capabilityProfile
+        )
+    }
+
+    private var warningSummary: String {
+        let critical = conflictList.filter { $0.severity == .critical }.count
+            + coverageIssues.filter { $0.severity == .critical }.count
+        let total = conflictList.count + coverageIssues.count
+        if critical > 0 {
+            return "\(critical) critical, \(total) issue\(total == 1 ? "" : "s")"
+        }
+        return "\(total) Mapping Warning\(total == 1 ? "" : "s")"
     }
 
     private func settingsCard<Content: View>(title: String, icon: String, @ViewBuilder content: () -> Content) -> some View {

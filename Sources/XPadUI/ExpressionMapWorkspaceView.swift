@@ -141,26 +141,56 @@ struct ExpressionMapWorkspaceView: View {
 
     private var midiSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Picker("Destination", selection: Binding(
-                get: { appState.destinationProfile.name },
-                set: { name in
-                    if let dest = DestinationCapabilityProfile.allProfiles.first(where: { $0.name == name }) {
-                        appState.setDestination(dest)
-                    }
-                }
+            Picker("Host", selection: Binding(
+                get: { appState.hostSelection },
+                set: { appState.setHostSelection($0) }
             )) {
-                ForEach(DestinationCapabilityProfile.allProfiles) { dest in
-                    Text(dest.name).tag(dest.name)
+                ForEach(DAWHostKind.allCases) { host in
+                    Text(host.rawValue).tag(host)
                 }
             }
+            .pickerStyle(.menu)
 
-            labeled("MPE", appState.destinationProfile.supportsMPE ? "Yes" : "No")
+            Picker("DAW track MIDI channel", selection: Binding(
+                get: { appState.trackMIDIChannelDisplay },
+                set: { appState.setTrackMIDIChannel($0) }
+            )) {
+                Text("All / Any").tag(0)
+                ForEach(1...16, id: \.self) { channel in
+                    Text("Ch \(channel)").tag(channel)
+                }
+            }
+            .pickerStyle(.menu)
+
+            labeled("Active host", appState.activeHostKind.rawValue)
+            if appState.hostSelection == .autoDetect {
+                Button("Re-detect") {
+                    appState.refreshHostDetection()
+                }
+                .controlSize(.small)
+            }
+            labeled("Detection", appState.hostDetectionNote)
+            labeled("MPE output", appState.resolvedLayout.usesMPE ? "Yes" : "No")
+            labeled("MPE zone", appState.resolvedLayout.mpeZone.displaySummary)
             labeled("Bend range sent", String(format: "±%.0f st", appState.destinationProfile.bendRangeSemitones))
+            labeled("Melody / solo", "Ch \(appState.resolvedLayout.channels.displayChannel(for: .melody)) / \(appState.resolvedLayout.channels.displayChannel(for: .solo))")
+            labeled("Chords / bass", "Ch \(appState.resolvedLayout.channels.displayChannel(for: .chords)) / \(appState.resolvedLayout.channels.displayChannel(for: .bass))")
+            labeled("Drums", "Ch \(appState.resolvedLayout.channels.displayChannel(for: .drums))")
             labeled("Pressure", appState.destinationProfile.pressureMode.rawValue)
             labeled("Articulation", appState.instrumentProfile.midiArticulationStrategy.rawValue)
             labeled("Slide", appState.instrumentProfile.slideMIDIStrategy.rawValue)
 
-            Text("If a destination lacks a feature, XPI falls back in this order: MPE → poly pressure → channel pressure → CC11. Per-note bend is refused on conventional MIDI chords.")
+            Text(appState.activeHostContext.setupHint)
+                .font(.caption)
+                .foregroundStyle(XTheme.textSecondary)
+
+            if let diagnostic = appState.resolvedLayout.diagnostic {
+                Text(diagnostic)
+                    .font(.caption)
+                    .foregroundStyle(XTheme.tense)
+            }
+
+            Text("Auto-Detect uses the frontmost macOS DAW. A filtered track channel (1–16) collapses pitched roles onto that channel and disables MPE, because Live/Logic/Cubase MPE needs All / Any Channels.")
                 .font(.caption)
                 .foregroundStyle(XTheme.textTertiary)
         }
