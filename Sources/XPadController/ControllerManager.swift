@@ -105,7 +105,7 @@ public final class ControllerManager: @unchecked Sendable {
         connectedController = controller
         isConnected = true
         controllerName = controller.vendorName ?? controller.productCategory
-        controllerKind = identifyControllerKind(controller)
+        controllerKind = ControllerKind.identify(controller)
         capabilityProfile = ControllerCapabilityProfile.from(controller)
         
         // Load controller-specific calibration
@@ -428,16 +428,6 @@ public final class ControllerManager: @unchecked Sendable {
             print("⚠️ Haptic engine failed to start: \(error)")
             hapticEngine = nil
         }
-    }
-
-    private func identifyControllerKind(_ controller: GCController) -> ControllerKind {
-        let identity = "\(controller.vendorName ?? "") \(controller.productCategory)".lowercased()
-        if identity.contains("dualsense") || identity.contains("ps5") { return .dualSense }
-        if identity.contains("dualshock") || identity.contains("ps4") { return .dualShock4 }
-        if identity.contains("xbox") { return .xbox }
-        if identity.contains("switch") || identity.contains("pro controller") { return .switchPro }
-        if identity.contains("steam") { return .steamDeck }
-        return .generic
     }
 
     public static func gamepadState(from state: ControllerState) -> GamepadState {

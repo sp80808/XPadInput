@@ -1,5 +1,6 @@
 import CoreMIDI
 import Foundation
+import XPadCore
 
 /// Wire protocol used by XPI's CoreMIDI virtual sources.
 ///
@@ -244,15 +245,11 @@ public enum MIDI2UMPEncoder {
     }
 
     public static func scaleNormalizedTo16(_ value: Double) -> UInt16 {
-        guard value.isFinite else { return 0 }
-        let normalized = min(1.0, max(0.0, value))
-        return UInt16((normalized * Double(UInt16.max)).rounded())
+        UInt16((value.normalizedUnit * Double(UInt16.max)).rounded())
     }
 
     public static func scaleNormalizedTo32(_ value: Double) -> UInt32 {
-        guard value.isFinite else { return 0 }
-        let normalized = min(1.0, max(0.0, value))
-        return UInt32((normalized * Double(UInt32.max)).rounded())
+        UInt32((value.normalizedUnit * Double(UInt32.max)).rounded())
     }
 
     /// Maps a musical bend directly into MIDI 2's 32-bit pitch-bend field.
@@ -262,13 +259,11 @@ public enum MIDI2UMPEncoder {
         semitoneOffset: Double,
         bendRangeSemitones: Double
     ) -> UInt32 {
-        guard semitoneOffset.isFinite,
-              bendRangeSemitones.isFinite,
-              bendRangeSemitones > 0 else {
+        guard bendRangeSemitones.isFinite, bendRangeSemitones > 0 else {
             return pitchBendCentre
         }
 
-        let normalized = min(1.0, max(-1.0, semitoneOffset / bendRangeSemitones))
+        let normalized = (semitoneOffset / bendRangeSemitones).normalizedBipolar
         if normalized == 0 { return pitchBendCentre }
 
         if normalized < 0 {

@@ -163,7 +163,7 @@ public final class MultiControllerJammingManager: @unchecked Sendable {
 
     public func assignPhysicalController(_ controller: GCController, to slot: PlayerSlotId) {
         physicalControllers[slot] = controller
-        let kind = identifyControllerKind(controller)
+        let kind = ControllerKind.identify(controller)
         let name = controller.vendorName ?? controller.productCategory
 
         players[slot] = PlayerAssignment(
@@ -256,15 +256,5 @@ public final class MultiControllerJammingManager: @unchecked Sendable {
             self.playerStates[slot] = state
             self.onPlayerStateChanged?(slot, state)
         }
-    }
-
-    private func identifyControllerKind(_ controller: GCController) -> ControllerKind {
-        let identity = "\(controller.vendorName ?? "") \(controller.productCategory)".lowercased()
-        if identity.contains("dualsense") || identity.contains("ps5") { return .dualSense }
-        if identity.contains("dualshock") || identity.contains("ps4") { return .dualShock4 }
-        if identity.contains("xbox") { return .xbox }
-        if identity.contains("switch") || identity.contains("pro controller") { return .switchPro }
-        if identity.contains("steam") { return .steamDeck }
-        return .generic
     }
 }

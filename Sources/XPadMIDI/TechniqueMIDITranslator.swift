@@ -216,7 +216,7 @@ public struct TechniqueMIDITranslator: Sendable {
         }
 
         if event.pressure > 0.01 {
-            let p = UInt8(min(127, Int((event.pressure * 127.0).rounded())))
+            let p = MIDIValueCodec.midi7(event.pressure)
             pressureValue = p
             switch pressure.mode {
             case .mpePressure:
@@ -231,7 +231,7 @@ public struct TechniqueMIDITranslator: Sendable {
         }
 
         if event.timbre != 0.5 && destination.supportsCC74 {
-            let t = UInt8(min(127, Int((event.timbre * 127.0).rounded())))
+            let t = MIDIValueCodec.midi7(event.timbre)
             events.append(.timbreCC74(channel: channel, value: t))
             timbreValue = t
         }
@@ -321,10 +321,7 @@ public struct TechniqueMIDITranslator: Sendable {
 
 public enum PitchBendCodec {
     public static func value(semitones: Double, range: Double) -> UInt16 {
-        guard range > 0 else { return 8192 }
-        let n = max(-1.0, min(1.0, semitones / range))
-        let raw = 8192.0 + n * 8192.0
-        return UInt16(max(0, min(16383, raw.rounded())))
+        MIDIValueCodec.pitchBend14(semitones: semitones, range: range)
     }
 }
 

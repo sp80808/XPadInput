@@ -157,8 +157,8 @@ public final class MPEManager: @unchecked Sendable {
         let channels = memberChannels
         lock.unlock()
 
-        let semitones = UInt8(max(1, min(96, Int(range.rounded(.down)))))
-        let cents = UInt8(max(0, min(99, Int(((range - floor(range)) * 100).rounded()))))
+        let semitones = UInt8(Int(range.rounded(.down)).clamped(to: 1...96))
+        let cents = UInt8(Int(((range - floor(range)) * 100).rounded()).clamped(to: 0...99))
 
         for channel in channels {
             midiEngine.sendCC(port: .mpe, channel: channel, controller: 101, value: 0)
@@ -447,11 +447,10 @@ public final class MPEManager: @unchecked Sendable {
     }
 
     private static func normalized(_ value: Double) -> Double {
-        guard value.isFinite else { return 0 }
-        return min(1, max(0, value))
+        value.normalizedUnit
     }
 
     private static func midi7(_ normalized: Double) -> UInt8 {
-        UInt8((normalized * 127.0).rounded())
+        MIDIValueCodec.midi7(normalized)
     }
 }

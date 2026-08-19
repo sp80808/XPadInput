@@ -58,7 +58,7 @@ public struct PressureEnvelopeEngine: Sendable {
 
     public mutating func process(raw: Double, noteHeld: Bool, dt: TimeInterval) -> PressureEnvelopeState {
         let safeDt = max(0.0005, min(0.05, dt))
-        let clamped = max(0.0, min(1.0, raw))
+        let clamped = raw.normalizedUnit
         let shaped = curve.apply(clamped)
         let alpha = 1.0 - exp(-safeDt / max(0.001, smoothingTau))
         let previous = smoothed
@@ -78,7 +78,7 @@ public struct PressureEnvelopeEngine: Sendable {
         }
 
         previousRaw = smoothed
-        let midi = UInt8(max(0, min(127, Int((smoothed * 127.0).rounded()))))
+        let midi = MIDIValueCodec.midi7(smoothed)
         return PressureEnvelopeState(
             attackPressure: attackPressure,
             sustainedPressure: noteHeld ? smoothed : 0,

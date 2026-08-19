@@ -39,7 +39,7 @@ public struct SMFExporter: Sendable {
         mpe: Bool = true
     ) -> Data {
         var trackEvents: [(tick: UInt64, bytes: [UInt8])] = []
-        let rangeMSB = UInt8(max(0, min(127, Int(bendRange.rounded()))))
+        let rangeMSB = UInt8(Int(bendRange.rounded()).clamped(to: 0...127))
 
         // Pitch-bend sensitivity RPN on the zone/master channel so importers know the range.
         trackEvents.append((0, [0xB0, 101, 0]))

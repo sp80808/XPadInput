@@ -13,7 +13,7 @@ public struct Note: Hashable, Codable, Sendable, Comparable {
     /// MIDI note number (0-127)
     public var midiNote: UInt8 {
         let value = (octave + 1) * 12 + pitchClass.rawValue
-        return UInt8(max(0, min(127, value)))
+        return UInt8(value.clamped(to: 0...127))
     }
 
     /// MIDI note number alias
