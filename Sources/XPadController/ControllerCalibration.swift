@@ -239,12 +239,20 @@ public final class ControllerSettingsStore: @unchecked Sendable {
 
     public func loadCustomSchemes() -> [ControlScheme] {
         guard let data = defaults.data(forKey: customSchemesKey) else { return [] }
-        return (try? JSONDecoder().decode([ControlScheme].self, from: data)) ?? []
+        do {
+            return try JSONDecoder().decode([ControlScheme].self, from: data)
+        } catch {
+            print("⚠️ Failed to decode stored custom control schemes: \(error)")
+            return []
+        }
     }
 
     public func saveCustomSchemes(_ schemes: [ControlScheme]) {
-        if let data = try? JSONEncoder().encode(schemes) {
+        do {
+            let data = try JSONEncoder().encode(schemes)
             defaults.set(data, forKey: customSchemesKey)
+        } catch {
+            print("⚠️ Failed to encode custom control schemes; changes were not saved: \(error)")
         }
     }
 
@@ -268,18 +276,25 @@ public final class ControllerSettingsStore: @unchecked Sendable {
 
     public func loadCalibration(for controllerId: String) -> ControllerHardwareCalibration {
         guard let dict = defaults.dictionary(forKey: calibrationsKey) as? [String: Data],
-              let data = dict[controllerId],
-              let cal = try? JSONDecoder().decode(ControllerHardwareCalibration.self, from: data) else {
+              let data = dict[controllerId] else {
             return ControllerHardwareCalibration(controllerIdentifier: controllerId)
         }
-        return cal
+        do {
+            return try JSONDecoder().decode(ControllerHardwareCalibration.self, from: data)
+        } catch {
+            print("⚠️ Failed to decode calibration for \(controllerId); using defaults: \(error)")
+            return ControllerHardwareCalibration(controllerIdentifier: controllerId)
+        }
     }
 
     public func saveCalibration(_ calibration: ControllerHardwareCalibration) {
-        var dict = (defaults.dictionary(forKey: calibrationsKey) as? [String: Data]) ?? [:]
-        if let data = try? JSONEncoder().encode(calibration) {
+        do {
+            let data = try JSONEncoder().encode(calibration)
+            var dict = (defaults.dictionary(forKey: calibrationsKey) as? [String: Data]) ?? [:]
             dict[calibration.controllerIdentifier] = data
             defaults.set(dict, forKey: calibrationsKey)
+        } catch {
+            print("⚠️ Failed to encode calibration for \(calibration.controllerIdentifier); not saved: \(error)")
         }
     }
 
