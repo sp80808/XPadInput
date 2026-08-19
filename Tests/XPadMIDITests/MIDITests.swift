@@ -362,6 +362,28 @@ final class MIDITests: XCTestCase {
         XCTAssertEqual(midi.sentMessages.last?.bytes, [0x91, 67, 92])
     }
 
+    func testIdlePhraseNoteOnDoesNotDumpMPEZone() {
+        let midi = MIDIEngine()
+        let mpe = MPEManager(midiEngine: midi, bendRangeSemitones: 48)
+        mpe.sendMPEZoneConfiguration()
+        midi.clearMessageLog()
+
+        mpe.noteOn(note: 60, velocity: 90)
+
+        XCTAssertFalse(
+            midi.sentMessages.contains { $0.port == .mpe && $0.bytes == [0xB0, 101, 0] },
+            "Attack must not re-send the 14-channel zone dump; that belongs on virtual MIDI enable."
+        )
+        XCTAssertEqual(midi.sentMessages.first?.bytes, [0xE1, 0x00, 0x40])
+        XCTAssertEqual(midi.sentMessages.last?.bytes, [0x91, 60, 90])
+
+        mpe.noteOff(note: 60)
+        midi.clearMessageLog()
+        mpe.noteOn(note: 64, velocity: 88)
+        XCTAssertFalse(midi.sentMessages.contains { $0.bytes == [0xB0, 101, 0] })
+        XCTAssertEqual(midi.sentMessages.last?.bytes, [0x92, 64, 88])
+    }
+
     func testPitchBendCodecEndpoints() {
         XCTAssertEqual(MIDIEngine.pitchBendValue(semitoneOffset: -2, bendRangeSemitones: 2), 0)
         XCTAssertEqual(MIDIEngine.pitchBendValue(semitoneOffset: 0, bendRangeSemitones: 2), 8192)

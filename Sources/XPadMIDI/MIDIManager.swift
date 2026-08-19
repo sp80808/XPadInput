@@ -789,11 +789,13 @@ public final class MIDIEngine: @unchecked Sendable {
         }
 
         let words = [word]
+        // Timestamp 0 is CoreMIDI "play now". mach_absolute_time() schedules
+        // against the host clock and can add a buffer of jitter on pass-through.
         _ = MIDIEventListAdd(
             &eventList,
             1024,
             packet,
-            mach_absolute_time(),
+            0,
             words.count,
             words
         )
@@ -813,7 +815,7 @@ public final class MIDIEngine: @unchecked Sendable {
             &eventList,
             1024,
             packet,
-            mach_absolute_time(),
+            0,
             words.count,
             words
         )

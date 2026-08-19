@@ -622,15 +622,22 @@ final class TestRunner {
                 midi.clearMessageLog()
                 mpe.noteOn(note: 60, velocity: 90)
                 let phraseMessages = midi.sentMessages
-                let zoneIndex = phraseMessages.firstIndex { record in
+                let dumpedZone = phraseMessages.contains { record in
                     record.port == .mpe && record.bytes == [0xB0, 101, 0]
                 }
                 let noteOnIndex = phraseMessages.firstIndex { record in
                     record.port == .mpe && record.bytes == [0x91, 60, 90]
                 }
+                let resetIndex = phraseMessages.firstIndex { record in
+                    record.port == .mpe && record.bytes == [0xE1, 0, 0x40]
+                }
+                assertFalse(
+                    dumpedZone,
+                    "An idle phrase must not re-advertise its MPE zone on the first Note On."
+                )
                 assertTrue(
-                    zoneIndex != nil && noteOnIndex != nil && zoneIndex! < noteOnIndex!,
-                    "An idle phrase must re-advertise its MPE zone before the first Note On."
+                    resetIndex != nil && noteOnIndex != nil && resetIndex! < noteOnIndex!,
+                    "The first Note On of a phrase should only reset member-channel expression, then send Note On."
                 )
 
                 midi.clearMessageLog()
@@ -659,13 +666,24 @@ final class TestRunner {
         suite("XPadAudio: AudioEngine & SynthVoice") {
             test("AudioEngine Lifecycle & Voice Allocation") {
                 let audio = AudioEngine()
+                assertEqual(audio.pooledVoiceCount, 16)
                 audio.start()
                 audio.noteOn(note: 60, velocity: 100)
                 assertEqual(audio.trackedVoiceCount, 1)
+                audio.noteOn(note: 60, velocity: 90)
+                assertEqual(audio.trackedVoiceCount, 1, "Retriggering the same pitch must reuse one pooled voice.")
                 audio.noteOff(note: 60)
                 assertEqual(audio.trackedVoiceCount, 1, "A release tail must remain tracked until it detaches.")
+                audio.noteOn(note: 60, velocity: 80)
+                assertEqual(audio.trackedVoiceCount, 1, "A note-on during release must reclaim the pooled voice.")
+                for note: UInt8 in 48..<65 {
+                    audio.noteOn(note: note, velocity: 90)
+                }
+                assertEqual(audio.trackedVoiceCount, 16)
+                assertEqual(audio.pooledVoiceCount, 16, "Stealing must not attach additional source nodes.")
                 audio.panic()
                 assertEqual(audio.trackedVoiceCount, 0, "Panic must hard-stop active and releasing voices.")
+                assertEqual(audio.pooledVoiceCount, 16)
                 audio.stop()
             }
         }

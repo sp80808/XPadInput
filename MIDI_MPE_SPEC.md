@@ -72,6 +72,8 @@ If the host track inspector is set to a specific channel (1–16) instead of All
 
 Auto-Detect uses the **frontmost** macOS DAW (bundle ID / process name), then any running DAW. Manual host selection always wins. This is a routing policy, not a substitute for GitHub #3 host certification.
 
+Zone configuration is advertised when virtual MIDI sources become enabled and when the destination profile changes. It is **not** re-sent on the first Note On of an idle phrase. That attack path only resets the allocated member channel (pitch bend centre, pressure `0`, CC74 `64`) and then sends Note On. Hosts that attach after enable can toggle virtual MIDI or change destination to receive the zone dump again.
+
 Under the experimental MIDI 2 transport, the existing MPE setup messages are translated at the transport boundary for continuity with the current expression engine. Native MIDI 2 per-note expression is a later phase, not a reason to duplicate the MPE allocator immediately.
 
 ## 3. Bend-Range Contract

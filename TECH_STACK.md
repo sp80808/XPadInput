@@ -60,8 +60,11 @@ This document outlines the architectural patterns, native frameworks, performanc
 ## 3. Performance Budgets & Real-Time Specifications
 
 - **Input Sampling Frequency**: 120 Hz – 250 Hz (via GameController handlers).
-- **Audio Output Latency**: $< 5.8\text{ ms}$ at 256 frame buffer (44.1 kHz).
-- **MIDI Transmission Jitter**: $< 1.2\text{ ms}$ on CoreMIDI virtual queue.
+- **Audio I/O Buffer Target**: 128 frames (`AudioEngine.preferredIOBufferFrames`). That is 2.7 ms at 48 kHz or 2.9 ms at 44.1 kHz. The engine follows the hardware output sample rate rather than resampling from a hardcoded 44.1 kHz graph.
+- **Voice Topology**: 16 `AVAudioSourceNode` voices are attached once at engine setup. Note On / Note Off retrigger or steal a pooled voice in place; attack never `attach`/`connect`/`detach`s the graph.
+- **MIDI Play-Now**: `MIDIEventListAdd` uses timestamp `0` (CoreMIDI “now”) so pass-through is not queued against a stale `mach_absolute_time()` stamp.
+- **MPE Setup vs Attack**: Lower-zone RPNs are sent when virtual MIDI is enabled or the destination changes, not on the first Note On of an idle phrase.
+- **Measurement Boundary**: These are software scheduling choices. They are not a claim that internal timestamps equal acoustic hardware action-to-sound latency. Distributional timing (p50/p95/p99, jitter) remains GitHub issue #26.
 - **Clock Resolution**: 960 PPQN (Pulses Per Quarter Note) for sample-accurate groove and swing quantizing.
 - **Memory Footprint**: $< 45\text{ MB}$ residential memory footprint during full 16-voice synthesis and timeline playback.
 - **Zero Allocations on Audio Thread**: All voice DSP state, buffers, and oscillators are pre-allocated and statically indexed to eliminate garbage collection and heap locks during audio rendering.

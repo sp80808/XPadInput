@@ -19,6 +19,7 @@ This document outlines the multi-phase vision, milestones, and technical traject
 - [x] MPE Zone Manager distributing polyphonic notes, ±48 semitone pitch bends, pressure, and CC74 timbre.
 - [x] Automatic DAW host MIDI channel maps (Logic, Live, Bitwig, Cubase, Studio One, REAPER, DP, Waveform, MainStage, FL Studio, Pro Tools, Reason, LUNA, Ardour, Gig Performer, and others) with track-channel fallback.
 - [x] Built-in low-latency polyphonic DSP synthesizer (PolyBLEP oscillators, ADSR, state-variable filters).
+- [x] Preallocated 16-voice synth pool, hardware sample-rate graph, 128-frame I/O target, and MIDI play-now timestamps (topology/pass-through remediation; measurement instrumentation remains #26).
 - [x] 960 PPQN multi-track timeline sequencer with scene management and SMF (.mid) export.
 - [x] Native macOS liquid interface with 5 dedicated workspaces (`PLAY`, `HARMONY`, `SEQUENCE`, `MAP`, `LIBRARY`).
 - [x] Compact XTheme-consistent transport context selectors (`Instrument`, `Key`, `Scale`) in transport bar and chord card.

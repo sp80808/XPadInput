@@ -170,16 +170,13 @@ public final class MPEManager: @unchecked Sendable {
     }
 
     /// Starts an MPE note after resetting expression on its allocated member channel.
+    ///
+    /// Zone configuration is advertised when virtual MIDI is enabled (and when
+    /// the destination changes), not on this attack path. Dumping 14-channel
+    /// RPNs before the first Note On of every idle phrase adds tens of
+    /// milliseconds of MIDI pass-through jitter. Member-channel expression is
+    /// still reset immediately before Note On.
     public func noteOn(note: UInt8, velocity: UInt8, technique: MusicalTechnique = .normal, legatoSource: UInt8? = nil) {
-        // CoreMIDI sources do not retain setup traffic for clients that attach later.
-        // Re-advertise the lower zone and bend range at the start of every idle phrase.
-        lock.lock()
-        let startsIdlePhrase = activeVoices.isEmpty
-        lock.unlock()
-        if startsIdlePhrase && midiEngine.virtualMIDIEnabled {
-            sendMPEZoneConfiguration()
-        }
-
         lock.lock()
         defer { lock.unlock() }
 
