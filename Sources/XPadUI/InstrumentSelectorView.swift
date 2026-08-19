@@ -91,6 +91,7 @@ struct ActiveTechniqueStatusView: View {
                                 .stroke(XTheme.accent.opacity(0.24), lineWidth: 1)
                         )
                 )
+                .xMusicalContent(technique)
                 .accessibilityLabel("Active technique")
                 .accessibilityValue(technique)
         }

@@ -118,8 +118,10 @@ public struct XTheme {
     // MARK: - Animation
     
     public static let springAnimation = Animation.spring(response: 0.35, dampingFraction: 0.7)
+    public static let springSnappy = Animation.spring(response: 0.22, dampingFraction: 0.82)
     public static let quickAnimation = Animation.easeOut(duration: 0.15)
     public static let feedbackFast = Animation.easeOut(duration: 0.09)
+    public static let hoverAnimation = Animation.easeOut(duration: 0.12)
     public static let transitionShort = Animation.easeOut(duration: 0.18)
 }
 
@@ -151,8 +153,6 @@ public struct XCardModifier: ViewModifier {
 
 /// A compact physical-feeling button treatment for performance controls.
 public struct XTactileButtonStyle: ButtonStyle {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     public var isActive: Bool
     public var activeColor: Color
 
@@ -162,31 +162,69 @@ public struct XTactileButtonStyle: ButtonStyle {
     }
 
     public func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        XTactileButtonChrome(
+            isActive: isActive,
+            isPressed: configuration.isPressed,
+            activeColor: activeColor
+        ) {
+            configuration.label
+        }
+    }
+}
+
+private struct XTactileButtonChrome<Label: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering = false
+
+    var isActive: Bool
+    var isPressed: Bool
+    var activeColor: Color
+    var label: Label
+
+    init(
+        isActive: Bool,
+        isPressed: Bool,
+        activeColor: Color,
+        @ViewBuilder label: () -> Label
+    ) {
+        self.isActive = isActive
+        self.isPressed = isPressed
+        self.activeColor = activeColor
+        self.label = label()
+    }
+
+    var body: some View {
+        label
             .background(
                 RoundedRectangle(cornerRadius: XTheme.radiusSmall)
-                    .fill(
-                        configuration.isPressed
-                            ? AnyShapeStyle(XTheme.surfacePressed)
-                            : (isActive
-                                ? AnyShapeStyle(activeColor.opacity(0.16))
-                                : AnyShapeStyle(XTheme.controlGradient))
-                    )
+                    .fill(fill)
                     .overlay(
                         RoundedRectangle(cornerRadius: XTheme.radiusSmall)
-                            .stroke(
-                                isActive ? activeColor.opacity(0.62) : Color.white.opacity(0.09),
-                                lineWidth: 1
-                            )
+                            .stroke(stroke, lineWidth: 1)
                     )
                     .shadow(
                         color: isActive ? activeColor.opacity(0.22) : Color.black.opacity(0.22),
-                        radius: configuration.isPressed ? 1 : 4,
-                        y: configuration.isPressed ? 1 : 3
+                        radius: isPressed ? 1 : 4,
+                        y: isPressed ? 1 : 3
                     )
             )
-            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.94 : 1)
-            .animation(reduceMotion ? nil : XTheme.feedbackFast, value: configuration.isPressed)
+            .scaleEffect(isPressed && !reduceMotion ? 0.94 : 1)
+            .onHover { isHovering = $0 }
+            .animation(reduceMotion ? nil : XTheme.feedbackFast, value: isPressed)
+            .animation(reduceMotion ? nil : XTheme.hoverAnimation, value: isHovering)
+    }
+
+    private var fill: AnyShapeStyle {
+        if isPressed { return AnyShapeStyle(XTheme.surfacePressed) }
+        if isActive { return AnyShapeStyle(activeColor.opacity(0.16)) }
+        if isHovering { return AnyShapeStyle(XTheme.surfaceHover) }
+        return AnyShapeStyle(XTheme.controlGradient)
+    }
+
+    private var stroke: Color {
+        if isActive { return activeColor.opacity(0.62) }
+        if isHovering { return XTheme.borderActive.opacity(0.50) }
+        return Color.white.opacity(0.09)
     }
 }
 

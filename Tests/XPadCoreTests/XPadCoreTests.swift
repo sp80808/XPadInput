@@ -282,4 +282,33 @@ final class XPadCoreTests: XCTestCase {
         XCTAssertEqual(transport.currentBar, 3)
         XCTAssertEqual(transport.currentBeat, 3.0, accuracy: 0.001)
     }
+
+    func testHarmonicTensionCharacterThresholds() {
+        XCTAssertEqual(HarmonicTensionCharacter(tension: 0.0), .stable)
+        XCTAssertEqual(HarmonicTensionCharacter(tension: 0.14), .stable)
+        XCTAssertEqual(HarmonicTensionCharacter(tension: 0.15), .natural)
+        XCTAssertEqual(HarmonicTensionCharacter(tension: 0.29), .natural)
+        XCTAssertEqual(HarmonicTensionCharacter(tension: 0.30), .colourful)
+        XCTAssertEqual(HarmonicTensionCharacter(tension: 0.49), .colourful)
+        XCTAssertEqual(HarmonicTensionCharacter(tension: 0.50), .adventurous)
+        XCTAssertEqual(HarmonicTensionCharacter(tension: 0.69), .adventurous)
+        XCTAssertEqual(HarmonicTensionCharacter(tension: 0.70), .outside)
+        XCTAssertEqual(HarmonicTensionCharacter(tension: 1.0), .outside)
+    }
+
+    func testHarmonicTensionCharacterNonColourCues() {
+        XCTAssertEqual(HarmonicTensionCharacter.stable.symbolName, "checkmark.circle.fill")
+        XCTAssertEqual(HarmonicTensionCharacter.natural.symbolName, "leaf.fill")
+        XCTAssertEqual(HarmonicTensionCharacter.colourful.symbolName, "sparkles")
+        XCTAssertEqual(HarmonicTensionCharacter.adventurous.symbolName, "bolt.fill")
+        XCTAssertEqual(HarmonicTensionCharacter.outside.symbolName, "exclamationmark.triangle.fill")
+
+        XCTAssertEqual(HarmonicTensionCharacter.stable.ringWeight, 1)
+        XCTAssertEqual(HarmonicTensionCharacter.colourful.ringWeight, 2)
+        XCTAssertEqual(HarmonicTensionCharacter.outside.ringWeight, 3)
+
+        XCTAssertEqual(HarmonicTensionCharacter.stable.label, "Stable")
+        XCTAssertEqual(HarmonicTensionCharacter.outside.label, "Outside")
+        XCTAssertEqual(Set(HarmonicTensionCharacter.allCases.map(\.symbolName)).count, HarmonicTensionCharacter.allCases.count)
+    }
 }
