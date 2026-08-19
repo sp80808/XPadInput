@@ -214,6 +214,10 @@ public final class AudioEngine: @unchecked Sendable {
     public static let shared = AudioEngine()
     
     public var isRunning: Bool = false
+
+    /// Human-readable description of the most recent engine start failure.
+    /// `nil` once the engine starts successfully.
+    public private(set) var startErrorDescription: String?
     public var volume: Float = 0.7
     public var currentPreset: SynthPreset = .polyLead
     public private(set) var velocityCurve: SynthVelocityCurve = .balanced
@@ -422,8 +426,10 @@ public final class AudioEngine: @unchecked Sendable {
         do {
             try engine.start()
             isRunning = true
+            startErrorDescription = nil
             attachLoopback()
         } catch {
+            startErrorDescription = error.localizedDescription
             print("⚠️ Audio engine failed to start: \(error)")
         }
     }
@@ -445,6 +451,7 @@ public final class AudioEngine: @unchecked Sendable {
         if !isRunning {
             start()
         }
+        guard isRunning else { return }
         
         lock.lock()
         
@@ -492,6 +499,7 @@ public final class AudioEngine: @unchecked Sendable {
         if !isRunning {
             start()
         }
+        guard isRunning else { return }
 
         let voice = PercussionVoice(
             sound: sound,

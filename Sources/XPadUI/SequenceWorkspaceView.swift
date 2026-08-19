@@ -7,6 +7,7 @@ import XPadMIDI
 public struct SequenceWorkspaceView: View {
     @ObservedObject var sequencer: Sequencer
     @State private var exportedMidiURL: URL?
+    @State private var exportError: String?
 
     public init(sequencer: Sequencer) {
         self.sequencer = sequencer
@@ -50,6 +51,14 @@ public struct SequenceWorkspaceView: View {
                 .buttonStyle(.plain)
             }
             .padding(.horizontal)
+
+            if let exportError {
+                Text(exportError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.horizontal)
+            }
 
             // Multi-track Timeline
             ScrollView {
@@ -124,9 +133,11 @@ public struct SequenceWorkspaceView: View {
         do {
             try midiData.write(to: tempURL)
             self.exportedMidiURL = tempURL
+            self.exportError = nil
             NSWorkspace.shared.activateFileViewerSelecting([tempURL])
         } catch {
             print("Failed to save MIDI file: \(error)")
+            self.exportError = "Failed to save MIDI file: \(error.localizedDescription)"
         }
     }
 }

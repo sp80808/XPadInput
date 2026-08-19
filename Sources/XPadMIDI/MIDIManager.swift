@@ -73,6 +73,10 @@ public final class MIDIEngine: @unchecked Sendable {
 
     public var onVirtualMIDIChanged: ((Bool) -> Void)?
 
+    /// Human-readable description of the most recent CoreMIDI setup failure.
+    /// `nil` when the last enable attempt created every endpoint successfully.
+    public private(set) var setupErrorDescription: String?
+
     public private(set) var lastSentNotes: [UInt8] = []
     public private(set) var midiActivityTimestamp: Date?
     public var isMIDIActive: Bool {
@@ -168,12 +172,18 @@ public final class MIDIEngine: @unchecked Sendable {
     private func setupMIDIClient() {
         let status = MIDIClientCreateWithBlock("XPI" as CFString, &midiClient) { _ in }
         if status != noErr {
+            midiClient = 0
+            setupErrorDescription = "Failed to create XPI MIDI client (OSStatus \(status))"
             print("⚠️ Failed to create XPI MIDI client: \(status)")
         }
     }
 
     private func createVirtualSources() {
+        if midiClient == 0 {
+            setupMIDIClient()
+        }
         guard midiClient != 0 else { return }
+        var failures: [String] = []
         let protocolID = transportProtocol.coreMIDIProtocol
 
         for port in VirtualPort.allCases {
@@ -204,6 +214,7 @@ public final class MIDIEngine: @unchecked Sendable {
                 outputs[port] = endpoint
                 lock.unlock()
             } else {
+                failures.append("\(port.rawValue) source (OSStatus \(status))")
                 print("⚠️ Failed to create \(port.rawValue) MIDI source: \(status)")
             }
         }
@@ -222,8 +233,15 @@ public final class MIDIEngine: @unchecked Sendable {
             }
             if status == noErr {
                 self.inputDestination = destEndpoint
+            } else {
+                failures.append("XPI Input / CI destination (OSStatus \(status))")
+                print("⚠️ Failed to create XPI Input / CI MIDI destination: \(status)")
             }
         }
+
+        setupErrorDescription = failures.isEmpty
+            ? nil
+            : "Failed to create: " + failures.joined(separator: ", ")
     }
 
     private func disposeVirtualSources() {

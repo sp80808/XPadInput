@@ -405,7 +405,9 @@ public final class ControllerManager: @unchecked Sendable {
             let pattern = try CHHapticPattern(events: [event], parameters: [])
             let player = try engine.makePlayer(with: pattern)
             try player.start(atTime: CHHapticTimeImmediate)
-        } catch {}
+        } catch {
+            print("⚠️ Haptic playback failed: \(error)")
+        }
     }
 
     public func playBendTargetDetent() {
@@ -423,6 +425,7 @@ public final class ControllerManager: @unchecked Sendable {
             try engine.start()
             hapticEngine = engine
         } catch {
+            print("⚠️ Haptic engine failed to start: \(error)")
             hapticEngine = nil
         }
     }
