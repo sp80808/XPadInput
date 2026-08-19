@@ -259,8 +259,9 @@ public final class MIDICISession: @unchecked Sendable {
         if bytes.count >= 21 + dataLength {
             let dataPayload = Array(bytes[21..<(21 + dataLength)])
             if let bendRange = dataPayload.first {
+                let clamped = min(max(Double(bendRange & 0x7F), 1.0), 96.0)
                 lock.lock()
-                self.negotiatedBendRangeSemitones = Double(bendRange)
+                self.negotiatedBendRangeSemitones = clamped
                 lock.unlock()
             }
         }
