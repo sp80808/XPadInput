@@ -208,6 +208,28 @@ final class MIDITests: XCTestCase {
         mpe.stopAllNotes()
     }
 
+    func testMPEZoneLayoutAdvertisesHostMemberCount() {
+        let midi = MIDIEngine()
+        let mpe = MPEManager(midiEngine: midi)
+        midi.clearMessageLog()
+
+        mpe.applyZoneLayout(.lowerFifteen, sendConfiguration: true)
+        XCTAssertEqual(mpe.currentZoneLayout.memberCount, 15)
+        XCTAssertTrue(
+            midi.sentMessages.contains { $0.port == .mpe && $0.bytes == [0xB0, 6, 15] },
+            "Lower-zone MCM must declare 15 member channels for Logic/Live/Bitwig."
+        )
+
+        midi.clearMessageLog()
+        mpe.applyZoneLayout(.upperFifteen, sendConfiguration: true)
+        XCTAssertTrue(
+            midi.sentMessages.contains { $0.port == .mpe && $0.bytes == [0xBF, 6, 15] },
+            "Upper-zone MCM is sent on master MIDI channel 16."
+        )
+        mpe.noteOn(note: 61, velocity: 100)
+        XCTAssertEqual(mpe.activeVoice(for: 61)?.channel, 14)
+    }
+
     func testMPEPitchBendLifecycleAndChannelIsolation() {
         let midi = MIDIEngine()
         let mpe = MPEManager(midiEngine: midi, bendRangeSemitones: 2)

@@ -48,6 +48,15 @@ public enum JamTrackRole: String, Codable, Sendable, CaseIterable, Identifiable 
         case .drums: return 9  // Channel 10
         }
     }
+
+    public var midiSourceRole: MIDISourceRole {
+        switch self {
+        case .chords: return .chords
+        case .bass: return .bass
+        case .lead: return .solo
+        case .drums: return .drums
+        }
+    }
 }
 
 public struct PlayerAssignment: Sendable, Identifiable, Equatable {
@@ -129,6 +138,7 @@ public final class MultiControllerJammingManager: @unchecked Sendable {
     public var onPlayerStateChanged: ((PlayerSlotId, ControllerState) -> Void)?
 
     private var physicalControllers: [PlayerSlotId: GCController] = [:]
+    private var lastChannelMap = MIDIRoleChannelMap.sharedCableJam
 
     public var isSessionActive: Bool {
         physicalControllers.count > 1
@@ -178,8 +188,18 @@ public final class MultiControllerJammingManager: @unchecked Sendable {
     public func setRole(_ role: JamTrackRole, for slot: PlayerSlotId) {
         guard var assignment = players[slot] else { return }
         assignment.role = role
-        assignment.midiChannel = role.defaultMidiChannel
+        assignment.midiChannel = lastChannelMap.channel(for: role.midiSourceRole)
         players[slot] = assignment
+    }
+
+    /// Applies a host-resolved channel map without changing assigned roles.
+    public func applyChannelMap(_ map: MIDIRoleChannelMap) {
+        lastChannelMap = map
+        for slot in PlayerSlotId.allCases {
+            guard var assignment = players[slot] else { continue }
+            assignment.midiChannel = map.channel(for: assignment.role.midiSourceRole)
+            players[slot] = assignment
+        }
     }
 
     /// Allows simulated state injection per player slot for tests, previews, and keyboard controls.

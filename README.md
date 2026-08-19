@@ -86,7 +86,7 @@ Please test controller detection, analog sticks, triggers, chord selection, virt
   - `XPI Bass`
   - `XPI Drums`
   - `XPI Expression (MPE)`
-- **MPE Zone Distribution**: Independent per-note voice allocation across Channels 2–15.
+- **MPE Zone Distribution**: Independent per-note voice allocation across Channels 2–16 for DAW MPE hosts (2–15 for the internal synth).
 - **Multi-Dimensional Expression**:
   - **Pitch Bend**: 6-axis gyro tilt or stick deflection ($\pm 48$ semitones).
   - **Polyphonic Pressure (Z-Axis)**: Trigger travel / aftertouch.
@@ -168,11 +168,18 @@ swift run XPadTests
 
 ### Host Certification Status
 
-| Host DAW | Protocol Mode | MPE Lower Zone | Pitch Bend (±48) | Status | Notes |
+| Host DAW | Protocol Mode | Default zone / channels | Pitch Bend | Status | Notes |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Apple Logic Pro** | MIDI 1.0 / MIDI 2.0 | ✅ Master Ch 1, Voices 2-15 | ✅ ±48 st | 🔄 **In Validation** | Primary MIDI 2.0 host validation target |
-| **Ableton Live 11 / 12** | MIDI 1.0 MPE | ✅ Master Ch 1, Voices 2-15 | ✅ ±48 st | 🔄 **In Validation** | MPE regression & multi-channel routing target |
-| **Bitwig Studio** | MIDI 1.0 MPE | ✅ Master Ch 1, Voices 2-15 | ✅ ±48 st | 🔄 **In Validation** | Direct MPE voice routing to Polymer/The Grid |
+| **Apple Logic Pro** | MIDI 1.0 / MIDI 2.0 | Lower zone, master Ch 1, members 2–16 | ±48 st | 🔄 **In Validation** | MIDI Mono Mode common base 1; track MIDI Channel = All |
+| **Ableton Live 11 / 12** | MIDI 1.0 MPE | Lower zone, master Ch 1, members 2–16 | ±48 st | 🔄 **In Validation** | MPE input locks the track to All Channels; notes never on master Ch 1 |
+| **Bitwig Studio** | MIDI 1.0 MPE | Lower zone, master Ch 1, members 2–16 | ±48 st | 🔄 **In Validation** | Generic MPE / Force MPE Mode; note filter All |
+| **Cubase / Nuendo** | MPE + Note Expression | Lower zone, base Ch 1, members 2–16 | ±48 st | 🔄 **Profiled** | MPE Mode base Ch 1; generic CoreMIDI needs Any Input |
+| **Studio One** | MPE (Enable MPE) | Lower zone, members 2–16 | ±48 st | 🔄 **Profiled** | Enabling MPE greys out the channel selector |
+| **REAPER / Ardour / Gig Performer** | Multi-channel MIDI | Lower zone, All Channels | ±48 st | 🔄 **Profiled** | No/optional MPE toggle; map input = Through |
+| **Digital Performer / Waveform / MainStage** | MPE | Lower zone, members 2–16 | ±48 st | 🔄 **Profiled** | MainStage follows Logic MIDI Mono Mode |
+| **FL Studio / Pro Tools / Reason / LUNA / GarageBand** | Conventional MIDI | Ch 1 pitched, GM Ch 10 drums | ±2 st | 🔄 **Profiled** | No shipping MPE zone; track channel is followed |
+
+XPI **Auto-Detect** (MAP → MIDI Translation) applies these channel maps from the frontmost macOS DAW. A filtered DAW track channel (1–16) collapses pitched roles onto that channel and turns MPE off so notes are not dropped.
 
 ### Setup Instructions
 

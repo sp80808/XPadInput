@@ -1323,6 +1323,51 @@ final class TestRunner {
                 manager.setRole(.lead, for: .p1)
                 assertEqual(manager.players[.p1]?.role, .lead)
                 assertEqual(manager.players[.p1]?.midiChannel, 2)
+                manager.applyChannelMap(HostMIDIContext.abletonLive.dedicatedPortChannels)
+                assertEqual(manager.players[.p1]?.midiChannel, 0)
+                manager.setRole(.drums, for: .p1)
+                assertEqual(manager.players[.p1]?.midiChannel, 9)
+                manager.setRole(.lead, for: .p1)
+                assertEqual(manager.players[.p1]?.midiChannel, 0)
+                manager.applyChannelMap(.sharedCableJam)
+                assertEqual(manager.players[.p1]?.midiChannel, 2)
+            }
+        }
+
+        suite("DAW Host MIDI Channel Context") {
+            test("Logic and Live advertise 15-member lower zones") {
+                assertEqual(HostMIDIContext.logicPro.mpeZone.memberCount, 15)
+                assertEqual(HostMIDIContext.abletonLive.mpeZone.memberChannels.last, 15)
+                assertFalse(HostMIDIContext.flStudio.supportsMPE)
+            }
+
+            test("Filtered DAW track channel disables MPE") {
+                let layout = HostMIDIContextResolver.resolveLayout(
+                    context: .logicPro,
+                    trackMode: .filtered(3)
+                )
+                assertFalse(layout.usesMPE)
+                assertEqual(layout.channel(for: .melody), 3)
+                assertEqual(layout.channel(for: .drums), 9)
+            }
+
+            test("Auto-detect matches Ableton bundle ID") {
+                let resolved = HostMIDIContextResolver.resolve(
+                    selection: .autoDetect,
+                    signals: HostDetectionSignals(bundleIdentifiers: ["com.ableton.live"])
+                )
+                assertEqual(resolved.kind, .abletonLive)
+            }
+
+            test("Frontmost Live wins over background Logic") {
+                let resolved = HostMIDIContextResolver.resolve(
+                    selection: .autoDetect,
+                    signals: HostDetectionSignals(
+                        frontmostBundleIdentifier: "com.ableton.live",
+                        bundleIdentifiers: ["com.apple.logic10", "com.ableton.live"]
+                    )
+                )
+                assertEqual(resolved.kind, .abletonLive)
             }
         }
 
