@@ -31,7 +31,8 @@ This document outlines the multi-phase vision, milestones, and technical traject
 - [ ] Manual DAW certification (Ableton Live 11/12, Apple Logic Pro, Bitwig Studio) — in progress.
 - [x] Controller ergonomics proof matrix (DualSense, Xbox Wireless, Switch Pro, Generic MFi) (`CONTROLLER_MATRIX.md`).
 - [ ] Logic Pro and real-host experimental MIDI 2.0 UMP output validation (#13).
-- [ ] Live caller high-resolution expression wiring (`AppState.applyExpression`) and attack velocity normalization (#15).
+- [x] Live caller high-resolution expression wiring (`AppState.applyExpression`) (#15).
+- [ ] Attack velocity normalization so MIDI 2 can use 16-bit attack values (#15).
 - [x] MIDI-CI MPE Profile (`M2-120-UM_v2-0-3`) negotiation and bidirectional CoreMIDI discovery (#14).
 - [x] Native MIDI 2 per-note expression evaluation (#18).
 - [x] MIDI Clip File (M2-116-U) / SMF2 export for native MIDI 2 performances (#19).
@@ -52,7 +53,7 @@ This document outlines the multi-phase vision, milestones, and technical traject
 | MIDI-CI MPE Profile | Q2 2026 | ✅ Complete | Bidirectional discovery & `M2-120-UM_v2-0-3` |
 | Native MIDI 2 Per-Note | Q2 2026 | ✅ Complete | 32-bit Per-Note Pitch/Pressure/Timbre UMPs |
 | SMF2 / MIDI Clip File | Q2 2026 | ✅ Complete | Binary encoder & parser (M2-116-U v1.0) |
-| Live high-res expression | Q2 2026 | 🔄 In progress | Live `AppState` wiring & velocity refactor |
+| Live high-res expression | Q2 2026 | 🔄 In progress | Live `AppState` caller wired; attack velocity remaining |
 | MIDI-CI MPE Profile | Q3 2026 | 📋 Planned | Bidirectional discovery & negotiation |
 | MIDI Clip File export | Q3 2026 | 📋 Planned | M2-116-U UMP clip timeline renderer |
 
