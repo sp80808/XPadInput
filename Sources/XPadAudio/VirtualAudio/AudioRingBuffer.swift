@@ -79,7 +79,7 @@ public final class AudioRingBuffer: @unchecked Sendable {
     /// Writes single-channel audio frames to the ring buffer.
     @discardableResult
     public func write(from source: UnsafePointer<Float>, frameCount: Int, channelIndex: Int = 0) -> Int {
-        guard frameCount > 0 else { return 0 }
+        guard frameCount > 0, channelIndex >= 0, channelIndex < channels else { return 0 }
         
         lock.lock()
         let available = capacityFrames - (writeHead >= readHead ? (writeHead - readHead) : (capacityFrames + writeHead - readHead)) - 1
@@ -196,7 +196,7 @@ public final class AudioRingBuffer: @unchecked Sendable {
     /// Reads non-interleaved float frames for a single channel.
     @discardableResult
     public func read(into destination: UnsafeMutablePointer<Float>, frameCount: Int, channelIndex: Int = 0) -> Int {
-        guard frameCount > 0 else { return 0 }
+        guard frameCount > 0, channelIndex >= 0, channelIndex < channels else { return 0 }
         
         lock.lock()
         let available = writeHead >= readHead ? (writeHead - readHead) : (capacityFrames + writeHead - readHead)

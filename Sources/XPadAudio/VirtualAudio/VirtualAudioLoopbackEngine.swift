@@ -6,7 +6,16 @@ public final class LoopbackAudioRecorder: @unchecked Sendable {
     public private(set) var isRecording: Bool = false
     public private(set) var recordedFrames: UInt64 = 0
     public private(set) var currentOutputFileURL: URL?
-    
+
+    /// Human-readable description of the write failure that aborted the
+    /// current capture, if any. `nil` while the capture is healthy.
+    public var lastWriteErrorDescription: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _lastWriteErrorDescription
+    }
+
+    private var _lastWriteErrorDescription: String?
     private var audioFile: AVAudioFile?
     private let lock = NSLock()
     
@@ -56,6 +65,7 @@ public final class LoopbackAudioRecorder: @unchecked Sendable {
         self.audioFile = file
         self.currentOutputFileURL = destinationURL
         self.recordedFrames = 0
+        self._lastWriteErrorDescription = nil
         self.isRecording = true
         
         return destinationURL
@@ -63,16 +73,19 @@ public final class LoopbackAudioRecorder: @unchecked Sendable {
     
     /// Writes a stereo audio buffer into the open recording file.
     public func recordBuffer(_ buffer: AVAudioPCMBuffer) {
-        guard isRecording, let file = audioFile else { return }
-        
         lock.lock()
         defer { lock.unlock() }
+        
+        guard isRecording, let file = audioFile else { return }
         
         do {
             try file.write(from: buffer)
             recordedFrames &+= UInt64(buffer.frameLength)
         } catch {
-            print("⚠️ Failed to write audio buffer to loopback file: \(error)")
+            _lastWriteErrorDescription = error.localizedDescription
+            audioFile = nil
+            isRecording = false
+            print("⚠️ Failed to write audio buffer to loopback file; capture aborted: \(error)")
         }
     }
     

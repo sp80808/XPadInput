@@ -171,15 +171,11 @@ public struct PitchExpressionEngine: Sendable {
     }
 
     public static func pitchBendValue(semitones: Double, range: Double) -> UInt16 {
-        guard range > 0 else { return 8192 }
-        let n = max(-1.0, min(1.0, semitones / range))
-        let raw = 8192.0 + n * 8192.0
-        return UInt16(max(0, min(16383, raw.rounded())))
+        MIDIValueCodec.pitchBend14(semitones: semitones, range: range)
     }
 
     public static func semitones(fromPitchBend value: UInt16, range: Double) -> Double {
-        let n = (Double(value) - 8192.0) / 8192.0
-        return n * range
+        MIDIValueCodec.semitones(fromPitchBend14: value, range: range)
     }
 
     private func makeState(

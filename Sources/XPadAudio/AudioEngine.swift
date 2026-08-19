@@ -214,6 +214,10 @@ public final class AudioEngine: @unchecked Sendable {
     public static let shared = AudioEngine()
     
     public var isRunning: Bool = false
+
+    /// Human-readable description of the most recent engine start failure.
+    /// `nil` once the engine starts successfully.
+    public private(set) var startErrorDescription: String?
     public var volume: Float = 0.7
     public var currentPreset: SynthPreset = .polyLead
     public private(set) var velocityCurve: SynthVelocityCurve = .balanced
@@ -422,8 +426,10 @@ public final class AudioEngine: @unchecked Sendable {
         do {
             try engine.start()
             isRunning = true
+            startErrorDescription = nil
             attachLoopback()
         } catch {
+            startErrorDescription = error.localizedDescription
             print("⚠️ Audio engine failed to start: \(error)")
         }
     }
@@ -445,6 +451,7 @@ public final class AudioEngine: @unchecked Sendable {
         if !isRunning {
             start()
         }
+        guard isRunning else { return }
         
         lock.lock()
         
@@ -492,6 +499,7 @@ public final class AudioEngine: @unchecked Sendable {
         if !isRunning {
             start()
         }
+        guard isRunning else { return }
 
         let voice = PercussionVoice(
             sound: sound,
@@ -1021,13 +1029,13 @@ public final class SynthVoice: @unchecked Sendable {
         case .sine:
             return sin(phase * 2.0 * .pi)
         case .saw:
-            return (phase * 2.0 - 1.0) - polyBLEP(phase: phase, increment: increment)
+            return (phase * 2.0 - 1.0) - DSPMath.polyBLEP(phase: phase, increment: increment)
         case .square:
             let raw = phase < 0.5 ? 1.0 : -1.0
             let shiftedPhase = phase < 0.5 ? phase + 0.5 : phase - 0.5
             return raw
-                + polyBLEP(phase: phase, increment: increment)
-                - polyBLEP(phase: shiftedPhase, increment: increment)
+                + DSPMath.polyBLEP(phase: phase, increment: increment)
+                - DSPMath.polyBLEP(phase: shiftedPhase, increment: increment)
         case .triangle:
             return 1.0 - 4.0 * abs(phase - 0.5)
         case .noise:
@@ -1035,20 +1043,6 @@ public final class SynthVoice: @unchecked Sendable {
         }
     }
 
-    @inline(__always)
-    private static func polyBLEP(phase: Double, increment: Double) -> Double {
-        guard increment > 0 else { return 0 }
-        if phase < increment {
-            let t = phase / increment
-            return t + t - t * t - 1.0
-        }
-        if phase > 1.0 - increment {
-            let t = (phase - 1.0) / increment
-            return t * t + t + t + 1.0
-        }
-        return 0
-    }
-    
     public func start() {
         // Voice starts automatically via render callback
     }

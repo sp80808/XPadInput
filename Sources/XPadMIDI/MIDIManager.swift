@@ -73,6 +73,10 @@ public final class MIDIEngine: @unchecked Sendable {
 
     public var onVirtualMIDIChanged: ((Bool) -> Void)?
 
+    /// Human-readable description of the most recent CoreMIDI setup failure.
+    /// `nil` when the last enable attempt created every endpoint successfully.
+    public private(set) var setupErrorDescription: String?
+
     public private(set) var lastSentNotes: [UInt8] = []
     public private(set) var midiActivityTimestamp: Date?
     public var isMIDIActive: Bool {
@@ -168,12 +172,18 @@ public final class MIDIEngine: @unchecked Sendable {
     private func setupMIDIClient() {
         let status = MIDIClientCreateWithBlock("XPI" as CFString, &midiClient) { _ in }
         if status != noErr {
+            midiClient = 0
+            setupErrorDescription = "Failed to create XPI MIDI client (OSStatus \(status))"
             print("⚠️ Failed to create XPI MIDI client: \(status)")
         }
     }
 
     private func createVirtualSources() {
+        if midiClient == 0 {
+            setupMIDIClient()
+        }
         guard midiClient != 0 else { return }
+        var failures: [String] = []
         let protocolID = transportProtocol.coreMIDIProtocol
 
         for port in VirtualPort.allCases {
@@ -204,6 +214,7 @@ public final class MIDIEngine: @unchecked Sendable {
                 outputs[port] = endpoint
                 lock.unlock()
             } else {
+                failures.append("\(port.rawValue) source (OSStatus \(status))")
                 print("⚠️ Failed to create \(port.rawValue) MIDI source: \(status)")
             }
         }
@@ -222,8 +233,15 @@ public final class MIDIEngine: @unchecked Sendable {
             }
             if status == noErr {
                 self.inputDestination = destEndpoint
+            } else {
+                failures.append("XPI Input / CI destination (OSStatus \(status))")
+                print("⚠️ Failed to create XPI Input / CI MIDI destination: \(status)")
             }
         }
+
+        setupErrorDescription = failures.isEmpty
+            ? nil
+            : "Failed to create: " + failures.joined(separator: ", ")
     }
 
     private func disposeVirtualSources() {
@@ -244,18 +262,30 @@ public final class MIDIEngine: @unchecked Sendable {
 
     private func handleIncomingMIDIEventList(_ eventList: UnsafePointer<MIDIEventList>) {
         // Parse incoming events for MIDI-CI SysEx queries
-        var packet = eventList.pointee.packet
-        for _ in 0..<eventList.pointee.numPackets {
-            let count = Int(packet.wordCount)
+        let numPackets = Int(eventList.pointee.numPackets)
+        guard numPackets > 0 else { return }
+
+        let wordCapacity = MemoryLayout.size(ofValue: eventList.pointee.packet.words)
+            / MemoryLayout<UInt32>.size
+
+        var packetPtr = UnsafeMutablePointer(mutating: eventList)
+            .pointer(to: \.packet)!
+        for _ in 0..<numPackets {
+            let count = Int(packetPtr.pointee.wordCount)
+            // MIDIEventPacketNext advances using the packet's stored wordCount,
+            // so a list whose count exceeds the fixed word storage cannot be
+            // traversed safely.
+            guard count <= wordCapacity else { return }
             if count > 0 {
-                let words = withUnsafePointer(to: &packet.words) { ptr in
-                    ptr.withMemoryRebound(to: UInt32.self, capacity: count) { buf in
-                        Array(UnsafeBufferPointer(start: buf, count: count))
-                    }
+                let words = packetPtr.pointer(to: \.words)!.withMemoryRebound(
+                    to: UInt32.self,
+                    capacity: count
+                ) { buf in
+                    Array(UnsafeBufferPointer(start: buf, count: count))
                 }
                 processIncomingUMPWords(words)
             }
-            packet = MIDIEventPacketNext(&packet).pointee
+            packetPtr = MIDIEventPacketNext(packetPtr)
         }
     }
 
@@ -506,14 +536,10 @@ public final class MIDIEngine: @unchecked Sendable {
         semitoneOffset: Double,
         bendRangeSemitones: Double
     ) -> UInt16 {
-        guard semitoneOffset.isFinite, bendRangeSemitones.isFinite, bendRangeSemitones > 0 else {
-            return 8192
-        }
-        let normalized = max(-1.0, min(1.0, semitoneOffset / bendRangeSemitones))
-        if normalized >= 0 {
-            return UInt16((8192.0 + normalized * 8191.0).rounded())
-        }
-        return UInt16((8192.0 + normalized * 8192.0).rounded())
+        MIDIValueCodec.asymmetricPitchBend14(
+            semitones: semitoneOffset,
+            range: bendRangeSemitones
+        )
     }
 
     // MARK: - Native MIDI 2 Per-Note & SysEx
@@ -598,9 +624,7 @@ public final class MIDIEngine: @unchecked Sendable {
     }
 
     private static func midi7(_ normalizedValue: Double) -> UInt8 {
-        guard normalizedValue.isFinite else { return 0 }
-        let normalized = min(1.0, max(0.0, normalizedValue))
-        return UInt8((normalized * 127.0).rounded())
+        MIDIValueCodec.midi7(normalizedValue)
     }
 
     /// Dispatches a semantic channel event to one DAW-visible source.
@@ -611,7 +635,7 @@ public final class MIDIEngine: @unchecked Sendable {
         case .noteOff(let channel, let note):
             sendNoteOff(port: port, channel: channel, note: note)
         case .pitchBend(let channel, let value):
-            let unsigned = UInt16(max(0, min(16_383, Int(value) + 8_192)))
+            let unsigned = MIDIValueCodec.unsignedPitchBend14(signed: value)
             sendPitchBend(port: port, channel: channel, value: unsigned)
         case .polyPressure(let channel, let note, let pressure):
             sendPolyPressure(

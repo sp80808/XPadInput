@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import XPadCore
 
 /// A predictable velocity response for the built-in synth and drum voices.
 ///
@@ -152,11 +153,5 @@ public struct SynthEffectsSettings: Codable, Equatable, Sendable {
             compressor: compressor.normalized,
             reverb: reverb.normalized
         )
-    }
-}
-
-extension Comparable {
-    fileprivate func clamped(to range: ClosedRange<Self>) -> Self {
-        min(max(self, range.lowerBound), range.upperBound)
     }
 }

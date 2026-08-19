@@ -632,32 +632,26 @@ public final class AppState: @unchecked Sendable {
 
         let pressure = frame.pressure.smoothed
         audioEngine.setPressure(for: lead.midiNote, pressure: pressure)
-        if destinationProfile.supportsMPE {
-            mpeManager.setPressure(for: lead.midiNote, normalizedPressure: pressure)
-        } else {
-            let pressure7 = UInt8(min(127, Int(pressure * 127)))
-            for port in conventionalPorts {
-                switch destinationProfile.resolvedPressureMode(preferred: instrumentProfile.pressureMode).mode {
-                case .mpePressure, .channelPressure:
-                    midiEngine.sendChannelPressure(port: port, channel: midiChannel(for: port), pressure: pressure7)
-                case .polyPressure:
-                    midiEngine.sendPolyPressure(port: port, channel: midiChannel(for: port), note: lead.midiNote, pressure: pressure7)
-                case .cc11:
-                    midiEngine.sendCC(port: port, channel: midiChannel(for: port), controller: 11, value: pressure7)
-                }
-            }
-        }
+        LiveExpressionDispatch.sendPressure(
+            mpe: mpeManager,
+            midi: midiEngine,
+            destination: destinationProfile,
+            preferredPressureMode: instrumentProfile.pressureMode,
+            note: lead.midiNote,
+            ports: conventionalPorts,
+            normalizedPressure: frame.pressure.smoothed
+        )
 
         let timbre = frame.timbre
         audioEngine.setTimbre(for: lead.midiNote, timbre: timbre)
-        if destinationProfile.supportsMPE {
-            mpeManager.setTimbre(for: lead.midiNote, normalizedValue: timbre)
-        } else if destinationProfile.supportsCC74 {
-            let timbre7 = UInt8(min(127, Int(timbre * 127)))
-            for port in conventionalPorts {
-                midiEngine.sendTimbreCC74(port: port, channel: midiChannel(for: port), value: timbre7)
-            }
-        }
+        LiveExpressionDispatch.sendTimbre(
+            mpe: mpeManager,
+            midi: midiEngine,
+            destination: destinationProfile,
+            note: lead.midiNote,
+            ports: conventionalPorts,
+            normalizedTimbre: frame.timbre
+        )
 
         for note in activeNotes {
             audioEngine.setDamping(for: note.midiNote, damping: frame.palmMuteAmount)
@@ -682,14 +676,14 @@ public final class AppState: @unchecked Sendable {
     private func applyLeadTimbre(_ timbre: Double) {
         guard let lead = bendLeadNote() else { return }
         audioEngine.setTimbre(for: lead.midiNote, timbre: timbre)
-        let value = UInt8(min(127, Int(timbre * 127)))
-        if destinationProfile.supportsMPE {
-            mpeManager.setTimbre(for: lead.midiNote, value: value)
-        } else if destinationProfile.supportsCC74 {
-            for port in midiPorts(for: lead.midiNote) {
-                midiEngine.sendTimbreCC74(port: port, channel: midiChannel(for: port), value: value)
-            }
-        }
+        LiveExpressionDispatch.sendTimbre(
+            mpe: mpeManager,
+            midi: midiEngine,
+            destination: destinationProfile,
+            note: lead.midiNote,
+            ports: midiPorts(for: lead.midiNote),
+            normalizedTimbre: timbre
+        )
     }
 
     private func handleStrumming(_ state: ControllerState, timestamp: TimeInterval) {
