@@ -104,6 +104,7 @@ struct ControllerPerformanceHUD: View {
     let currentChord: Chord?
     let lastVelocity: UInt8
     let lastStrumDirection: StrumDirection
+    var remapSnapshot: ControllerRemapSnapshot = ControllerRemapSnapshot()
 
     private var iconPack: ControllerIconPack {
         switch controllerKind {
@@ -241,13 +242,14 @@ struct ControllerPerformanceHUD: View {
                 iconPack: iconPack,
                 controllerKind: controllerKind,
                 roles: duoMode == .drumsAndInstrument ? .drums : .harmonic,
-                scale: scale
+                scale: scale,
+                remapSnapshot: remapSnapshot
             )
 
             TactileStickView(
                 state: state.rightStick,
                 label: "R",
-                role: labels.rightStick,
+                role: frame?.ownedGesture.hudRole ?? labels.rightStick,
                 tint: XTheme.expression,
                 showsStrings: instrument.supportsStrumming,
                 direction: lastStrumDirection,
@@ -846,8 +848,9 @@ private struct TactileFaceButtonsView: View {
     let controllerKind: ControllerKind
     let roles: FaceRoleLabels
     let scale: ControllerHUDScale
+    var remapSnapshot: ControllerRemapSnapshot = ControllerRemapSnapshot()
 
-    private var glyphs: FaceGlyphSet { FaceGlyphSet(controllerKind: controllerKind) }
+    private var glyphs: FaceGlyphSet { FaceGlyphSet(controllerKind: controllerKind, remap: remapSnapshot) }
 
     var body: some View {
         VStack(spacing: scale == .expanded ? 4 : 2) {
@@ -926,14 +929,32 @@ private struct FaceGlyphSet {
     let left: GlyphKey
     let top: GlyphKey
 
-    init(controllerKind: ControllerKind) {
+    init(controllerKind: ControllerKind, remap: ControllerRemapSnapshot = ControllerRemapSnapshot()) {
+        let family: (bottom: GlyphKey, right: GlyphKey, left: GlyphKey, top: GlyphKey)
         switch controllerKind {
         case .dualSense, .dualShock4:
-            (bottom, right, left, top) = (.psCross, .psCircle, .psSquare, .psTriangle)
+            family = (.psCross, .psCircle, .psSquare, .psTriangle)
         case .switchPro:
-            (bottom, right, left, top) = (.nintendoB, .nintendoA, .nintendoY, .nintendoX)
+            family = (.nintendoB, .nintendoA, .nintendoY, .nintendoX)
         default:
-            (bottom, right, left, top) = (.xboxA, .xboxB, .xboxX, .xboxY)
+            family = (.xboxA, .xboxB, .xboxX, .xboxY)
+        }
+        bottom = Self.glyph(for: ControllerRemapResolver.displayedInput(for: .buttonSouth, snapshot: remap), family: family)
+        right = Self.glyph(for: ControllerRemapResolver.displayedInput(for: .buttonEast, snapshot: remap), family: family)
+        left = Self.glyph(for: ControllerRemapResolver.displayedInput(for: .buttonWest, snapshot: remap), family: family)
+        top = Self.glyph(for: ControllerRemapResolver.displayedInput(for: .buttonNorth, snapshot: remap), family: family)
+    }
+
+    private static func glyph(
+        for input: PhysicalControlInput,
+        family: (bottom: GlyphKey, right: GlyphKey, left: GlyphKey, top: GlyphKey)
+    ) -> GlyphKey {
+        switch input {
+        case .buttonSouth: return family.bottom
+        case .buttonEast: return family.right
+        case .buttonWest: return family.left
+        case .buttonNorth: return family.top
+        default: return input.defaultGlyphKey
         }
     }
 }

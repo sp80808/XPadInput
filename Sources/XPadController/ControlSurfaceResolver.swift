@@ -177,9 +177,10 @@ public struct ControlSurfaceResolver: Sendable {
         logical.optionsButton = frame.isHeld(.metronomeToggle)
 
         logical.touchpadX = frame.analogValue(for: .timbreExpression)
-        logical.touchpadActive = abs(logical.touchpadX) > 0.04
+        logical.touchpadActive = abs(logical.touchpadX) > 0.04 || physical.touchpadActive
+        logical.touchpadButtonPressed = physical.touchpadButtonPressed
         logical.gyroX = Double(frame.analogValue(for: .motionExpression))
-        logical.hasMotion = abs(logical.gyroX) > 0.02
+        logical.hasMotion = abs(logical.gyroX) > 0.02 || physical.hasMotion
 
         // Preserve unused physical telemetry so visualisers can still show raw hardware
         // when they read `controllerState` directly.
@@ -189,6 +190,10 @@ public struct ControlSurfaceResolver: Sendable {
         logical.accelX = physical.accelX
         logical.accelY = physical.accelY
         logical.accelZ = physical.accelZ
+        logical.buttonAValue = physical.buttonAValue
+        logical.buttonBValue = physical.buttonBValue
+        logical.buttonXValue = physical.buttonXValue
+        logical.buttonYValue = physical.buttonYValue
     }
 
     // MARK: - Sampling

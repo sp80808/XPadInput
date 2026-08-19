@@ -129,7 +129,8 @@ public struct ControlSchemeSettingsView: View {
                     if let caps = appState.controllerManager.capabilityProfile {
                         if caps.hasHaptics { capabilityBadge("Haptics", icon: "dot.radiowaves.left.and.right") }
                         if caps.hasMotionIMU { capabilityBadge("Motion IMU", icon: "gyroscope") }
-                        if caps.hasAnalogTriggers { capabilityBadge("Adaptive Triggers", icon: "gauge.with.needle") }
+                        if caps.hasAdaptiveTriggers { capabilityBadge("Adaptive Triggers", icon: "gauge.with.needle") }
+                        else if caps.hasAnalogTriggers { capabilityBadge("Analog Triggers", icon: "gauge.with.needle") }
                         if caps.hasTouchpad { capabilityBadge("Touchpad", icon: "hand.draw") }
                     } else {
                         Text("Standard Extended Gamepad Profile Active")
@@ -293,22 +294,36 @@ public struct ControlSchemeSettingsView: View {
                 }
             }
             
-            // Analog Stick Feel
-            settingsCard(title: "Thumbstick Feel & Response Curve", icon: "circle.grid.cross") {
+            // Analog Stick Feel — ControlSurfaceProfile owns role-specific processing
+            settingsCard(title: "Control Surface Feel", icon: "circle.grid.cross") {
                 VStack(alignment: .leading, spacing: 10) {
-                    Picker("Stick Profile", selection: Binding(
-                        get: { currentScheme.stickFeel },
-                        set: { val in updateScheme { $0.stickFeel = val } }
+                    Picker("Surface Feel", selection: Binding(
+                        get: { appState.controllerManager.surfaceProfile.feel },
+                        set: { val in
+                            var profile = appState.controllerManager.surfaceProfile
+                            profile.feel = val
+                            appState.controllerManager.applySurfaceProfile(profile)
+                        }
                     )) {
-                        ForEach(StickFeelPreset.allCases) { preset in
-                            Text(preset.rawValue).tag(preset)
+                        ForEach(ControlSurfaceFeel.allCases) { feel in
+                            Text(feel.pickerLabel).tag(feel)
                         }
                     }
                     .pickerStyle(.segmented)
-                    
-                    Text("• Precise: Expanded resolution near center for fine vibrato.\n• Balanced: Natural proportional response for all-round playing.\n• Responsive: Rapid output from light thumb gestures.")
+
+                    Text("Harmony (left) uses a different curve from strum (right Y) and bend (right X). Reduced Travel reaches full musical range with less physical movement. Instrument identity is unchanged.")
                         .font(.system(size: 11))
                         .foregroundStyle(XTheme.textTertiary)
+
+                    Toggle("Mirror surface (left-handed)", isOn: Binding(
+                        get: { appState.controllerManager.surfaceProfile.mirrored },
+                        set: { val in
+                            var profile = appState.controllerManager.surfaceProfile
+                            profile.mirrored = val
+                            appState.controllerManager.applySurfaceProfile(profile)
+                        }
+                    ))
+                    .font(.system(size: 13))
                 }
             }
             
@@ -328,6 +343,66 @@ public struct ControlSchemeSettingsView: View {
                     Text("Configures activation depth and pressure curve for acoustic muting and continuous dynamic swells.")
                         .font(.system(size: 11))
                         .foregroundStyle(XTheme.textTertiary)
+
+                    Picker("Adaptive trigger force", selection: Binding(
+                        get: { appState.controllerManager.surfaceProfile.triggerForce },
+                        set: { val in
+                            var profile = appState.controllerManager.surfaceProfile
+                            profile.triggerForce = val
+                            appState.controllerManager.applySurfaceProfile(profile)
+                        }
+                    )) {
+                        ForEach(AdaptiveTriggerForcePolicy.allCases) { policy in
+                            Text(policy.rawValue).tag(policy)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Text("Force is DualSense-only. Off / Reduced / Standard never changes musical trigger values on Xbox or other pads.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(XTheme.textTertiary)
+                }
+            }
+
+            settingsCard(title: "Grip & Occupancy", icon: "hand.raised") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Picker("Grip", selection: Binding(
+                        get: { appState.controllerManager.surfaceProfile.grip },
+                        set: { val in
+                            var profile = appState.controllerManager.surfaceProfile
+                            profile.grip = val
+                            appState.controllerManager.applySurfaceProfile(profile)
+                        }
+                    )) {
+                        ForEach(GripProfile.allCases) { grip in
+                            Text(grip.rawValue).tag(grip)
+                        }
+                    }
+                    .pickerStyle(.menu)
+
+                    if appState.controllerManager.lastErgonomicWarnings.isEmpty {
+                        Text("No occupancy conflicts for this grip.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(XTheme.textTertiary)
+                    } else {
+                        ForEach(appState.controllerManager.lastErgonomicWarnings) { warning in
+                            HStack(alignment: .top, spacing: 6) {
+                                Image(systemName: warning.kind == .intentionalTradeoff ? "info.circle" : "exclamationmark.triangle")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(warning.kind == .intentionalTradeoff ? XTheme.primary : XTheme.warning)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(warning.kind.rawValue)
+                                        .font(.system(size: 11, weight: .semibold))
+                                    Text(warning.message)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(XTheme.textTertiary)
+                                }
+                            }
+                        }
+                        Text("Warnings never block saving a custom mapping.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(XTheme.textTertiary)
+                    }
                 }
             }
             
@@ -371,6 +446,25 @@ public struct ControlSchemeSettingsView: View {
     
     private var remappingView: some View {
         VStack(spacing: 16) {
+            if appState.controllerManager.remapSnapshot.hasRemappedElements {
+                settingsCard(title: "macOS Controller Remap", icon: "arrow.triangle.2.circlepath") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("System Settings remapped this controller. HUD labels follow the physical control you actually press.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(XTheme.textTertiary)
+                        ForEach(appState.controllerManager.remapSnapshot.physicalNameByAlias.sorted(by: { $0.key < $1.key }), id: \.key) { alias, physical in
+                            HStack {
+                                Text(alias)
+                                    .font(.system(size: 11, design: .monospaced))
+                                Spacer()
+                                Text(physical)
+                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            }
+                        }
+                    }
+                }
+            }
+
             if !coverageIssues.isEmpty {
                 settingsCard(title: "Scheme Coverage", icon: "checklist") {
                     VStack(alignment: .leading, spacing: 6) {
@@ -427,7 +521,11 @@ public struct ControlSchemeSettingsView: View {
             
             // Input Badge with Glyphs
             HStack(spacing: 6) {
-                Text(appState.controllerManager.physicalLabel(for: boundInput))
+                let displayed = ControllerRemapResolver.displayedInput(
+                    for: boundInput,
+                    snapshot: appState.controllerManager.remapSnapshot
+                )
+                Text(appState.controllerManager.physicalLabel(for: displayed))
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(boundInput == .unassigned ? XTheme.textTertiary : XTheme.textPrimary)
                     .padding(.horizontal, 8)
@@ -440,6 +538,11 @@ public struct ControlSchemeSettingsView: View {
                                     .strokeBorder(XTheme.border, lineWidth: 1)
                             )
                     )
+                if displayed != boundInput {
+                    Text("remapped")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(XTheme.primary)
+                }
                 
                 // Learn / Rebind Button
                 Button {
@@ -506,6 +609,28 @@ public struct ControlSchemeSettingsView: View {
     
     private var liveTestStudioView: some View {
         VStack(spacing: 16) {
+            settingsCard(title: "Action → Sound Timing", icon: "timer") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle("Collect software timing", isOn: Binding(
+                        get: { appState.latencyProbe.isEnabled },
+                        set: { appState.latencyProbe.isEnabled = $0 }
+                    ))
+                    Text(appState.latencyProbe.snapshot().summaryLine)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(XTheme.textSecondary)
+                    Text("Host-time from controller callback through internal synth Note On return. This is not acoustic hardware latency. Graph mutation is attach/connect cost on the attack path. First-buffer is the first audio render callback after Note On.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(XTheme.textTertiary)
+                    Text(String(format: "Last first-buffer: %.2f ms", appState.audioEngine.lastFirstBufferMs))
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(XTheme.textSecondary)
+                    Button("Reset samples") {
+                        appState.latencyProbe.reset()
+                    }
+                    .buttonStyle(.borderless)
+                }
+            }
+
             // Live Stick Vectors
             HStack(spacing: 16) {
                 stickTestBox(
@@ -890,6 +1015,7 @@ public struct ControlSchemeSettingsView: View {
         coverageIssues = currentScheme.coverageIssues(
             capabilities: appState.controllerManager.capabilityProfile
         )
+        appState.controllerManager.refreshErgonomicWarnings()
     }
 
     private var warningSummary: String {

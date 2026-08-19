@@ -169,7 +169,9 @@ public struct MapWorkspaceView: View {
                             modulationRowWithGlyph(glyph: .leftStick, source: "Left Stick Angle", dest: "Harmonic Wheel Sector", amount: "100%")
                             modulationRowWithGlyph(glyph: .leftStick, source: "Left Stick Radius", dest: "Harmonic Risk / Extensions", amount: "75%")
                             modulationRowWithGlyph(glyph: .rightStick, source: "Right Stick Velocity", dest: "Strum Dynamics & Velocity", amount: "100%")
-                            modulationRowWithGlyph(glyph: .psTouchpad, source: "Touchpad Surface", dest: "2D Filter & Resonance Sweep", amount: "80%")
+                            if (controllerManager.capabilityProfile ?? ControllerCapabilityProfile.preset(for: controllerManager.controllerKind)).hasTouchpad {
+                                modulationRowWithGlyph(glyph: .psTouchpad, source: "Touchpad Surface", dest: "2D Filter & Resonance Sweep", amount: "80%")
+                            }
                         }
                     }
                 }

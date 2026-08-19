@@ -39,6 +39,7 @@ public final class AppState: @unchecked Sendable {
     public var diatonicChords: [Chord] = []
     public var selectedChordIndex: Int = 0
     public var currentChord: Chord?
+    public var harmonicSelection = HarmonicSelectionState()
     public var previousVoicing: ChordVoicing?
 
     public var activeNotes: [Note] = []
@@ -68,6 +69,7 @@ public final class AppState: @unchecked Sendable {
     public var chordGateConfiguration = ChordGateConfiguration(mode: .timed, timedDuration: 0.85)
     public var duoPerformanceMode: DuoPerformanceMode = .instrumentOnly
     public var lastDrumHit: DuoDrumHit?
+    public let latencyProbe = ActionSoundLatencyProbe()
 
     private var strumState = StrumState()
     private var heldFaceNotes: [ChordToneRole: Note] = [:]
@@ -138,7 +140,9 @@ public final class AppState: @unchecked Sendable {
     public func updateDiatonicChords() {
         diatonicChords = Chord.diatonicChords(root: currentKey, scale: currentScale)
         if diatonicChords.isEmpty == false {
+            harmonicSelection.resize(sectorCount: diatonicChords.count)
             selectedChordIndex = min(selectedChordIndex, diatonicChords.count - 1)
+            harmonicSelection.commit(index: selectedChordIndex)
             currentChord = diatonicChords[selectedChordIndex]
         }
     }
@@ -347,6 +351,7 @@ public final class AppState: @unchecked Sendable {
 
     private func handleControllerInput(_ state: ControllerState) {
         let now = ProcessInfo.processInfo.systemUptime
+        latencyProbe.beginCycle(at: now)
         let surface = controllerManager.surfaceFrame
         applySurfaceActions(surface)
         if surface.didRise(.panic) { return }
@@ -445,35 +450,50 @@ public final class AppState: @unchecked Sendable {
     }
 
     private func handleChordSelection(_ state: ControllerState) {
-        guard state.leftStickMagnitude > 0.3 else { return }
-
-        let angle = state.leftStickAngle
         let chordCount = diatonicChords.count
         guard chordCount > 0 else { return }
+        harmonicSelection.resize(sectorCount: chordCount)
 
-        var normalised = -(angle - .pi / 2)
-        if normalised < 0 { normalised += 2 * .pi }
+        let snapshot = harmonicSelection.evaluate(
+            angle: state.leftStickAngle,
+            radius: Double(state.leftStickMagnitude)
+        )
 
-        let sliceAngle = (2.0 * .pi) / Double(chordCount)
-        let centred = (normalised + sliceAngle / 2).truncatingRemainder(dividingBy: 2 * .pi)
-        let slicePosition = centred / sliceAngle
-        let index = Int(slicePosition) % chordCount
-        let positionWithinSlice = slicePosition - floor(slicePosition)
-
-        // Leave a narrow neutral band at sector boundaries so small analog
-        // jitter cannot make the harmonic wheel flicker between neighbours.
-        guard positionWithinSlice > 0.14, positionWithinSlice < 0.86 else { return }
-
-        if index != selectedChordIndex {
-            let old = currentChord ?? diatonicChords[selectedChordIndex]
-            selectedChordIndex = index
-            var new = diatonicChords[index]
-            new.inversion = voicingInversion
-            currentChord = new
-            retargetHeldChordTones()
-            multiJamManager.updateSharedHarmony(key: currentKey, scale: currentScale, chord: new)
-            _ = smartSoloEngine.handleChordChange(oldChord: old, newChord: new, context: musicalContext())
+        if snapshot.didEnterRisk {
+            controllerManager.playTechniqueHaptic(.harmonicRisk)
         }
+
+        guard snapshot.didCommitSector else { return }
+        latencyProbe.markGestureCommitted()
+        controllerManager.playTechniqueHaptic(.harmonicCommit)
+        applyCommittedChord(snapshot.sectorIndex)
+    }
+
+    public func selectDiatonicChord(at index: Int) {
+        guard diatonicChords.indices.contains(index) else { return }
+        harmonicSelection.resize(sectorCount: diatonicChords.count)
+        harmonicSelection.commit(index: index)
+        applyCommittedChord(index)
+    }
+
+    public func selectChord(_ chord: Chord) {
+        if let index = diatonicChords.firstIndex(where: { $0.root == chord.root && $0.quality == chord.quality }) {
+            selectDiatonicChord(at: index)
+        } else {
+            currentChord = chord
+        }
+    }
+
+    private func applyCommittedChord(_ index: Int) {
+        guard diatonicChords.indices.contains(index) else { return }
+        let old = currentChord ?? diatonicChords[min(selectedChordIndex, diatonicChords.count - 1)]
+        selectedChordIndex = index
+        var new = diatonicChords[index]
+        new.inversion = voicingInversion
+        currentChord = new
+        retargetHeldChordTones()
+        multiJamManager.updateSharedHarmony(key: currentKey, scale: currentScale, chord: new)
+        _ = smartSoloEngine.handleChordChange(oldChord: old, newChord: new, context: musicalContext())
     }
 
     private func retargetHeldChordTones() {
@@ -819,6 +839,7 @@ public final class AppState: @unchecked Sendable {
         direction: StrumDirection
     ) {
         cancelPendingStrumNotes()
+        latencyProbe.markGestureCommitted()
 
         var notes = voice.notes
         if direction == .up {
@@ -875,7 +896,9 @@ public final class AppState: @unchecked Sendable {
     }
 
     private func beginPhysicalVoice(_ note: Note, velocity: UInt8, technique: MusicalTechnique) {
+        latencyProbe.markNoteDispatched()
         audioEngine.noteOn(note: note.midiNote, velocity: velocity, technique: technique)
+        latencyProbe.complete(graphMutationMs: audioEngine.lastGraphMutationMs)
         if destinationProfile.supportsMPE {
             mpeManager.noteOn(note: note.midiNote, velocity: velocity, technique: technique)
         }

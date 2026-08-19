@@ -24,6 +24,27 @@ final class ControlSurfaceResolverTests: XCTestCase {
         XCTAssertEqual(logical.rightTrigger.value, 0.2, accuracy: 0.001)
     }
 
+    func testProjectionKeepsTouchpadClickAndAnalogFaceValues() {
+        var resolver = ControlSurfaceResolver(scheme: ControlSchemePreset.xpiPerformance)
+        let physical = ControllerState()
+        physical.touchpadButtonPressed = true
+        physical.touchpadActive = true
+        physical.touchpadY = -0.25
+        physical.buttonAValue = 0.44
+        physical.hasMotion = true
+        physical.gyroZ = 0.31
+
+        let frame = resolver.evaluate(state: physical, timestamp: 1)
+        let logical = ControllerState()
+        resolver.project(frame: frame, physical: physical, onto: logical)
+
+        XCTAssertTrue(logical.touchpadButtonPressed)
+        XCTAssertEqual(logical.touchpadY, -0.25, accuracy: 0.0001)
+        XCTAssertEqual(logical.buttonAValue, 0.44, accuracy: 0.0001)
+        XCTAssertEqual(logical.gyroZ, 0.31, accuracy: 0.0001)
+        XCTAssertTrue(logical.hasMotion)
+    }
+
     func testOneHandLeftMapsTriggerOntoExcitationAxis() {
         var resolver = ControlSurfaceResolver(scheme: ControlSchemePreset.oneHandLeft)
         let physical = ControllerState()

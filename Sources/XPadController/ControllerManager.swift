@@ -21,11 +21,15 @@ public final class ControllerManager: @unchecked Sendable {
     
     // Input Processors
     public var leftStickProcessor = StickProcessor(profile: .expressive)
-    public var rightStickProcessor = StickProcessor(profile: .expressive)
+    public var rightStickProcessor = StickProcessor(profile: .fast)
+    public var rightStickBendProcessor = StickProcessor(profile: .precision)
     public var leftTriggerProcessor = TriggerProcessor()
     public var rightTriggerProcessor = TriggerProcessor()
     public var adaptiveTriggerEngine = AdaptiveTriggerEngine()
     public var smartSoloEngine = SmartSoloEngine()
+    public var surfaceProfile = ControlSurfaceProfile()
+    public var remapSnapshot = ControllerRemapSnapshot()
+    public var lastErgonomicWarnings: [ErgonomicWarning] = []
     public var surfaceResolver = ControlSurfaceResolver()
     public let performanceState = ControllerState()
     public private(set) var surfaceFrame = ControlSurfaceFrame()
@@ -41,6 +45,10 @@ public final class ControllerManager: @unchecked Sendable {
     
     private var observers: [Any] = []
     private var hapticEngine: CHHapticEngine?
+    private var leftPassiveLearner = PassiveCalibrationLearner()
+    private var rightPassiveLearner = PassiveCalibrationLearner()
+    private var lastCalibrationPersist: TimeInterval = 0
+    private var connectedControllerId: String?
     
     public init() {
         loadPersistedSchemeAndCalibration()
@@ -64,7 +72,9 @@ public final class ControllerManager: @unchecked Sendable {
         }
         
         applySchemeToProcessors(self.activeScheme)
+        applySurfaceProfile(store.loadSurfaceProfile(), persist: false)
         surfaceResolver.scheme = self.activeScheme
+        refreshErgonomicWarnings()
     }
     
     private func setupNotifications() {
@@ -87,8 +97,17 @@ public final class ControllerManager: @unchecked Sendable {
                 self?.controllerDisconnected()
             }
         }
-        
-        observers = [connectObserver, disconnectObserver]
+
+        let remapObserver = NotificationCenter.default.addObserver(
+            forName: .GCControllerUserCustomizationsDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let controller = self?.connectedController else { return }
+            self?.refreshRemapSnapshot(from: controller)
+        }
+
+        observers = [connectObserver, disconnectObserver, remapObserver]
     }
     
     public func scanForControllers() {
@@ -110,12 +129,16 @@ public final class ControllerManager: @unchecked Sendable {
         
         // Load controller-specific calibration
         let controllerId = "\(controller.vendorName ?? "generic")_\(controller.productCategory)"
+        connectedControllerId = controllerId
         hardwareCalibration = ControllerSettingsStore.shared.loadCalibration(for: controllerId)
         applyCalibrationToProcessors()
-        
+        refreshRemapSnapshot(from: controller)
+        adaptiveTriggerEngine.resetHardwareCache()
+        adaptiveTriggerEngine.forcePolicy = surfaceProfile.triggerForce
+
         setupInputHandlers(controller)
         
-        if let motion = controller.motion, activeScheme.isMotionEnabled {
+        if let motion = controller.motion, activeScheme.isMotionEnabled && surfaceProfile.motionEnabled {
             motion.sensorsActive = true
         }
 
@@ -123,16 +146,25 @@ public final class ControllerManager: @unchecked Sendable {
     }
     
     private func controllerDisconnected() {
+        if let id = connectedControllerId {
+            var cal = hardwareCalibration
+            cal.controllerIdentifier = id
+            ControllerSettingsStore.shared.saveCalibration(cal)
+        }
         connectedController = nil
         isConnected = false
         controllerName = "No Controller"
         capabilityProfile = nil
+        connectedControllerId = nil
+        remapSnapshot = ControllerRemapSnapshot()
         controllerState = ControllerState()
         currentState = GamepadState()
         controllerKind = .simulated
+        adaptiveTriggerEngine.resetHardwareCache()
         hapticEngine?.stop(completionHandler: nil)
         hapticEngine = nil
-        onStateChanged?(controllerState)
+        refreshPerformanceSurface()
+        onStateChanged?(performanceState)
         onDisconnected?()
     }
     
@@ -145,12 +177,28 @@ public final class ControllerManager: @unchecked Sendable {
         surfaceResolver.scheme = scheme
         surfaceResolver.reset()
         refreshPerformanceSurface()
+        refreshErgonomicWarnings()
         
         // Motion enable/disable
         if let motion = connectedController?.motion {
-            motion.sensorsActive = scheme.isMotionEnabled
+            motion.sensorsActive = scheme.isMotionEnabled && surfaceProfile.motionEnabled
         }
         onSchemeChanged?(scheme)
+    }
+
+    public func applySurfaceProfile(_ profile: ControlSurfaceProfile, persist: Bool = true) {
+        surfaceProfile = profile
+        if persist {
+            ControllerSettingsStore.shared.saveSurfaceProfile(profile)
+        }
+        applySchemeToProcessors(activeScheme)
+        adaptiveTriggerEngine.forcePolicy = profile.triggerForce
+        if !profile.motionEnabled, let motion = connectedController?.motion {
+            motion.sensorsActive = false
+        } else if profile.motionEnabled, let motion = connectedController?.motion {
+            motion.sensorsActive = activeScheme.isMotionEnabled
+        }
+        refreshErgonomicWarnings()
     }
     
     public func applyHardwareCalibration(_ cal: ControllerHardwareCalibration) {
@@ -160,19 +208,39 @@ public final class ControllerManager: @unchecked Sendable {
     }
     
     private func applySchemeToProcessors(_ scheme: ControlScheme) {
-        leftStickProcessor.profile = scheme.stickFeel.processingProfile
-        rightStickProcessor.profile = scheme.stickFeel.processingProfile
+        leftStickProcessor.profile = surfaceProfile.harmonyStick
+        rightStickProcessor.profile = surfaceProfile.strumStick
+        rightStickBendProcessor.profile = surfaceProfile.bendStick
         leftTriggerProcessor.deadzone = scheme.triggerFeel.activationThreshold
         rightTriggerProcessor.deadzone = scheme.triggerFeel.activationThreshold
         leftTriggerProcessor.responseCurve = scheme.triggerFeel.responseCurve
         rightTriggerProcessor.responseCurve = scheme.triggerFeel.responseCurve
+        adaptiveTriggerEngine.forcePolicy = surfaceProfile.triggerForce
     }
     
     private func applyCalibrationToProcessors() {
         leftStickProcessor.calibration = hardwareCalibration.leftStick
         rightStickProcessor.calibration = hardwareCalibration.rightStick
+        rightStickBendProcessor.calibration = hardwareCalibration.rightStick
         leftTriggerProcessor.calibration = hardwareCalibration.leftTrigger
         rightTriggerProcessor.calibration = hardwareCalibration.rightTrigger
+    }
+
+    public var rolesAreSwapped: Bool {
+        activeScheme.isLeftRightSwapped != surfaceProfile.mirrored
+    }
+
+    public func refreshErgonomicWarnings() {
+        let caps = capabilityProfile ?? ControllerCapabilityProfile.preset(for: controllerKind)
+        lastErgonomicWarnings = ErgonomicMappingAnalyzer.analyze(
+            scheme: activeScheme,
+            grip: surfaceProfile.grip,
+            hasTouchpad: caps.hasTouchpad
+        )
+    }
+
+    public func refreshRemapSnapshot(from controller: GCController) {
+        remapSnapshot = ControllerRemapCapture.snapshot(from: controller)
     }
     
     // MARK: - Input Handlers & Input Learn
@@ -207,14 +275,23 @@ public final class ControllerManager: @unchecked Sendable {
             let timestamp = ProcessInfo.processInfo.systemUptime
             
             // Process Left & Right Sticks with Calibration, Deadzones & Inversion
-            let swapRoles = self.activeScheme.isLeftRightSwapped
+            let swapRoles = self.rolesAreSwapped
             let leftX = swapRoles ? rawRX : rawLX
             let leftY = swapRoles ? rawRY : rawLY
             let rightX = swapRoles ? rawLX : rawRX
             let rightY = swapRoles ? rawLY : rawRY
             
-            state.leftStick = self.leftStickProcessor.process(rawX: leftX, rawY: leftY, timestamp: timestamp)
-            state.rightStick = self.rightStickProcessor.process(rawX: rightX, rawY: rightY, timestamp: timestamp)
+            let leftProcessed = self.leftStickProcessor.process(rawX: leftX, rawY: leftY, timestamp: timestamp)
+            let strumProcessed = self.rightStickProcessor.process(rawX: rightX, rawY: rightY, timestamp: timestamp)
+            let bendProcessed = self.rightStickBendProcessor.process(rawX: rightX, rawY: rightY, timestamp: timestamp)
+            state.leftStick = leftProcessed
+            state.rightStick = ProcessedStickState.composing(strum: strumProcessed, bend: bendProcessed)
+
+            self.observePassiveCalibration(
+                rawLX: leftX, rawLY: leftY, leftProcessed: leftProcessed,
+                rawRX: rightX, rawRY: rightY, rightProcessed: state.rightStick,
+                timestamp: timestamp
+            )
             
             // Process Triggers with Calibration & Hysteresis
             let triggerL = swapRoles ? rawRT : rawLT
@@ -226,11 +303,15 @@ public final class ControllerManager: @unchecked Sendable {
             state.leftShoulder = swapRoles ? gamepad.rightShoulder.isPressed : gamepad.leftShoulder.isPressed
             state.rightShoulder = swapRoles ? gamepad.leftShoulder.isPressed : gamepad.rightShoulder.isPressed
             
-            // Face buttons
+            // Face buttons (digital + analog value when the element reports analog)
             state.buttonA = gamepad.buttonA.isPressed
             state.buttonB = gamepad.buttonB.isPressed
             state.buttonX = gamepad.buttonX.isPressed
             state.buttonY = gamepad.buttonY.isPressed
+            state.buttonAValue = ControllerRemapCapture.analogValue(gamepad.buttonA)
+            state.buttonBValue = ControllerRemapCapture.analogValue(gamepad.buttonB)
+            state.buttonXValue = ControllerRemapCapture.analogValue(gamepad.buttonX)
+            state.buttonYValue = ControllerRemapCapture.analogValue(gamepad.buttonY)
             
             // D-pad
             state.dpadUp = gamepad.dpad.up.isPressed
@@ -246,7 +327,29 @@ public final class ControllerManager: @unchecked Sendable {
             state.menuButton = gamepad.buttonMenu.isPressed
             state.optionsButton = gamepad.buttonOptions?.isPressed ?? false
 
+            // Touchpad surface vs click — capability gated, cleared when unsupported
+            let caps = self.capabilityProfile ?? ControllerCapabilityProfile.preset(for: self.controllerKind)
+            let touch = ControllerTouchpadReader.read(
+                from: controller,
+                hasTouchpad: caps.hasTouchpad,
+                enabled: self.surfaceProfile.touchpadEnabled
+            )
+            state.touchpadX = touch.x
+            state.touchpadY = touch.y
+            state.touchpadActive = touch.surface
+            state.touchpadButtonPressed = touch.button
+
+            var analogSnapshot = self.remapSnapshot
+            analogSnapshot.analogByInput[.buttonSouth] = state.buttonAValue
+            analogSnapshot.analogByInput[.buttonEast] = state.buttonBValue
+            analogSnapshot.analogByInput[.buttonWest] = state.buttonXValue
+            analogSnapshot.analogByInput[.buttonNorth] = state.buttonYValue
+            analogSnapshot.analogByInput[.leftTrigger] = state.leftTrigger.value
+            analogSnapshot.analogByInput[.rightTrigger] = state.rightTrigger.value
+            self.remapSnapshot = analogSnapshot
+
             // Adaptive trigger feedback processing
+            self.adaptiveTriggerEngine.forcePolicy = self.surfaceProfile.triggerForce
             self.adaptiveTriggerEngine.process(
                 leftTrigger: rawLT,
                 rightTrigger: rawRT,
@@ -263,7 +366,7 @@ public final class ControllerManager: @unchecked Sendable {
         if let motion = controller.motion {
             motion.valueChangedHandler = { [weak self] (motion) in
                 guard let self = self else { return }
-                guard self.activeScheme.isMotionEnabled else { return }
+                guard self.activeScheme.isMotionEnabled && self.surfaceProfile.motionEnabled else { return }
                 
                 let state = self.controllerState
                 state.gyroX = motion.rotationRate.x
@@ -321,7 +424,8 @@ public final class ControllerManager: @unchecked Sendable {
         guard let binding = activeScheme.binding(for: action) else {
             return "Unassigned"
         }
-        return physicalLabel(for: binding.input)
+        let displayed = ControllerRemapResolver.displayedInput(for: binding.input, snapshot: remapSnapshot)
+        return physicalLabel(for: displayed)
     }
 
     /// Returns the high-fidelity controller glyph for rendering on HUD badges and chord cards.
@@ -329,7 +433,8 @@ public final class ControllerManager: @unchecked Sendable {
         guard let binding = activeScheme.binding(for: action) else {
             return .leftStick
         }
-        return binding.input.defaultGlyphKey
+        let displayed = ControllerRemapResolver.displayedInput(for: binding.input, snapshot: remapSnapshot)
+        return displayed.defaultGlyphKey
     }
 
     /// Formats a physical control name based on the connected controller hardware style.
@@ -382,6 +487,36 @@ public final class ControllerManager: @unchecked Sendable {
 
     public func configureForInstrumentProfile(_ profile: InstrumentProfile) {
         adaptiveTriggerEngine.configureForInstrumentProfile(profile)
+    }
+
+    private func observePassiveCalibration(
+        rawLX: Float, rawLY: Float, leftProcessed: ProcessedStickState,
+        rawRX: Float, rawRY: Float, rightProcessed: ProcessedStickState,
+        timestamp: TimeInterval
+    ) {
+        let previous = hardwareCalibration
+        var next = previous
+        next.leftStick = leftPassiveLearner.observe(
+            rawX: rawLX,
+            rawY: rawLY,
+            processedRadius: leftProcessed.radius,
+            into: next.leftStick
+        )
+        next.rightStick = rightPassiveLearner.observe(
+            rawX: rawRX,
+            rawY: rawRY,
+            processedRadius: rightProcessed.radius,
+            into: next.rightStick
+        )
+        guard next != previous else { return }
+        hardwareCalibration = next
+        applyCalibrationToProcessors()
+        if timestamp - lastCalibrationPersist > 2.5, let id = connectedControllerId {
+            var persisted = next
+            persisted.controllerIdentifier = id
+            ControllerSettingsStore.shared.saveCalibration(persisted)
+            lastCalibrationPersist = timestamp
+        }
     }
 
     // MARK: - Haptic Feedback
@@ -458,6 +593,7 @@ public final class ControllerManager: @unchecked Sendable {
             touchX: Double(state.touchpadX),
             touchY: Double(state.touchpadY),
             isTouching: state.touchpadActive,
+            touchpadButtonPressed: state.touchpadButtonPressed,
             gyroPitch: state.gyroX,
             gyroRoll: state.gyroY,
             gyroYaw: state.gyroZ
@@ -511,6 +647,7 @@ public final class ControllerManager: @unchecked Sendable {
         processed.touchpadX = Float(state.touchX)
         processed.touchpadY = Float(state.touchY)
         processed.touchpadActive = state.isTouching
+        processed.touchpadButtonPressed = state.touchpadButtonPressed
         processed.gyroX = state.gyroPitch
         processed.gyroY = state.gyroRoll
         processed.gyroZ = state.gyroYaw

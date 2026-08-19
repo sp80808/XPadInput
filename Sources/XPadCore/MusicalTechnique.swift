@@ -56,6 +56,15 @@ public enum RealismMode: String, CaseIterable, Codable, Sendable {
     case relaxed = "Relaxed"
     case natural = "Natural"
     case strict = "Strict"
+
+    /// Minimum inference confidence required before a guessed technique is accepted.
+    public var acceptanceThreshold: Double {
+        switch self {
+        case .relaxed: return 0.35
+        case .natural: return 0.55
+        case .strict: return 0.75
+        }
+    }
 }
 
 public enum TechniqueHaptic: String, Codable, Sendable, Equatable {
@@ -66,6 +75,8 @@ public enum TechniqueHaptic: String, Codable, Sendable, Equatable {
     case pinchHarmonic
     case palmMuteThreshold
     case buttonConfirm
+    case harmonicCommit
+    case harmonicRisk
 
     public var intensity: Float {
         switch self {
@@ -76,6 +87,8 @@ public enum TechniqueHaptic: String, Codable, Sendable, Equatable {
         case .pinchHarmonic: return 0.8
         case .palmMuteThreshold: return 0.45
         case .buttonConfirm: return 0.3
+        case .harmonicCommit: return 0.28
+        case .harmonicRisk: return 0.36
         }
     }
 
@@ -88,6 +101,8 @@ public enum TechniqueHaptic: String, Codable, Sendable, Equatable {
         case .pinchHarmonic: return 0.95
         case .palmMuteThreshold: return 0.4
         case .buttonConfirm: return 0.5
+        case .harmonicCommit: return 0.42
+        case .harmonicRisk: return 0.55
         }
     }
 }

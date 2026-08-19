@@ -222,6 +222,7 @@ public final class ControllerSettingsStore: @unchecked Sendable {
     private let activeSchemeKey = "com.xpadinput.controls.activeSchemeId"
     private let customSchemesKey = "com.xpadinput.controls.customSchemes"
     private let calibrationsKey = "com.xpadinput.controls.calibrations"
+    private let surfaceProfileKey = "com.xpadinput.controls.surfaceProfile"
     
     private let defaults = UserDefaults.standard
 
@@ -287,5 +288,21 @@ public final class ControllerSettingsStore: @unchecked Sendable {
         var dict = (defaults.dictionary(forKey: calibrationsKey) as? [String: Data]) ?? [:]
         dict.removeValue(forKey: controllerId)
         defaults.set(dict, forKey: calibrationsKey)
+    }
+
+    // MARK: - Control Surface Profile
+
+    public func loadSurfaceProfile() -> ControlSurfaceProfile {
+        guard let data = defaults.data(forKey: surfaceProfileKey),
+              let profile = try? JSONDecoder().decode(ControlSurfaceProfile.self, from: data) else {
+            return ControlSurfaceProfile()
+        }
+        return profile
+    }
+
+    public func saveSurfaceProfile(_ profile: ControlSurfaceProfile) {
+        if let data = try? JSONEncoder().encode(profile) {
+            defaults.set(data, forKey: surfaceProfileKey)
+        }
     }
 }
