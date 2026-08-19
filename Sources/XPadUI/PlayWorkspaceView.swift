@@ -67,43 +67,42 @@ public struct PlayView: View {
     public var body: some View {
         GeometryReader { geo in
             let isWide = geo.size.width >= 1380
-            let leftWidth = isWide ? geo.size.width * 0.50 : geo.size.width * 0.48
+            let leftWidth = isWide ? geo.size.width * 0.40 : geo.size.width * 0.38
             let rightWidth = geo.size.width - leftWidth
             
             HStack(spacing: 0) {
-                // LEFT COLUMN: Harmonic Workspace - Fixed layout, no scroll
-                VStack(spacing: 12) {
-                    // Reserved: Multi-Jam Bar (always occupies same height)
+                // LEFT COLUMN: Harmonic Workspace - Compact, supporting role
+                VStack(spacing: 10) {
+                    // Multi-Jam Bar or reserved space
                     if appState.multiJamManager.isSessionActive {
                         MultiControllerJammingBarView(jammingManager: appState.multiJamManager)
                             .transition(.opacity)
                     }
-                    // Reserved space when not active
                     if !appState.multiJamManager.isSessionActive {
-                        Spacer().frame(height: 130)
+                        Spacer().frame(height: 90)
                     }
 
-                    // Current Chord Display - Fixed height with prominent key/scale
+                    // Current Chord Display
                     EnhancedChordDisplayView()
-                        .frame(height: 80)
+                        .frame(height: 72)
 
-                    // Reserved: Solo HUD - Fixed height
+                    // Solo HUD or reserved space
                     if appState.instrumentProfile.family == .synthLead || appState.isSoloModeActive {
                         SmartSoloHUDView(telemetry: appState.smartSoloEngine.telemetry, chord: appState.currentChord)
                             .transition(.opacity)
                     }
                     if !(appState.instrumentProfile.family == .synthLead || appState.isSoloModeActive) {
-                        Spacer().frame(height: 140)
+                        Spacer().frame(height: 100)
                     }
 
-                    // Reserved: Contextual Hint - Fixed height
+                    // Contextual Hint
                     ContextualHintSlot()
-                        .frame(height: 36)
+                        .frame(height: 32)
 
-                    // Harmonic Wheel - SIGNIFICANTLY LARGER
+                    // Harmonic Wheel - chord selection via stick
                     HarmonicWheelView()
-                        .frame(minHeight: 350, maxHeight: .infinity)
-                        .padding(.vertical, 4)
+                        .frame(minHeight: 280, maxHeight: .infinity)
+                        .padding(.vertical, 2)
 
                     // Tabbed: Chords | Progression | Suggestions
                     HarmonicTabbedWorkspace(
@@ -117,28 +116,32 @@ public struct PlayView: View {
                         onAuditionChord: auditionChord,
                         onSendToSequencer: sendProgressionToSequencer
                     )
-                    .frame(height: 240)
+                    .frame(height: 200)
 
-                    // Active Notes - Fixed height
+                    // Active Notes
                     ActiveNotesView()
-                        .frame(height: 44)
+                        .frame(height: 40)
                 }
-                .padding(16)
+                .padding(12)
                 .frame(width: leftWidth)
                 .animation(.easeInOut(duration: 0.25), value: appState.multiJamManager.isSessionActive)
                 .animation(.easeInOut(duration: 0.25), value: appState.isSoloModeActive)
                 
                 Divider().background(XTheme.border)
                 
-                // RIGHT COLUMN: Controller & DSP Workspace - Fixed layout, no scroll
-                VStack(spacing: 12) {
-                    // Controller Visualizer - Fixed height
+                // RIGHT COLUMN: Controller & Performance Workspace - Primary focus
+                VStack(spacing: 10) {
+                    // Controller Visualizer - Prominent
                     ControllerVisualizerView()
-                        .frame(height: 320)
+                        .frame(height: 300)
 
-                    // Performance Quick Controls - Fixed height
+                    // Performance Quick Controls
                     PerformanceQuickControlsView()
-                        .frame(height: 56)
+                        .frame(height: 52)
+
+                    // Real-time Performance Monitor
+                    PerformanceMonitorView()
+                        .frame(height: 96)
 
                     // Tabbed: Performance | Synth | FX
                     DSPTabbedWorkspace(
@@ -148,13 +151,16 @@ public struct PlayView: View {
                         drive: $saturation,
                         reverb: $reverbMix
                     )
-                    .frame(height: 180)
+                    .frame(height: 170)
 
-                    // Strum Indicator - Fixed height
-                    StrumIndicatorView()
-                        .frame(height: 68)
+                    // Strum Indicator & MIDI Activity
+                    HStack(spacing: 10) {
+                        StrumIndicatorView()
+                        MIDIActivityView()
+                    }
+                    .frame(height: 64)
                 }
-                .padding(16)
+                .padding(12)
                 .frame(width: rightWidth)
             }
         }
@@ -668,5 +674,229 @@ struct TensionBadge: View {
     }
     var body: some View {
         Text(label).font(.system(size: 10, weight: .semibold)).foregroundColor(XTheme.tensionColor(tension)).padding(.horizontal, 8).padding(.vertical, 3).background(Capsule().fill(XTheme.tensionColor(tension).opacity(0.15)))
+    }
+}
+
+// MARK: - Performance Monitor
+
+struct PerformanceMonitorView: View {
+    @Environment(AppState.self) private var appState
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "waveform.path.ecg")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(XTheme.primary)
+                Text("PERFORMANCE")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundColor(XTheme.textTertiary)
+                Spacer()
+                if let technique = appState.lastFrame?.activeTechnique, technique != .normal {
+                    Text(technique.playLabel ?? "")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundColor(XTheme.primary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(XTheme.primary.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+            }
+            
+            HStack(spacing: 12) {
+                // Pitch Bend
+                ExpressionBar(
+                    label: "Bend",
+                    value: appState.lastFrame?.bend.bendSemitones ?? 0,
+                    range: -12...12,
+                    color: XTheme.expression
+                )
+                
+                // Pressure / Aftertouch
+                ExpressionBar(
+                    label: "Pressure",
+                    value: appState.lastFrame?.pressure.smoothed ?? 0,
+                    range: 0...1,
+                    color: XTheme.primary
+                )
+                
+                // Timbre / CC74
+                ExpressionBar(
+                    label: "Timbre",
+                    value: appState.lastFrame?.timbre ?? 0,
+                    range: 0...1,
+                    color: XTheme.tense
+                )
+                
+                // Palm Mute
+                ExpressionBar(
+                    label: "Mute",
+                    value: appState.lastFrame?.palmMuteAmount ?? 0,
+                    range: 0...1,
+                    color: XTheme.accent
+                )
+                
+                // Active notes count
+                VStack(spacing: 2) {
+                    Text("Notes")
+                        .font(.system(size: 8, weight: .medium, design: .monospaced))
+                        .foregroundColor(XTheme.textTertiary)
+                    Text("\(appState.activeNotes.count)")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundColor(appState.activeNotes.isEmpty ? XTheme.textTertiary : XTheme.textPrimary)
+                        .contentTransition(.numericText())
+                    Spacer()
+                }
+                .frame(width: 40)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(XTheme.surface.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct ExpressionBar: View {
+    let label: String
+    let value: Double
+    let range: ClosedRange<Double>
+    let color: Color
+    
+    private var normalized: Double {
+        let minVal = range.lowerBound
+        let maxVal = range.upperBound
+        guard maxVal > minVal else { return 0 }
+        return (value - minVal) / (maxVal - minVal)
+    }
+    
+    private var isBipolar: Bool { range.lowerBound < 0 }
+    
+    var body: some View {
+        VStack(spacing: 2) {
+            Text(label)
+                .font(.system(size: 8, weight: .medium, design: .monospaced))
+                .foregroundColor(XTheme.textTertiary)
+            GeometryReader { geo in
+                let mid = geo.size.width / 2
+                ZStack(alignment: .leading) {
+                    // Track
+                    Capsule()
+                        .fill(XTheme.surface)
+                        .frame(height: 6)
+                    if isBipolar {
+                        // Center marker
+                        Rectangle()
+                            .fill(XTheme.border)
+                            .frame(width: 1, height: 6)
+                            .offset(x: mid - 0.5)
+                        // Fill from center
+                        if normalized >= 0.5 {
+                            Capsule()
+                                .fill(color.opacity(0.7))
+                                .frame(width: max(0, (normalized - 0.5) * geo.size.width), height: 6)
+                                .offset(x: mid)
+                        } else {
+                            Capsule()
+                                .fill(color.opacity(0.7))
+                                .frame(width: max(0, (0.5 - normalized) * geo.size.width), height: 6)
+                                .offset(x: normalized * geo.size.width)
+                        }
+                    } else {
+                        Capsule()
+                            .fill(color.opacity(0.7))
+                            .frame(width: max(0, normalized * geo.size.width), height: 6)
+                    }
+                }
+            }
+            .frame(height: 6)
+            Text(formatValue())
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundColor(XTheme.textSecondary)
+        }
+        .frame(minWidth: 50)
+    }
+    
+    private func formatValue() -> String {
+        if isBipolar {
+            return String(format: "%+.1f", value)
+        }
+        return String(format: "%.0f%%", normalized * 100)
+    }
+}
+
+// MARK: - MIDI Activity Indicator
+
+struct MIDIActivityView: View {
+    @Environment(AppState.self) private var appState
+    @State private var lastNoteOnTime: Date?
+    @State private var lastNoteOffTime: Date?
+    @State private var noteOnFlash: Bool = false
+    @State private var noteOffFlash: Bool = false
+    @State private var lastActiveCount: Int = 0
+    
+    var body: some View {
+        VStack(spacing: 3) {
+            Text("MIDI")
+                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .foregroundColor(XTheme.textTertiary)
+            
+            HStack(spacing: 6) {
+                // Note On indicator
+                Circle()
+                    .fill(noteOnFlash ? XTheme.primary : XTheme.surface)
+                    .frame(width: 8, height: 8)
+                    .overlay(
+                        Circle().stroke(XTheme.primary.opacity(0.4), lineWidth: 1)
+                    )
+                
+                // Note count
+                Text("\(appState.activeNotes.count)")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundColor(appState.activeNotes.isEmpty ? XTheme.textTertiary : XTheme.primary)
+                    .contentTransition(.numericText())
+                
+                // Note Off indicator
+                Circle()
+                    .fill(noteOffFlash ? XTheme.tense : XTheme.surface)
+                    .frame(width: 8, height: 8)
+                    .overlay(
+                        Circle().stroke(XTheme.tense.opacity(0.4), lineWidth: 1)
+                    )
+                
+                Spacer()
+                
+                // Port indicator
+                Text(appState.destinationProfile.supportsMPE ? "MPE" : "MIDI")
+                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .foregroundColor(appState.destinationProfile.supportsMPE ? XTheme.primary : XTheme.textSecondary)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(XTheme.surface.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .onChange(of: appState.activeNotes.count) { _, newCount in
+            if newCount > lastActiveCount {
+                triggerNoteOnFlash()
+            } else if newCount < lastActiveCount {
+                triggerNoteOffFlash()
+            }
+            lastActiveCount = newCount
+        }
+    }
+    
+    private func triggerNoteOnFlash() {
+        noteOnFlash = true
+        withAnimation(.easeOut(duration: 0.15)) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { noteOnFlash = false }
+        }
+    }
+    
+    private func triggerNoteOffFlash() {
+        noteOffFlash = true
+        withAnimation(.easeOut(duration: 0.15)) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { noteOffFlash = false }
+        }
     }
 }

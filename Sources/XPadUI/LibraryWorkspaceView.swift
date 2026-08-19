@@ -97,25 +97,7 @@ public struct LibraryWorkspaceView: View {
     }
 
     private func dawGuideCard(daw: String, steps: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(daw)
-                .font(.subheadline.bold())
-                .foregroundStyle(Color.accentColor)
-            Text(steps)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Material.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .scaleEffect(1.0)
-        .shadow(radius: 0)
-        .onHover { isHovering in
-            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
-                // hover effect handled via implicit animation on the view
-            }
-        }
+        DAWGuideCard(daw: daw, steps: steps)
     }
 
     private func auditionPreset() {
@@ -128,6 +110,32 @@ public struct LibraryWorkspaceView: View {
                 AudioEngine.shared.noteOff(note: note)
             }
         }
+    }
+}
+
+private struct DAWGuideCard: View {
+    let daw: String
+    let steps: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering: Bool = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(daw)
+                .font(.subheadline.bold())
+                .foregroundStyle(Color.accentColor)
+            Text(steps)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Material.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .scaleEffect(reduceMotion ? 1 : (isHovering ? 1.01 : 1.0))
+        .shadow(color: .black.opacity(reduceMotion ? 0 : (isHovering ? 0.2 : 0)), radius: reduceMotion ? 0 : (isHovering ? 8 : 0), y: reduceMotion ? 0 : (isHovering ? 3 : 0))
+        .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.8), value: isHovering)
+        .onHover { isHovering = $0 }
     }
 }
 

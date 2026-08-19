@@ -10,6 +10,7 @@ struct TransportBar: View {
     @State private var tapTimes: [Date] = []
     @State private var previousBPM: Double = 120.0
     @State private var bpmPulse: Bool = false
+    @State private var recordPulse: Bool = false
     
     var body: some View {
         @Bindable var state = appState
@@ -38,18 +39,22 @@ struct TransportBar: View {
                     Group {
                         if appState.isRecording {
                             Circle()
-                                .fill(XTheme.recording.opacity(0.4))
+                                .fill(XTheme.recording.opacity(0.35))
                                 .frame(width: 40, height: 40)
-                                .scaleEffect(bpmPulse ? 1.3 : 1.0)
-                                .opacity(bpmPulse ? 0 : 1)
+                                .scaleEffect(recordPulse ? 1.4 : 1.0)
+                                .opacity(recordPulse ? 0 : 0.6)
+                                .blur(radius: recordPulse ? 4 : 0)
                         }
                     }
                 )
                 .onChange(of: appState.isRecording) { _, isRecording in
-                    guard isRecording else { bpmPulse = false; return }
-                    bpmPulse = true
-                    withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: false)) {
-                        bpmPulse = false
+                    if isRecording {
+                        recordPulse = true
+                        withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: false)) {
+                            recordPulse = false
+                        }
+                    } else {
+                        recordPulse = false
                     }
                 }
                 
@@ -82,7 +87,7 @@ struct TransportBar: View {
                         .font(.system(size: 12, weight: .bold, design: .monospaced))
                         .foregroundColor(XTheme.textPrimary)
                         .frame(width: 32)
-                        .scaleEffect(bpmPulse && !appState.isRecording ? 1.15 : 1.0)
+                        .scaleEffect(bpmPulse ? 1.2 : 1.0)
                     
                     Text("BPM")
                         .font(.system(size: 8, weight: .semibold))
@@ -92,10 +97,10 @@ struct TransportBar: View {
                     guard abs(newBPM - previousBPM) > 0.5 else { return }
                     previousBPM = newBPM
                     bpmPulse = true
-                    withAnimation(.spring(response: 0.15, dampingFraction: 0.8)) {
+                    withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
                         bpmPulse = false
                     }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                         bpmPulse = false
                     }
                 }

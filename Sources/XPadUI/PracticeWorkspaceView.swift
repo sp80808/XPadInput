@@ -40,22 +40,27 @@ public struct PracticeWorkspaceView: View {
                         showLessonDetail: $showLessonDetail,
                         onStartLesson: startLesson
                     )
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
                 case .practice:
                     ActivePracticeView(
                         practiceEngine: appState.practiceEngine,
                         onExit: exitPractice
                     )
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
                 case .progress:
                     ProgressDashboardView(
                         progressTracker: appState.progressTracker
                     )
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
                 case .challenges:
                     ChallengeModeView(
                         onStartChallenge: startChallenge
                     )
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(.easeInOut(duration: 0.2), value: selectedTab)
         }
         .sheet(isPresented: $showLessonDetail) {
             if let lesson = selectedLesson {
@@ -147,6 +152,8 @@ struct PracticeHeaderView: View {
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
+                    .scaleEffect(selectedTab == tab ? 1.05 : 1.0)
+                    .animation(.spring(response: 0.2, dampingFraction: 0.75), value: selectedTab)
                 }
             }
             
@@ -204,6 +211,8 @@ struct ProgressStatItem: View {
     let icon: String
     let value: String
     let label: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering: Bool = false
     
     var body: some View {
         HStack(spacing: 6) {
@@ -224,6 +233,9 @@ struct ProgressStatItem: View {
         .padding(.vertical, 4)
         .background(XTheme.surface.opacity(0.6))
         .clipShape(RoundedRectangle(cornerRadius: 6))
+        .scaleEffect(reduceMotion ? 1 : (isHovering ? 1.04 : 1.0))
+        .animation(reduceMotion ? nil : .spring(response: 0.2, dampingFraction: 0.75), value: isHovering)
+        .onHover { isHovering = $0 }
     }
 }
 
@@ -288,6 +300,7 @@ struct CategoryFilterButton: View {
     let category: LessonCategory
     let isSelected: Bool
     let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     var body: some View {
         Button(action: action) {
@@ -300,6 +313,8 @@ struct CategoryFilterButton: View {
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)
+        .scaleEffect(isSelected && !reduceMotion ? 1.05 : 1.0)
+        .animation(reduceMotion ? nil : .spring(response: 0.2, dampingFraction: 0.75), value: isSelected)
     }
 }
 
@@ -307,6 +322,8 @@ struct LessonCard: View {
     let lesson: PracticeLesson
     let mastery: LessonMastery?
     let onTap: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering: Bool = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -368,6 +385,10 @@ struct LessonCard: View {
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(XTheme.border, lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .frame(height: 140)
+        .scaleEffect(reduceMotion ? 1 : (isHovering ? 1.02 : 1.0))
+        .shadow(color: .black.opacity(reduceMotion ? 0 : (isHovering ? 0.2 : 0)), radius: reduceMotion ? 0 : (isHovering ? 8 : 0), y: reduceMotion ? 0 : (isHovering ? 3 : 0))
+        .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.8), value: isHovering)
+        .onHover { isHovering = $0 }
     }
 }
 

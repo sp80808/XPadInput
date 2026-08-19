@@ -7,7 +7,8 @@ import XPadMIDI
 public struct SequenceWorkspaceView: View {
     @ObservedObject var sequencer: Sequencer
     @State private var exportedMidiURL: URL?
-
+    @State private var exportScale: Bool = false
+    
     public init(sequencer: Sequencer) {
         self.sequencer = sequencer
     }
@@ -48,6 +49,15 @@ public struct SequenceWorkspaceView: View {
                     .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .scaleEffect(exportScale ? 1.08 : 1.0)
+                .animation(.spring(response: 0.2, dampingFraction: 0.75), value: exportScale)
+                .onChange(of: exportedMidiURL) { _, newURL in
+                    guard newURL != nil else { return }
+                    exportScale = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        exportScale = false
+                    }
+                }
             }
             .padding(.horizontal)
 
