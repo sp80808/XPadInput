@@ -10,16 +10,12 @@ public struct TriggerProcessor: Sendable {
 
     private var velocityTracker = LinearVelocityTracker()
     private var smoothedValue: Float = 0
-    private var lastSmoothingTimestamp: TimeInterval?
+    private var smoother = TimeNormalizedEMA()
 
     // Attack detection with hysteresis
     private var lastAttackVelocity: Float = 0
     private var isHeld: Bool = false
     private var holdStartTime: TimeInterval = 0
-
-    /// Preserve the feel of existing smoothing presets at a 120 Hz reference
-    /// cadence while deriving the actual EMA alpha from elapsed time.
-    private static let smoothingReferenceInterval: TimeInterval = 1.0 / 120.0
 
     public init(
         calibration: TriggerCalibration = TriggerCalibration(),
@@ -49,7 +45,7 @@ public struct TriggerProcessor: Sendable {
         processed = responseCurve.process(magnitude: processed)
 
         // 4. Performance Smoothing (elapsed-time-normalized EMA)
-        let alpha = smoothingAlpha(at: timestamp)
+        let alpha = smoother.alpha(referenceFactor: smoothingFactor, at: timestamp)
         smoothedValue = smoothedValue + (processed - smoothedValue) * alpha
 
         // 5. Velocity Tracking
@@ -86,33 +82,6 @@ public struct TriggerProcessor: Sendable {
             holdDuration: isHeld ? (timestamp - holdStartTime) : 0,
             isPressed: isHeld
         )
-    }
-
-    private mutating func smoothingAlpha(at timestamp: TimeInterval) -> Float {
-        let referenceAlpha = max(0, min(1, smoothingFactor))
-
-        guard timestamp.isFinite else { return 0 }
-
-        guard let previousTimestamp = lastSmoothingTimestamp else {
-            lastSmoothingTimestamp = timestamp
-            return referenceAlpha
-        }
-
-        guard timestamp > previousTimestamp else {
-            // Duplicate/reordered callbacks must not advance filter state.
-            return 0
-        }
-
-        lastSmoothingTimestamp = timestamp
-
-        guard referenceAlpha < 1 else { return 1 }
-        guard referenceAlpha > 0 else { return 0 }
-
-        let elapsed = timestamp - previousTimestamp
-        let retentionAtReference = 1.0 - Double(referenceAlpha)
-        let elapsedReferenceFrames = elapsed / Self.smoothingReferenceInterval
-        let elapsedAlpha = 1.0 - pow(retentionAtReference, elapsedReferenceFrames)
-        return Float(max(0, min(1, elapsedAlpha)))
     }
 }
 

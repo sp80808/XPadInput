@@ -42,30 +42,25 @@ public struct ExpressionDimensions: Codable, Hashable, Sendable {
         vibratoDepth: Double = 0.0,
         vibratoRate: Double = 0.0
     ) {
-        self.attack = Self.normalized(attack)
-        self.pressure = Self.normalized(pressure)
+        self.attack = attack.normalizedUnit
+        self.pressure = pressure.normalizedUnit
         self.pitchOffsetSemitones = pitchOffsetSemitones.isFinite ? pitchOffsetSemitones : 0.0
-        self.timbre = Self.normalized(timbre)
-        self.damping = Self.normalized(damping)
-        self.brightness = Self.normalized(brightness)
-        self.position = Self.normalized(position)
-        self.vibratoDepth = Self.normalized(vibratoDepth)
-        self.vibratoRate = Self.normalized(vibratoRate)
+        self.timbre = timbre.normalizedUnit
+        self.damping = damping.normalizedUnit
+        self.brightness = brightness.normalizedUnit
+        self.position = position.normalizedUnit
+        self.vibratoDepth = vibratoDepth.normalizedUnit
+        self.vibratoRate = vibratoRate.normalizedUnit
     }
 
     public static let neutral = ExpressionDimensions()
 
     public var midiPressure: UInt8 {
-        UInt8((pressure * 127.0).rounded())
+        MIDIValueCodec.midi7(pressure)
     }
 
     public var midiTimbre: UInt8 {
-        UInt8((timbre * 127.0).rounded())
-    }
-
-    private static func normalized(_ value: Double) -> Double {
-        guard value.isFinite else { return 0.0 }
-        return min(1.0, max(0.0, value))
+        MIDIValueCodec.midi7(timbre)
     }
 }
 

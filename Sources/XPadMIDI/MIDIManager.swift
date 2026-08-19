@@ -506,14 +506,10 @@ public final class MIDIEngine: @unchecked Sendable {
         semitoneOffset: Double,
         bendRangeSemitones: Double
     ) -> UInt16 {
-        guard semitoneOffset.isFinite, bendRangeSemitones.isFinite, bendRangeSemitones > 0 else {
-            return 8192
-        }
-        let normalized = max(-1.0, min(1.0, semitoneOffset / bendRangeSemitones))
-        if normalized >= 0 {
-            return UInt16((8192.0 + normalized * 8191.0).rounded())
-        }
-        return UInt16((8192.0 + normalized * 8192.0).rounded())
+        MIDIValueCodec.asymmetricPitchBend14(
+            semitones: semitoneOffset,
+            range: bendRangeSemitones
+        )
     }
 
     // MARK: - Native MIDI 2 Per-Note & SysEx
@@ -598,9 +594,7 @@ public final class MIDIEngine: @unchecked Sendable {
     }
 
     private static func midi7(_ normalizedValue: Double) -> UInt8 {
-        guard normalizedValue.isFinite else { return 0 }
-        let normalized = min(1.0, max(0.0, normalizedValue))
-        return UInt8((normalized * 127.0).rounded())
+        MIDIValueCodec.midi7(normalizedValue)
     }
 
     /// Dispatches a semantic channel event to one DAW-visible source.
@@ -611,7 +605,7 @@ public final class MIDIEngine: @unchecked Sendable {
         case .noteOff(let channel, let note):
             sendNoteOff(port: port, channel: channel, note: note)
         case .pitchBend(let channel, let value):
-            let unsigned = UInt16(max(0, min(16_383, Int(value) + 8_192)))
+            let unsigned = MIDIValueCodec.unsignedPitchBend14(signed: value)
             sendPitchBend(port: port, channel: channel, value: unsigned)
         case .polyPressure(let channel, let note, let pressure):
             sendPolyPressure(

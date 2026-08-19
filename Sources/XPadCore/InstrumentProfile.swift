@@ -39,7 +39,7 @@ public enum PitchBendCurve: String, CaseIterable, Codable, Hashable, Sendable {
     case aggressive
 
     public func apply(_ input: Double) -> Double {
-        let value = input.isFinite ? min(1.0, max(-1.0, input)) : 0.0
+        let value = input.normalizedBipolar
         let sign = value < 0.0 ? -1.0 : 1.0
         let magnitude = abs(value)
         switch self {
@@ -58,7 +58,7 @@ public enum PressureCurve: String, CaseIterable, Codable, Hashable, Sendable {
     case aggressive
 
     public func apply(_ input: Double) -> Double {
-        let value = input.isFinite ? min(1.0, max(0.0, input)) : 0.0
+        let value = input.normalizedUnit
         switch self {
         case .soft: return sqrt(value)
         case .linear: return value

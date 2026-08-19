@@ -18,13 +18,7 @@ public struct StickProcessor: Sendable {
     private var smoothedX: Float = 0
     private var smoothedY: Float = 0
     private var wasInDeadzone: Bool = true
-    private var lastSmoothingTimestamp: TimeInterval?
-
-    /// Existing smoothing presets were tuned as per-sample EMA coefficients.
-    /// Treat them as coefficients at a 120 Hz reference cadence, then derive
-    /// the equivalent alpha from elapsed time so controller callback frequency
-    /// does not change the effective response curve.
-    private static let smoothingReferenceInterval: TimeInterval = 1.0 / 120.0
+    private var smoother = TimeNormalizedEMA()
 
     public init(
         profile: InputProcessingProfile = .expressive,
@@ -51,8 +45,8 @@ public struct StickProcessor: Sendable {
         // 2. Per-Axis Inversion & Sensitivity
         if invertX { calX = -calX }
         if invertY { calY = -calY }
-        calX = max(-1.0, min(1.0, calX * sensitivityX))
-        calY = max(-1.0, min(1.0, calY * sensitivityY))
+        calX = (calX * sensitivityX).normalizedBipolar
+        calY = (calY * sensitivityY).normalizedBipolar
 
         // 3. Deadzone with Hysteresis (prevents rapid flutter near deadzone border)
         let deadzoned = profile.deadzone.process(x: calX, y: calY)
@@ -79,7 +73,7 @@ public struct StickProcessor: Sendable {
         }
 
         // 5. Performance Smoothing (elapsed-time-normalized EMA)
-        let alpha = smoothingAlpha(at: timestamp)
+        let alpha = smoother.alpha(referenceFactor: profile.smoothingFactor, at: timestamp)
         smoothedX = smoothedX + (curvedX - smoothedX) * alpha
         smoothedY = smoothedY + (curvedY - smoothedY) * alpha
 
@@ -109,33 +103,6 @@ public struct StickProcessor: Sendable {
             isInDeadzone: isInDeadzone,
             isNearEdge: finalRadius > 0.94
         )
-    }
-
-    private mutating func smoothingAlpha(at timestamp: TimeInterval) -> Float {
-        let referenceAlpha = max(0, min(1, profile.smoothingFactor))
-
-        guard timestamp.isFinite else { return 0 }
-
-        guard let previousTimestamp = lastSmoothingTimestamp else {
-            lastSmoothingTimestamp = timestamp
-            return referenceAlpha
-        }
-
-        guard timestamp > previousTimestamp else {
-            // Duplicate/reordered callbacks must not advance filter state.
-            return 0
-        }
-
-        lastSmoothingTimestamp = timestamp
-
-        guard referenceAlpha < 1 else { return 1 }
-        guard referenceAlpha > 0 else { return 0 }
-
-        let elapsed = timestamp - previousTimestamp
-        let retentionAtReference = 1.0 - Double(referenceAlpha)
-        let elapsedReferenceFrames = elapsed / Self.smoothingReferenceInterval
-        let elapsedAlpha = 1.0 - pow(retentionAtReference, elapsedReferenceFrames)
-        return Float(max(0, min(1, elapsedAlpha)))
     }
 }
 
