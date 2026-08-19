@@ -125,6 +125,8 @@ public struct PlayView: View {
                 }
                 .padding(16)
                 .frame(width: leftWidth)
+                .animation(.easeInOut(duration: 0.25), value: appState.multiJamManager.isSessionActive)
+                .animation(.easeInOut(duration: 0.25), value: appState.isSoloModeActive)
                 
                 Divider().background(XTheme.border)
                 
@@ -217,15 +219,23 @@ private struct ContextualHintSlot: View {
 
 struct EnhancedChordDisplayView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var previousChordName: String?
+    
     var body: some View {
+        let currentName = appState.currentChord?.displayName ?? "-"
+        let chordChanged = previousChordName != currentName && previousChordName != nil
+        let displayName = chordChanged && !reduceMotion ? (previousChordName ?? "-") : currentName
+        
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(appState.currentChord?.displayName ?? "-")
+                Text(displayName)
                     .font(.system(size: 34, weight: .bold, design: .rounded))
                     .foregroundColor(XTheme.textPrimary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                     .frame(height: 40)
+                    .animation(reduceMotion ? nil : .spring(response: 0.2, dampingFraction: 0.75), value: currentName)
                 if let chord = appState.currentChord {
                     HStack(spacing: 8) {
                         if let roman = chord.romanNumeral(in: appState.currentKey, scale: appState.currentScale) {
@@ -260,6 +270,9 @@ struct EnhancedChordDisplayView: View {
         .frame(height: 80)
         .padding(.horizontal, 14)
         .xCard(isActive: appState.currentChord != nil)
+        .onChange(of: currentName) { _, newName in
+            previousChordName = newName
+        }
     }
 }
 
@@ -353,11 +366,19 @@ private struct TabButton: View {
                 .foregroundColor(isSelected ? XTheme.primary : XTheme.textTertiary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(isSelected ? XTheme.primary.opacity(0.18) : XTheme.surface.opacity(0.6))
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(isSelected ? XTheme.primary : XTheme.border, lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .frame(minWidth: 48)
+                .background(
+                    Capsule()
+                        .fill(isSelected ? XTheme.primary.opacity(0.18) : Color.clear)
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(isSelected ? XTheme.primary : Color.clear, lineWidth: 1)
+                )
         }
         .buttonStyle(.plain)
+        .scaleEffect(isSelected ? 1.02 : 1.0)
+        .animation(.spring(response: 0.22, dampingFraction: 0.78), value: isSelected)
     }
 }
 
@@ -427,6 +448,7 @@ private struct ToggleButton: View {
 
 struct DiatonicChordPadsRow: View {
     let chords: [Chord]; let activeChord: Chord?; let onSelect: (Chord) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("DIATONIC CHORDS").font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(XTheme.textTertiary)
@@ -444,6 +466,8 @@ struct DiatonicChordPadsRow: View {
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                     .buttonStyle(.plain)
+                    .scaleEffect(isActive && !reduceMotion ? 0.94 : 1.0)
+                    .animation(reduceMotion ? nil : XTheme.feedbackFast, value: isActive)
                 }
             }
         }

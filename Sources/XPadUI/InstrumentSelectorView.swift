@@ -71,6 +71,7 @@ struct InstrumentSelectorView: View {
 /// beside or beneath the selector when no technique is active.
 struct ActiveTechniqueStatusView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var compact: Bool = false
 
@@ -91,6 +92,8 @@ struct ActiveTechniqueStatusView: View {
                                 .stroke(XTheme.accent.opacity(0.24), lineWidth: 1)
                         )
                 )
+                .animation(reduceMotion ? nil : XTheme.quickAnimation, value: technique)
+                .transition(reduceMotion ? .identity : .scale(scale: 0.85, anchor: .center).combined(with: .opacity))
                 .accessibilityLabel("Active technique")
                 .accessibilityValue(technique)
         }

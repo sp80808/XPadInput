@@ -8,6 +8,8 @@ import XPadAudio
 struct TransportBar: View {
     @Environment(AppState.self) private var appState
     @State private var tapTimes: [Date] = []
+    @State private var previousBPM: Double = 120.0
+    @State private var bpmPulse: Bool = false
     
     var body: some View {
         @Bindable var state = appState
@@ -31,6 +33,24 @@ struct TransportBar: View {
                     activeColor: XTheme.recording
                 ) {
                     state.isRecording.toggle()
+                }
+                .overlay(
+                    Group {
+                        if appState.isRecording {
+                            Circle()
+                                .fill(XTheme.recording.opacity(0.4))
+                                .frame(width: 40, height: 40)
+                                .scaleEffect(bpmPulse ? 1.3 : 1.0)
+                                .opacity(bpmPulse ? 0 : 1)
+                        }
+                    }
+                )
+                .onChange(of: appState.isRecording) { _, isRecording in
+                    guard isRecording else { bpmPulse = false; return }
+                    bpmPulse = true
+                    withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: false)) {
+                        bpmPulse = false
+                    }
                 }
                 
                 TransportButton(icon: "repeat", label: "Loop", isActive: appState.isLooping) {
@@ -62,10 +82,22 @@ struct TransportBar: View {
                         .font(.system(size: 12, weight: .bold, design: .monospaced))
                         .foregroundColor(XTheme.textPrimary)
                         .frame(width: 32)
+                        .scaleEffect(bpmPulse && !appState.isRecording ? 1.15 : 1.0)
                     
                     Text("BPM")
                         .font(.system(size: 8, weight: .semibold))
                         .foregroundColor(XTheme.textTertiary)
+                }
+                .onChange(of: appState.bpm) { _, newBPM in
+                    guard abs(newBPM - previousBPM) > 0.5 else { return }
+                    previousBPM = newBPM
+                    bpmPulse = true
+                    withAnimation(.spring(response: 0.15, dampingFraction: 0.8)) {
+                        bpmPulse = false
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        bpmPulse = false
+                    }
                 }
 
                 // Tap Tempo Button
@@ -109,6 +141,8 @@ struct TransportBar: View {
                     .fill(appState.midiEngine.isMIDIActive ? XTheme.midiActivity : XTheme.textTertiary.opacity(0.3))
                     .frame(width: 6, height: 6)
                     .xGlow(isActive: appState.midiEngine.isMIDIActive, color: XTheme.midiActivity)
+                    .scaleEffect(appState.midiEngine.isMIDIActive ? 1.4 : 1.0)
+                    .animation(.easeInOut(duration: 0.15), value: appState.midiEngine.isMIDIActive)
 
                 Menu {
                     ForEach(MIDITransportProtocol.allCases) { transport in
@@ -258,10 +292,17 @@ struct TransportButton: View {
     
     var body: some View {
         Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(isActive ? activeColor : XTheme.textSecondary)
-                .frame(width: 28, height: 28)
+            ZStack {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(isActive ? activeColor : XTheme.textSecondary)
+                    .frame(width: 28, height: 28)
+                if isActive && label == "Play" {
+                    Circle()
+                        .fill(activeColor.opacity(0.12))
+                        .frame(width: 36, height: 36)
+                }
+            }
         }
         .buttonStyle(XTactileButtonStyle(isActive: isActive, activeColor: activeColor))
         .help(label)

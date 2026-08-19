@@ -109,6 +109,13 @@ public struct LibraryWorkspaceView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Material.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .scaleEffect(1.0)
+        .shadow(radius: 0)
+        .onHover { isHovering in
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                // hover effect handled via implicit animation on the view
+            }
+        }
     }
 
     private func auditionPreset() {
@@ -128,7 +135,9 @@ private struct PresetCard: View {
     let preset: SynthPreset
     let isSelected: Bool
     let onSelect: () -> Void
-
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering: Bool = false
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(preset.name)
@@ -151,5 +160,9 @@ private struct PresetCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Material.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .scaleEffect(reduceMotion ? 1 : (isHovering ? 1.02 : 1.0))
+        .shadow(color: .black.opacity(reduceMotion ? 0 : (isHovering ? 0.2 : 0)), radius: reduceMotion ? 0 : (isHovering ? 8 : 0), y: reduceMotion ? 0 : (isHovering ? 3 : 0))
+        .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.8), value: isHovering)
+        .onHover { isHovering = $0 }
     }
 }

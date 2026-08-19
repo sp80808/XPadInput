@@ -170,6 +170,7 @@ struct ChordNodeView: View {
     let tension: Double
     let key: PitchClass
     let scale: Scale
+    @State private var pulse: Bool = false
     
     var body: some View {
         VStack(spacing: 4) {
@@ -185,21 +186,35 @@ struct ChordNodeView: View {
                     .foregroundColor(isSelected ? XTheme.accent : XTheme.textTertiary)
             }
         }
-        // Larger node size (68x52 instead of 58x42)
         .frame(width: 68, height: 52)
         .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(isSelected ? XTheme.primary.opacity(0.24) : XTheme.surface)
-                .overlay(
+            ZStack {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isSelected ? XTheme.primary.opacity(0.24) : XTheme.surface)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(
+                                isSelected ? XTheme.primary : XTheme.tensionColor(tension).opacity(0.3),
+                                lineWidth: isSelected ? 2 : 1
+                            )
+                    )
+                if isSelected && !reduceMotion {
                     RoundedRectangle(cornerRadius: 12)
-                        .stroke(
-                            isSelected ? XTheme.primary : XTheme.tensionColor(tension).opacity(0.3),
-                            lineWidth: isSelected ? 2 : 1
-                        )
-                )
+                        .stroke(XTheme.primary.opacity(pulse ? 0 : 0.45), lineWidth: 3)
+                        .scaleEffect(pulse ? 1.18 : 1.0)
+                        .opacity(pulse ? 0 : 0.6)
+                }
+            }
         )
         .shadow(color: isSelected ? XTheme.primary.opacity(0.28) : .clear, radius: 10)
         .scaleEffect(isSelected && !reduceMotion ? 1.04 : 1.0)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isSelected)
+        .onChange(of: isSelected) { _, newSelected in
+            guard newSelected && !reduceMotion else { return }
+            pulse = true
+            withAnimation(.easeOut(duration: 0.7)) {
+                pulse = false
+            }
+        }
     }
 }

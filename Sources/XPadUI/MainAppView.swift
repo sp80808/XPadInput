@@ -23,9 +23,11 @@ public struct ContentView: View {
             if appState.isPracticeRequested {
                 PracticeWorkspaceView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(.opacity.combined(with: .scale(scale: 0.995)))
             } else {
                 PlayView(onOpenSettings: { isShowingSettings = true })
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .transition(.opacity.combined(with: .scale(scale: 0.995)))
             }
             
             Divider()
@@ -34,6 +36,7 @@ public struct ContentView: View {
             // Transport Bar (Always docked at bottom)
             TransportBar()
         }
+        .animation(.easeInOut(duration: 0.25), value: appState.isPracticeRequested)
         .sheet(isPresented: $isShowingSettings) {
             VStack(spacing: 0) {
                 HStack {
