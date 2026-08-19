@@ -244,18 +244,30 @@ public final class MIDIEngine: @unchecked Sendable {
 
     private func handleIncomingMIDIEventList(_ eventList: UnsafePointer<MIDIEventList>) {
         // Parse incoming events for MIDI-CI SysEx queries
-        var packet = eventList.pointee.packet
-        for _ in 0..<eventList.pointee.numPackets {
-            let count = Int(packet.wordCount)
+        let numPackets = Int(eventList.pointee.numPackets)
+        guard numPackets > 0 else { return }
+
+        let wordCapacity = MemoryLayout.size(ofValue: eventList.pointee.packet.words)
+            / MemoryLayout<UInt32>.size
+
+        var packetPtr = UnsafeMutablePointer(mutating: eventList)
+            .pointer(to: \.packet)!
+        for _ in 0..<numPackets {
+            let count = Int(packetPtr.pointee.wordCount)
+            // MIDIEventPacketNext advances using the packet's stored wordCount,
+            // so a list whose count exceeds the fixed word storage cannot be
+            // traversed safely.
+            guard count <= wordCapacity else { return }
             if count > 0 {
-                let words = withUnsafePointer(to: &packet.words) { ptr in
-                    ptr.withMemoryRebound(to: UInt32.self, capacity: count) { buf in
-                        Array(UnsafeBufferPointer(start: buf, count: count))
-                    }
+                let words = packetPtr.pointer(to: \.words)!.withMemoryRebound(
+                    to: UInt32.self,
+                    capacity: count
+                ) { buf in
+                    Array(UnsafeBufferPointer(start: buf, count: count))
                 }
                 processIncomingUMPWords(words)
             }
-            packet = MIDIEventPacketNext(&packet).pointee
+            packetPtr = MIDIEventPacketNext(packetPtr)
         }
     }
 
