@@ -48,14 +48,29 @@ All per-note pitch, pressure, timbre, note-on, and note-off messages for an MPE 
 
 ### Zone configuration
 
-`sendMPEZoneConfiguration()` sends the lower-zone configuration on master Channel 1:
+`sendMPEZoneConfiguration()` sends the active zone's MPE Configuration Message on the zone master:
 
+- Lower zone: master Channel 1; Upper zone: master Channel 16;
 - RPN MSB `CC101 = 0`;
 - RPN LSB `CC100 = 6`;
-- Data Entry MSB `CC6 = 14`, declaring fourteen member channels;
+- Data Entry MSB `CC6` = member-channel count (14 for Internal Synth default, **15** for Logic / Live / Bitwig / Cubase / Studio One / REAPER / Digital Performer / Waveform / MainStage);
 - RPN null reset: `CC101 = 127`, `CC100 = 127`.
 
-The destination must receive this configuration before relying on lower-zone semantics.
+Host routing (`HostMIDIContext`) selects that member count automatically. A DAW track filtered to a single MIDI channel cannot carry MPE; XPI then falls back to conventional MIDI on that channel.
+
+The destination must receive this configuration before relying on zone semantics.
+
+### DAW track channel context
+
+XPI virtual sources are already role-separated (`XPI Melody`, `XPI Chords`, `XPI Bass`, `XPI Drums`, `XPI Expression (MPE)`). Dedicated ports default to MIDI Channel 1 for pitched roles and GM Channel 10 for drums.
+
+If the host track inspector is set to a specific channel (1–16) instead of All / Any:
+
+- pitched roles collapse onto that channel so the track actually hears notes;
+- MPE is disabled, because Live, Logic MIDI Mono Mode, Cubase Note Expression, and Studio One MPE all require the track to accept every member channel;
+- GM drums stay on Channel 10 unless the track itself is Channel 10.
+
+Auto-Detect uses the **frontmost** macOS DAW (bundle ID / process name), then any running DAW. Manual host selection always wins. This is a routing policy, not a substitute for GitHub #3 host certification.
 
 Under the experimental MIDI 2 transport, the existing MPE setup messages are translated at the transport boundary for continuity with the current expression engine. Native MIDI 2 per-note expression is a later phase, not a reason to duplicate the MPE allocator immediately.
 
