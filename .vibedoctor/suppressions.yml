@@ -1,0 +1,15 @@
+# VibeDoctor acknowledgements.
+#
+# Each entry hides findings that are known and accepted. A reason is required,
+# and an expiry date is strongly recommended: when it passes, the findings come
+# back marked "resurfaced" instead of staying hidden indefinitely.
+version: 1
+suppressions:
+  # - id: fixture-credentials
+  #   reason: Synthetic credentials in test fixtures, never used against real systems.
+  #   classification: fixture      # false_positive | accepted_risk | deferred | fixture
+  #   owner: platform-team
+  #   expires: 2026-12-31
+  #   match:
+  #     tools: [gitleaks]
+  #     paths: ["fixtures/**"]

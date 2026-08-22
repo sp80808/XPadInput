@@ -13,6 +13,8 @@ struct TransportBar: View {
     @State private var previousBPM: Double = 120.0
     @State private var bpmPulse: Bool = false
     @State private var recordPulse: Bool = false
+    @State private var tapRippleTrigger: Int = 0
+    @State private var panicShake: Double = 0
     
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -105,6 +107,13 @@ struct TransportBar: View {
             TransportButton(icon: "play.fill", label: "Play", isActive: appState.isPlaying) {
                 state.isPlaying.toggle()
             }
+            .overlay {
+                if appState.isPlaying {
+                    RotatingArcOverlay(color: XTheme.primary)
+                        .frame(width: 36, height: 36)
+                        .allowsHitTesting(false)
+                }
+            }
             
             TransportButton(
                 icon: "record.circle",
@@ -114,28 +123,7 @@ struct TransportBar: View {
             ) {
                 state.isRecording.toggle()
             }
-            .overlay(
-                Group {
-                    if appState.isRecording {
-                        Circle()
-                            .fill(XTheme.recording.opacity(0.35))
-                            .frame(width: 36, height: 36)
-                            .scaleEffect(recordPulse ? 1.4 : 1.0)
-                            .opacity(recordPulse ? 0 : 0.6)
-                            .blur(radius: recordPulse ? 4 : 0)
-                    }
-                }
-            )
-            .onChange(of: appState.isRecording) { _, isRecording in
-                if isRecording {
-                    recordPulse = true
-                    withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: false)) {
-                        recordPulse = false
-                    }
-                } else {
-                    recordPulse = false
-                }
-            }
+            .xPulse(isActive: appState.isRecording, color: XTheme.recording, speed: 0.75, rings: 2)
             
             TransportButton(icon: "repeat", label: "Loop", isActive: appState.isLooping) {
                 state.isLooping.toggle()
@@ -188,6 +176,7 @@ struct TransportBar: View {
 
             // Tap Tempo Button
             Button {
+                tapRippleTrigger += 1
                 registerTapTempo()
             } label: {
                 Text("TAP")
@@ -200,6 +189,7 @@ struct TransportBar: View {
             }
             .buttonStyle(.plain)
             .help("Tap tempo beat calculator")
+            .xRipple(trigger: tapRippleTrigger, color: XTheme.primary, size: 36)
         }
     }
     
@@ -210,9 +200,7 @@ struct TransportBar: View {
             Circle()
                 .fill(appState.midiEngine.isMIDIActive ? XTheme.midiActivity : XTheme.textTertiary.opacity(0.3))
                 .frame(width: 6, height: 6)
-                .xGlow(isActive: appState.midiEngine.isMIDIActive, color: XTheme.midiActivity)
-                .scaleEffect(appState.midiEngine.isMIDIActive ? 1.4 : 1.0)
-                .animation(.easeInOut(duration: 0.15), value: appState.midiEngine.isMIDIActive)
+                .xPulse(isActive: appState.midiEngine.isMIDIActive, color: XTheme.midiActivity, speed: 1.5)
 
             Menu {
                 ForEach(MIDITransportProtocol.allCases) { transport in
@@ -321,6 +309,10 @@ struct TransportBar: View {
     private func panicButton() -> some View {
         Button {
             appState.panic()
+            withAnimation(.interpolatingSpring(stiffness: 900, damping: 10)) {
+                panicShake = 1
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { panicShake = 0 }
         } label: {
             Image(systemName: "exclamationmark.octagon")
                 .font(.system(size: 11, weight: .semibold))
@@ -329,6 +321,8 @@ struct TransportBar: View {
         }
         .buttonStyle(XTactileButtonStyle(activeColor: XTheme.tense))
         .help("MIDI Panic — All Notes Off")
+        .rotationEffect(.degrees(panicShake == 0 ? 0 : panicShake > 0.5 ? 8 : -8))
+        .animation(panicShake > 0 ? .interpolatingSpring(stiffness: 900, damping: 8) : .default, value: panicShake)
     }
     
     @ViewBuilder
@@ -380,9 +374,14 @@ struct TransportButton: View {
     let isActive: Bool
     var activeColor: Color = XTheme.primary
     let action: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var rippleTrigger = 0
     
     var body: some View {
-        Button(action: action) {
+        Button {
+            if !reduceMotion { rippleTrigger += 1 }
+            action()
+        } label: {
             ZStack {
                 Image(systemName: icon)
                     .font(.system(size: 12, weight: .medium))
@@ -399,5 +398,30 @@ struct TransportButton: View {
         .help(label)
         .accessibilityLabel(label)
         .accessibilityValue(isActive ? "On" : "Off")
+        .xRipple(trigger: rippleTrigger, color: activeColor, size: 40)
+    }
+}
+
+// MARK: - Rotating Arc Overlay
+
+/// A thin partial-circle arc that rotates continuously, used behind the Play button
+/// to signal live playback. Pure overlay — zero layout impact.
+struct RotatingArcOverlay: View {
+    let color: Color
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var rotation: Double = 0
+
+    var body: some View {
+        if !reduceMotion {
+            Circle()
+                .trim(from: 0, to: 0.25)
+                .stroke(color.opacity(0.45), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .rotationEffect(.degrees(rotation))
+                .onAppear {
+                    withAnimation(.linear(duration: 2.4).repeatForever(autoreverses: false)) {
+                        rotation = 360
+                    }
+                }
+        }
     }
 }

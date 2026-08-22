@@ -12,6 +12,11 @@ struct PerformanceQuickControlsView: View {
     @State private var showsEQ = false
     @State private var showsCompressor = false
     @State private var showsReverb = false
+    @State private var soloOffset: CGFloat = 0
+    @State private var duoFlip: Double = 0
+    @State private var gateWiggle: Double = 0
+    @State private var velocityWiggle: Double = 0
+    @State private var triggerWiggle: Double = 0
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -32,7 +37,7 @@ struct PerformanceQuickControlsView: View {
 
     private func controls(compact: Bool) -> some View {
         HStack(spacing: compact ? 5 : 7) {
-            Button { showsGate.toggle() } label: {
+            Button { showsGate.toggle(); wiggle { gateWiggle = $0 } } label: {
                 QuickControlLabel(
                     icon: "timer",
                     title: compact ? "Gate" : "Chord gate",
@@ -45,8 +50,9 @@ struct PerformanceQuickControlsView: View {
                 ChordGatePopover()
             }
             .help("Choose how played chords release")
+            .rotationEffect(.degrees(gateWiggle))
 
-            Button { showsVelocity.toggle() } label: {
+            Button { showsVelocity.toggle(); wiggle { velocityWiggle = $0 } } label: {
                 QuickControlLabel(
                     icon: "dial.medium",
                     title: compact ? "Feel" : "Velocity",
@@ -59,12 +65,14 @@ struct PerformanceQuickControlsView: View {
                 VelocityPopover()
             }
             .help("Shape and stabilize performance velocity")
+            .rotationEffect(.degrees(velocityWiggle))
 
             Button {
                 let next: DuoPerformanceMode = appState.duoPerformanceMode == .instrumentOnly
                     ? .drumsAndInstrument
                     : .instrumentOnly
                 appState.setDuoPerformanceMode(next)
+                withAnimation(XTheme.bouncy) { duoFlip += 180 }
             } label: {
                 QuickControlLabel(
                     icon: "square.grid.2x2.fill",
@@ -72,6 +80,7 @@ struct PerformanceQuickControlsView: View {
                     value: compact ? nil : (appState.duoPerformanceMode == .drumsAndInstrument ? "Drums on" : "Off"),
                     compact: compact
                 )
+                .rotation3DEffect(.degrees(duoFlip), axis: (x: 0, y: 1, z: 0))
             }
             .buttonStyle(
                 XTactileButtonStyle(
@@ -86,6 +95,12 @@ struct PerformanceQuickControlsView: View {
                 withAnimation(XTheme.springAnimation) {
                     appState.isSoloModeActive.toggle()
                 }
+                if appState.isSoloModeActive {
+                    withAnimation(XTheme.bouncy) { soloOffset = -3 }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                        withAnimation(XTheme.bouncy) { soloOffset = 0 }
+                    }
+                }
             } label: {
                 QuickControlLabel(
                     icon: "guitars.fill",
@@ -93,6 +108,7 @@ struct PerformanceQuickControlsView: View {
                     value: compact ? nil : (appState.isSoloModeActive ? "Lead on" : "Strum"),
                     compact: compact
                 )
+                .offset(y: soloOffset)
             }
             .buttonStyle(
                 XTactileButtonStyle(
@@ -102,7 +118,7 @@ struct PerformanceQuickControlsView: View {
             )
             .help("Smart Soloing: Right stick locks to chord tones, passing runs, and blues inflections")
 
-            Button { showsTriggers.toggle() } label: {
+            Button { showsTriggers.toggle(); wiggle { triggerWiggle = $0 } } label: {
                 QuickControlLabel(
                     icon: "hand.tap.fill",
                     title: compact ? "Trig" : "Triggers",
@@ -115,6 +131,7 @@ struct PerformanceQuickControlsView: View {
                 AdaptiveTriggerQuickPopover()
             }
             .help("DualSense motor resistance, string tension and mod-wheel detents")
+            .rotationEffect(.degrees(triggerWiggle))
 
             Button {
                 withAnimation(XTheme.springAnimation) {
@@ -189,6 +206,18 @@ struct PerformanceQuickControlsView: View {
 
     private func effectState(_ enabled: Bool) -> String {
         enabled ? "On" : "Off"
+    }
+
+    /// Fires a ±5° wiggle oscillation on the given setter closure.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private func wiggle(_ setAngle: @escaping (Double) -> Void) {
+        guard !reduceMotion else { return }
+        let seq: [Double] = [5, -5, 3, -3, 0]
+        var delay = 0.0
+        for deg in seq {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { setAngle(deg) }
+            delay += 0.06
+        }
     }
 }
 

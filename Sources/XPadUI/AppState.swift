@@ -12,6 +12,13 @@ import XPadPractice
 @Observable
 @MainActor
 public final class AppState: @unchecked Sendable {
+    /// Held for the app's lifetime to prevent macOS App Nap from throttling
+    /// real-time MIDI output and audio processing when another app (e.g. Ableton) has focus.
+    private let backgroundActivity: NSObjectProtocol = ProcessInfo.processInfo.beginActivity(
+        options: [.userInitiated, .latencyCritical],
+        reason: "XPadInput requires continuous low-latency gamepad, MIDI, and audio processing"
+    )
+
     public var controllerManager = ControllerManager()
     public var midiEngine: MIDIEngine
     public var audioEngine = AudioEngine()
@@ -111,6 +118,26 @@ public final class AppState: @unchecked Sendable {
     public var lastDrumHit: DuoDrumHit?
     public var midiPassthruMode: MIDIPassthruMode = .full
 
+    // MARK: Arcade Frets (hidden Guitar Hero-style mode)
+    public private(set) var isArcadeModeEnabled: Bool = false
+    public private(set) var lastArcadeFrame: ArcadeFretFrame = .empty
+    /// The dedicated arcade menu-bar entry only materialises after the secret
+    /// key combination is discovered. Nothing in the visible UI references it.
+    public private(set) var isArcadeMenuUnlocked: Bool = false
+    private var arcadeEngine = ArcadeFretEngine()
+    private nonisolated(unsafe) var arcadeStatusItemStorage: ArcadeStatusItemCoordinator?
+    private var arcadeUnlockMonitor: Any?
+
+    /// Lazily materialised so the coordinator can capture `self` after init.
+    @MainActor
+    private var arcadeStatusItem: ArcadeStatusItemCoordinator {
+        if let arcadeStatusItemStorage { return arcadeStatusItemStorage }
+        let coordinator = ArcadeStatusItemCoordinator(appState: self)
+        arcadeStatusItemStorage = coordinator
+        return coordinator
+    }
+    public var expressionTrails = ExpressionTrailHistory()
+
     private var strumState = StrumState()
     private var heldFaceNotes: [ChordToneRole: Note] = [:]
     private var soundingChordNotes: Set<UInt8> = []
@@ -121,6 +148,9 @@ public final class AppState: @unchecked Sendable {
     private var lastHint: String?
     private var chordGateEngine = ChordGateEngine(
         configuration: ChordGateConfiguration(mode: .timed, timedDuration: 0.85)
+    )
+    private var arcadeGateEngine = ChordGateEngine(
+        configuration: ChordGateConfiguration(mode: .momentary)
     )
     private var velocityStabilizer = VelocityStabilizer()
     private var duoControlEngine = DuoControlEngine()
@@ -137,10 +167,17 @@ public final class AppState: @unchecked Sendable {
     }
 
     public func initialize() {
+        // Prevent macOS from terminating XPadInput when it's backgrounded behind Ableton.
+        // The backgroundActivity token disables App Nap; these calls prevent auto/sudden termination.
+        ProcessInfo.processInfo.disableAutomaticTermination("Active MIDI instrument session")
+        ProcessInfo.processInfo.disableSuddenTermination()
+        _ = backgroundActivity // Force evaluation of the lazy activity token
+
         updateDiatonicChords()
         audioEngine.start()
         XPadPluginRegistrar.registerPluginComponents()
         setupIncomingMIDIPassthru()
+        installArcadeUnlockMonitor()
         midiEngine.onVirtualMIDIChanged = { [weak self] enabled in
             guard let self else { return }
             if enabled {
@@ -485,6 +522,45 @@ public final class AppState: @unchecked Sendable {
         lastDrumHit = nil
     }
 
+    // MARK: Arcade Frets Mode
+
+    /// Toggles the hidden Guitar Hero-style fret lane. Enabling reroutes the rear
+    /// buttons into instant chord frets and retires strumming until disabled.
+    public func setArcadeModeEnabled(_ enabled: Bool) {
+        guard isArcadeModeEnabled != enabled else { return }
+        panic()
+        isArcadeModeEnabled = enabled
+        arcadeEngine.reset()
+        _ = arcadeGateEngine.releaseAll()
+        lastArcadeFrame = .empty
+    }
+
+    public func toggleArcadeMode() {
+        setArcadeModeEnabled(!isArcadeModeEnabled)
+    }
+
+    /// Reveals the secret Arcade Frets menu-bar entry. Triggered only by the
+    /// hidden ⌘⌥⇧G key combination; there is no visible affordance anywhere.
+    public func unlockArcadeFretsMenu() {
+        guard !isArcadeMenuUnlocked else { return }
+        isArcadeMenuUnlocked = true
+        arcadeStatusItem.reveal()
+    }
+
+    private func installArcadeUnlockMonitor() {
+        arcadeUnlockMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            if event.keyCode == 5, // G
+               event.modifierFlags.contains(.command),
+               event.modifierFlags.contains(.option),
+               event.modifierFlags.contains(.shift) {
+                self.unlockArcadeFretsMenu()
+                return nil
+            }
+            return event
+        }
+    }
+
     public func setVelocityCurve(_ curve: SynthVelocityCurve) {
         audioEngine.setVelocityCurve(curve)
         let configuration: VelocityStabilizerConfiguration
@@ -541,9 +617,14 @@ public final class AppState: @unchecked Sendable {
         if surface.didRise(.panic) { return }
         handleChordSelection(state)
 
-        let drumVelocity = UInt8(clamping: 72 + Int(Double(state.rightTrigger.value) * 48))
-        let duoFrame = duoControlEngine.process(state: state, drumVelocity: drumVelocity)
-        handleDuoDrumHits(duoFrame.drumHits)
+        // Duo drums are suspended while the fret lane owns the triggers & face cluster.
+        var suppressesInstrumentFaceButtons = false
+        if !isArcadeModeEnabled {
+            let drumVelocity = UInt8(clamping: 72 + Int(Double(state.rightTrigger.value) * 48))
+            let duoFrame = duoControlEngine.process(state: state, drumVelocity: drumVelocity)
+            handleDuoDrumHits(duoFrame.drumHits)
+            suppressesInstrumentFaceButtons = duoFrame.suppressesInstrumentFaceButtons
+        }
 
         // Voice-led smart soloing engine
         if instrumentProfile.family == .synthLead || isSoloModeActive {
@@ -564,20 +645,30 @@ public final class AppState: @unchecked Sendable {
         }
 
         let frame = performanceEngine.process(
-            state: state,
+            state: isArcadeModeEnabled ? arcadeSanitizedState(state) : state,
             context: musicalContext(),
             heldNotes: activeNotes,
             timestamp: now
         )
         lastFrame = frame
+        expressionTrails.push(
+            bend: frame.bend.bendSemitones,
+            pressure: frame.pressure.smoothed,
+            timbre: frame.timbre,
+            mute: frame.palmMuteAmount
+        )
         if let hint = frame.hint { lastHint = hint }
 
-        if !duoFrame.suppressesInstrumentFaceButtons {
+        if isArcadeModeEnabled {
+            processArcadeFretLane(state, timestamp: now)
+        } else if !suppressesInstrumentFaceButtons {
             handleFaceEvents(frame.faceEvents)
         }
         applyExpression(frame)
 
-        if !frame.suppressStrum && !isSoloModeActive {
+        if isArcadeModeEnabled {
+            // The fret lane replaces strumming entirely — chords fire on press.
+        } else if !frame.suppressStrum && !isSoloModeActive {
             handleStrumming(state, timestamp: now)
         } else if instrumentProfile.family == .synthLead || instrumentProfile.family == .genericMPE {
             applyLeadTimbre(frame.timbre)
@@ -596,6 +687,77 @@ public final class AppState: @unchecked Sendable {
         }
 
         lastInputTime = now
+    }
+
+    // MARK: - Arcade Frets Lane
+
+    /// Rear-panel fret lane: triggers & bumpers fire diatonic chords the moment
+    /// they are pressed, face buttons colour the chord quality. No strum gesture
+    /// is consulted; the chord gate releases when every fret is released.
+    private func processArcadeFretLane(_ state: ControllerState, timestamp: TimeInterval) {
+        let input = ArcadeFretInput(
+            leftTriggerValue: state.leftTrigger.value,
+            rightTriggerValue: state.rightTrigger.value,
+            leftShoulderPressed: state.leftShoulder,
+            rightShoulderPressed: state.rightShoulder,
+            southPressed: state.buttonA,
+            westPressed: state.buttonX,
+            northPressed: state.buttonY,
+            eastPressed: state.buttonB
+        )
+        let frame = arcadeEngine.process(input: input, chords: diatonicChords, timestamp: timestamp)
+        lastArcadeFrame = frame
+
+        if let strike = frame.strikes.last {
+            // Hammer-on style: a new fret replaces the sounding lane chord even
+            // while other frets stay held.
+            handleChordGateEvents(arcadeGateEngine.releaseAll(), velocity: lastVelocity, direction: .down)
+            var chord = strike.chord
+            chord.inversion = voicingInversion
+            let voice = makeChordVoice(chord)
+            lastVelocity = strike.velocity
+            lastStrumDirection = .down
+            lastStrumTime = Date()
+            let events = arcadeGateEngine.process(voice: voice, isGestureActive: true, timestamp: timestamp)
+            handleChordGateEvents(events, velocity: strike.velocity, direction: .down)
+            controllerManager.playTechniqueHaptic(.chordChange)
+        } else {
+            let events = arcadeGateEngine.process(
+                voice: nil,
+                isGestureActive: frame.isLaneActive,
+                timestamp: timestamp
+            )
+            handleChordGateEvents(events, velocity: lastVelocity, direction: lastStrumDirection)
+        }
+    }
+
+    /// Performance-engine view of the controller while the fret lane is active.
+    /// Triggers and face buttons are neutralised so pulling frets never leaks
+    /// palm-mute/pressure expression or stray single-note plucks into the mix;
+    /// sticks, motion, and utility controls keep their normal roles.
+    private func arcadeSanitizedState(_ state: ControllerState) -> ControllerState {
+        let sanitized = ControllerState()
+        sanitized.leftStick = state.leftStick
+        sanitized.rightStick = state.rightStick
+        sanitized.dpadUp = state.dpadUp
+        sanitized.dpadDown = state.dpadDown
+        sanitized.dpadLeft = state.dpadLeft
+        sanitized.dpadRight = state.dpadRight
+        sanitized.leftStickButton = state.leftStickButton
+        sanitized.rightStickButton = state.rightStickButton
+        sanitized.menuButton = state.menuButton
+        sanitized.optionsButton = state.optionsButton
+        sanitized.touchpadX = state.touchpadX
+        sanitized.touchpadY = state.touchpadY
+        sanitized.touchpadActive = state.touchpadActive
+        sanitized.gyroX = state.gyroX
+        sanitized.gyroY = state.gyroY
+        sanitized.gyroZ = state.gyroZ
+        sanitized.accelX = state.accelX
+        sanitized.accelY = state.accelY
+        sanitized.accelZ = state.accelZ
+        sanitized.hasMotion = state.hasMotion
+        return sanitized
     }
 
     private func applySurfaceActions(_ frame: ControlSurfaceFrame) {
@@ -1202,6 +1364,7 @@ public final class AppState: @unchecked Sendable {
         chordGateReleaseWorkItem = nil
         cancelPendingStrumNotes()
         _ = chordGateEngine.releaseAll()
+        _ = arcadeGateEngine.releaseAll()
         audioEngine.panic()
         mpeManager.stopAllNotes()
         midiEngine.sendAllNotesOff(port: .chords, channel: midiChannel(.chords))
@@ -1222,6 +1385,7 @@ public final class AppState: @unchecked Sendable {
         midiEngine.panic()
         lastFrame = nil
         lastDrumHit = nil
+        expressionTrails.reset()
     }
 
     public func setBPM(_ newBPM: Double) {
@@ -1319,5 +1483,59 @@ public enum Workspace: String, CaseIterable, Identifiable {
         case .library: return "books.vertical.fill"
         case .practice: return "graduationcap.fill"
         }
+    }
+}
+
+// MARK: - Expression Trail Buffer
+
+public struct ExpressionTrailHistory: Sendable {
+    public static let capacity = 64
+    
+    // Store data in pre-allocated buffers
+    private var bendBuffer: [Double] = Array(repeating: 0.0, count: capacity)
+    private var pressureBuffer: [Double] = Array(repeating: 0.0, count: capacity)
+    private var timbreBuffer: [Double] = Array(repeating: 0.0, count: capacity)
+    private var muteBuffer: [Double] = Array(repeating: 0.0, count: capacity)
+    
+    // Ring buffer state
+    private var writeIndex: Int = 0
+    private var count: Int = 0
+
+    public init() {}
+
+    public mutating func push(bend: Double, pressure: Double, timbre: Double, mute: Double) {
+        bendBuffer[writeIndex] = bend
+        pressureBuffer[writeIndex] = pressure
+        timbreBuffer[writeIndex] = timbre
+        muteBuffer[writeIndex] = mute
+        
+        writeIndex = (writeIndex + 1) % Self.capacity
+        if count < Self.capacity {
+            count += 1
+        }
+    }
+
+    public mutating func reset() {
+        bendBuffer = Array(repeating: 0.0, count: Self.capacity)
+        pressureBuffer = Array(repeating: 0.0, count: Self.capacity)
+        timbreBuffer = Array(repeating: 0.0, count: Self.capacity)
+        muteBuffer = Array(repeating: 0.0, count: Self.capacity)
+        writeIndex = 0
+        count = 0
+    }
+    
+    // Ordered access for UI rendering (oldest to newest)
+    public var bend: [Double] { ordered(bendBuffer) }
+    public var pressure: [Double] { ordered(pressureBuffer) }
+    public var timbre: [Double] { ordered(timbreBuffer) }
+    public var mute: [Double] { ordered(muteBuffer) }
+    
+    private func ordered(_ buffer: [Double]) -> [Double] {
+        guard count > 0 else { return [] }
+        if count < Self.capacity {
+            return Array(buffer[0..<count])
+        }
+        // If full, oldest data is at writeIndex
+        return Array(buffer[writeIndex..<Self.capacity]) + Array(buffer[0..<writeIndex])
     }
 }

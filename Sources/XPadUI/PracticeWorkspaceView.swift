@@ -121,6 +121,7 @@ struct PracticeHeaderView: View {
     }
     
     @Environment(\.viewportMetrics) private var viewport
+    @Namespace private var practiceHeaderTabNS
     
     var body: some View {
         let isCompact = viewport.isCompactWidth
@@ -154,12 +155,18 @@ struct PracticeHeaderView: View {
                             .foregroundColor(selectedTab == tab ? XTheme.textPrimary : XTheme.textTertiary)
                             .padding(.horizontal, isCompact ? 6 : 8)
                             .padding(.vertical, 4)
-                            .background(selectedTab == tab ? XTheme.primary.opacity(0.2) : Color.clear)
-                            .clipShape(Capsule())
+                            .background {
+                                if selectedTab == tab {
+                                    Capsule()
+                                        .fill(XTheme.primary.opacity(0.2))
+                                        .overlay(Capsule().stroke(XTheme.primary.opacity(0.6), lineWidth: 1))
+                                        .matchedGeometryEffect(id: "practice-header-tab-pill", in: practiceHeaderTabNS)
+                                }
+                            }
                     }
                     .buttonStyle(.plain)
-                    .scaleEffect(selectedTab == tab ? 1.05 : 1.0)
-                    .animation(.spring(response: 0.2, dampingFraction: 0.75), value: selectedTab)
+                    .scaleEffect(selectedTab == tab ? 1.03 : 1.0)
+                    .animation(XTheme.snappy, value: selectedTab)
                 }
             }
             
@@ -269,6 +276,7 @@ struct LessonLibraryView: View {
     let onStartLesson: (PracticeLesson) -> Void
     
     private let lessons = PracticeLesson.factoryPresets()
+    @Namespace private var categoryFilterNS
     
     var body: some View {
         VStack(spacing: 0) {
@@ -278,7 +286,8 @@ struct LessonLibraryView: View {
                     ForEach(LessonCategory.allCases) { category in
                         CategoryFilterButton(
                             category: category,
-                            isSelected: selectedCategory == category
+                            isSelected: selectedCategory == category,
+                            namespace: categoryFilterNS
                         ) {
                             selectedCategory = category
                         }
@@ -320,6 +329,7 @@ struct LessonLibraryView: View {
 struct CategoryFilterButton: View {
     let category: LessonCategory
     let isSelected: Bool
+    var namespace: Namespace.ID? = nil
     let action: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
@@ -330,12 +340,20 @@ struct CategoryFilterButton: View {
                 .foregroundColor(isSelected ? .white : XTheme.textSecondary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .background(isSelected ? XTheme.primary : XTheme.surface)
-                .clipShape(Capsule())
+                .background {
+                    if isSelected {
+                        Capsule()
+                            .fill(XTheme.primary)
+                            .matchedGeometryEffect(id: "category-filter-pill", in: namespace ?? Namespace().wrappedValue)
+                    } else {
+                        Capsule()
+                            .fill(XTheme.surface)
+                    }
+                }
         }
         .buttonStyle(.plain)
-        .scaleEffect(isSelected && !reduceMotion ? 1.05 : 1.0)
-        .animation(reduceMotion ? nil : .spring(response: 0.2, dampingFraction: 0.75), value: isSelected)
+        .scaleEffect(isSelected && !reduceMotion ? 1.03 : 1.0)
+        .animation(XTheme.snappy, value: isSelected)
     }
 }
 

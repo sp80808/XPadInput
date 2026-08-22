@@ -7,6 +7,7 @@ import XPadController
 public struct SmartSoloHUDView: View {
     public var telemetry: SmartSoloTelemetry
     public var chord: Chord?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(telemetry: SmartSoloTelemetry, chord: Chord?) {
         self.telemetry = telemetry
@@ -31,6 +32,7 @@ public struct SmartSoloHUDView: View {
                         .padding(.vertical, 2)
                         .background(Color.orange.opacity(0.15))
                         .clipShape(Capsule())
+                        .xShimmer(isActive: true)
                 }
             }
 
@@ -75,6 +77,8 @@ public struct SmartSoloHUDView: View {
                             x: stickRadius * cos(angle),
                             y: -stickRadius * sin(angle)
                         )
+                        .animation(reduceMotion ? nil : .spring(response: 0.12, dampingFraction: 0.75), value: telemetry.stickRadius)
+                        .animation(reduceMotion ? nil : .spring(response: 0.12, dampingFraction: 0.75), value: telemetry.stickAngle)
                 }
                 .frame(width: 52, height: 52)
 
@@ -85,6 +89,9 @@ public struct SmartSoloHUDView: View {
                             Text(target.targetNote.pitchClass.displayName)
                                 .font(.system(size: 22, weight: .black, design: .rounded))
                                 .foregroundStyle(Color.orange)
+                                .contentTransition(.numericText())
+                                .animation(reduceMotion ? nil : XTheme.snappy, value: target.targetNote.pitchClass.displayName)
+                                .xRipple(trigger: target.targetNote.pitchClass.displayName, color: .orange, size: 36)
                             Text("Octave \(target.targetNote.octave)")
                                 .font(.caption2)
                                 .foregroundStyle(XTheme.textTertiary)

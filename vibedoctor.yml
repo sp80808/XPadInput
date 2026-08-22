@@ -1,0 +1,161 @@
+version: 1
+
+profile: startup
+
+project:
+  type: app
+  languages: []
+
+paths:
+  include:
+    - src/**
+    - app/**
+    - packages/**
+    - services/**
+  exclude:
+    - node_modules/**
+    - dist/**
+    - build/**
+    - .venv/**
+    - coverage/**
+    - .next/**
+    - vendor/**
+    - .agents/**
+    - test/**
+    - tests/**
+    - "**/test/**"
+    - "**/tests/**"
+    - "**/*.test.*"
+    - "**/*.spec.*"
+    - "**/__tests__/**"
+
+baseline:
+  enabled: true
+  file: .vibedoctor/baseline.json
+  fail_only_on_new_issues: true
+
+score:
+  minimum: 80
+
+runtime:
+  default_timeout_seconds: 120
+  # Per-tool time budgets. A tool that exceeds its budget is reported as timed
+  # out, never as passing.
+  tool_timeouts:
+    biome: 180
+    semgrep: 300
+  required_tools: []
+  fail_on_incomplete_scan: false
+  # Wall-clock ceiling for the whole scan; 0 means no ceiling.
+  total_budget_seconds: 0
+  # On timeout: scoped_retry reruns the tool over changed files only and reports
+  # the partial coverage. Alternatives: skip, fail.
+  on_timeout: scoped_retry
+  scoped_retry_timeout_seconds: 60
+  # Tools deliberately not run. The report says they were deferred rather than
+  # implying they passed — use this for tools this environment cannot support.
+  deferred_tools: []
+  verify_tools_before_scan: true
+  managed_tools:
+    enabled: true
+    allow_network: true
+    prefer_project_local: true
+
+# Controls how much of what the tools report actually reaches the report.
+# Nothing is dropped silently: every filter states what it withheld and why.
+relevance:
+  enabled: true
+  min_confidence: low
+  max_findings_per_tool: 200
+  max_findings_total: 1000
+  # Findings in tests, fixtures, generated, and vendored files: keep, downgrade,
+  # or drop.
+  synthetic_file_policy: downgrade
+  # Check that findings claiming to be credentials look like credentials.
+  validate_secrets: true
+  per_tool:
+    vulture:
+      min_confidence: medium
+      max_findings: 50
+    pyright:
+      max_findings: 150
+    tsc:
+      max_findings: 150
+  # Correct a file-role misclassification without disabling the defaults.
+  # file_roles:
+  #   source: ["fixtures/real/**"]
+
+# Acknowledged findings live in this file. Each entry needs a reason; an expiry
+# date is strongly recommended, because a lapsed acknowledgement resurfaces its
+# findings instead of hiding them forever.
+suppressions:
+  enabled: true
+  file: .vibedoctor/suppressions.yml
+  # Turn this on to reject acknowledgements that have no expiry date: they are
+  # listed as rejected in the report and hide nothing.
+  require_expiry: false
+
+checks:
+  security:
+    enabled: true
+    fail_on_secrets: true
+    fail_on_new_high_vulnerabilities: true
+
+  correctness:
+    enabled: true
+    fail_on_type_errors: true
+    fail_on_test_failures: true
+
+  flow_analysis:
+    enabled: true
+
+  dead_code:
+    enabled: true
+    delete_automatically: false
+    min_confidence_to_report: medium
+
+  leftovers:
+    enabled: true
+    scan_comments: true
+    scan_commented_code: true
+    scan_legacy_fallbacks: true
+    delete_automatically: false
+
+  refactor_readiness:
+    enabled: true
+    min_file_lines: 500
+    min_complexity: 15
+    require_tests_before_refactor: true
+
+  tests:
+    enabled: true
+    min_coverage: 70
+    min_changed_code_coverage: 80
+
+  dependencies:
+    enabled: true
+    fail_on_missing_dependencies: true
+    fail_on_new_direct_vulnerabilities: true
+
+  privacy:
+    enabled: true
+    min_confidence_to_report: medium
+    mask_examples: true
+    max_file_bytes: 1048576
+    fail_on_regulated_identifiers: false
+    fail_on_sensitive_attributes: false
+    ai:
+      enabled: false
+      api_key_env: VIBEDOCTOR_AI_API_KEY
+      base_url_env: VIBEDOCTOR_AI_BASE_URL
+      model_env: VIBEDOCTOR_AI_MODEL
+      include_raw_values: false
+    presidio:
+      enabled: false
+
+output:
+  terminal: true
+  json: .vibedoctor/report.json
+  html: .vibedoctor/report.html
+  agent: .vibedoctor/agent-plan.md
+  privacy_review: .vibedoctor/privacy-review.json

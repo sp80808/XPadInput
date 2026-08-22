@@ -104,6 +104,7 @@ struct ControllerPerformanceHUD: View {
     let currentChord: Chord?
     let lastVelocity: UInt8
     let lastStrumDirection: StrumDirection
+    var showsMappingOverlay: Bool = false
 
     private var iconPack: ControllerIconPack {
         switch controllerKind {
@@ -120,80 +121,95 @@ struct ControllerPerformanceHUD: View {
     }
 
     var body: some View {
-        VStack(spacing: 18) {
-            HStack(alignment: .top, spacing: 16) {
-                ModifierControlGroup(
-                    shoulderLabel: shoulderLabels.left,
-                    shoulderRole: labels.l1,
-                    shoulderPressed: state.leftShoulder,
-                    triggerLabel: shoulderLabels.leftTrigger,
-                    triggerRole: instrument.supportsPalmMute ? labels.l2 : "Expression",
-                    trigger: state.leftTrigger,
-                    semanticValue: instrument.supportsPalmMute ? frame?.palmMuteAmount : nil,
-                    threshold: 0.55,
-                    tint: XTheme.warning
-                )
-
-                Spacer(minLength: 8)
-
-                VStack(spacing: 5) {
-                    Label(
-                        duoMode == .drumsAndInstrument ? "DUO · \(instrument.family.shortName)" : instrument.family.shortName,
-                        systemImage: duoMode == .drumsAndInstrument ? "square.grid.2x2.fill" : "waveform.path.ecg"
+        ZStack {
+            VStack(spacing: 18) {
+                HStack(alignment: .top, spacing: 16) {
+                    ModifierControlGroup(
+                        shoulderLabel: shoulderLabels.left,
+                        shoulderRole: labels.l1,
+                        shoulderPressed: state.leftShoulder,
+                        triggerLabel: shoulderLabels.leftTrigger,
+                        triggerRole: instrument.supportsPalmMute ? labels.l2 : "Expression",
+                        trigger: state.leftTrigger,
+                        semanticValue: instrument.supportsPalmMute ? frame?.palmMuteAmount : nil,
+                        threshold: 0.55,
+                        tint: XTheme.warning
                     )
-                        .font(.system(size: 10, weight: .semibold, design: .rounded))
-                        .foregroundStyle(duoMode == .drumsAndInstrument ? XTheme.warning : XTheme.textSecondary)
 
-                    Text(frame?.activeTechnique.playLabel ?? "READY")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundStyle(frame == nil ? XTheme.textTertiary : XTheme.accent)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.75)
+                    Spacer(minLength: 8)
+
+                    VStack(spacing: 5) {
+                        Label(
+                            duoMode == .drumsAndInstrument ? "DUO · \(instrument.family.shortName)" : instrument.family.shortName,
+                            systemImage: duoMode == .drumsAndInstrument ? "square.grid.2x2.fill" : "waveform.path.ecg"
+                        )
+                            .font(.system(size: 10, weight: .semibold, design: .rounded))
+                            .foregroundStyle(duoMode == .drumsAndInstrument ? XTheme.warning : XTheme.textSecondary)
+
+                        Text(frame?.activeTechnique.playLabel ?? "READY")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundStyle(frame == nil ? XTheme.textTertiary : XTheme.accent)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
+                    }
+                    .frame(maxWidth: 108)
+                    .padding(.top, 5)
+
+                    Spacer(minLength: 8)
+
+                    ModifierControlGroup(
+                        shoulderLabel: shoulderLabels.right,
+                        shoulderRole: labels.r1,
+                        shoulderPressed: state.rightShoulder,
+                        triggerLabel: shoulderLabels.rightTrigger,
+                        triggerRole: labels.r2,
+                        trigger: state.rightTrigger,
+                        semanticValue: frame?.pressure.smoothed,
+                        threshold: 0.10,
+                        tint: XTheme.expression
+                    )
                 }
-                .frame(maxWidth: 108)
-                .padding(.top, 5)
 
-                Spacer(minLength: 8)
+                ViewThatFits(in: .horizontal) {
+                    controllerRow(scale: .expanded, showsDPad: true, spacing: 10)
+                    controllerRow(scale: .compact, showsDPad: true, spacing: 6)
+                    controllerRow(scale: .compact, showsDPad: false, spacing: 4)
+                    controllerRow(scale: .minimal, showsDPad: true, spacing: 3)
+                    controllerRow(scale: .minimal, showsDPad: false, spacing: 2)
+                }
+                .frame(maxWidth: .infinity)
 
-                ModifierControlGroup(
-                    shoulderLabel: shoulderLabels.right,
-                    shoulderRole: labels.r1,
-                    shoulderPressed: state.rightShoulder,
-                    triggerLabel: shoulderLabels.rightTrigger,
-                    triggerRole: labels.r2,
-                    trigger: state.rightTrigger,
-                    semanticValue: frame?.pressure.smoothed,
-                    threshold: 0.10,
-                    tint: XTheme.expression
+                if !isConnected && !state.hasVisiblePerformanceInput {
+                    HStack(spacing: 8) {
+                        Image(systemName: "gamecontroller")
+                            .foregroundStyle(XTheme.warning)
+                        Text("Controller map preview")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(XTheme.textSecondary)
+                        Spacer()
+                        Text("Connect by USB or Bluetooth to play")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(XTheme.textTertiary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(XTheme.warning.opacity(0.07), in: Capsule())
+                    .overlay(Capsule().stroke(XTheme.warning.opacity(0.18), lineWidth: 1))
+                    .accessibilityElement(children: .combine)
+                }
+            }
+            .opacity(showsMappingOverlay ? 0.35 : 1.0)
+            .animation(.easeInOut(duration: 0.2), value: showsMappingOverlay)
+
+            if showsMappingOverlay {
+                HUDMappingOverlayView(
+                    labels: labels,
+                    shoulderLabels: shoulderLabels,
+                    duoMode: duoMode,
+                    instrument: instrument,
+                    controllerKind: controllerKind
                 )
-            }
-
-            ViewThatFits(in: .horizontal) {
-                controllerRow(scale: .expanded, showsDPad: true, spacing: 10)
-                controllerRow(scale: .compact, showsDPad: true, spacing: 6)
-                controllerRow(scale: .compact, showsDPad: false, spacing: 4)
-                controllerRow(scale: .minimal, showsDPad: true, spacing: 3)
-                controllerRow(scale: .minimal, showsDPad: false, spacing: 2)
-            }
-            .frame(maxWidth: .infinity)
-
-            if !isConnected && !state.hasVisiblePerformanceInput {
-                HStack(spacing: 8) {
-                    Image(systemName: "gamecontroller")
-                        .foregroundStyle(XTheme.warning)
-                    Text("Controller map preview")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(XTheme.textSecondary)
-                    Spacer()
-                    Text("Connect by USB or Bluetooth to play")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(XTheme.textTertiary)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(XTheme.warning.opacity(0.07), in: Capsule())
-                .overlay(Capsule().stroke(XTheme.warning.opacity(0.18), lineWidth: 1))
-                .accessibilityElement(children: .combine)
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
             }
         }
         .padding(16)
@@ -208,7 +224,7 @@ struct ControllerPerformanceHUD: View {
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: XTheme.radiusLarge)
-                        .stroke(Color.white.opacity(0.07), lineWidth: 1)
+                        .stroke(showsMappingOverlay ? XTheme.primary.opacity(0.4) : Color.white.opacity(0.07), lineWidth: 1)
                 )
         )
     }
@@ -980,5 +996,185 @@ private struct FaceGlyphSet {
         default:
             (bottom, right, left, top) = (.xboxA, .xboxB, .xboxX, .xboxY)
         }
+    }
+}
+
+// MARK: - Interactive Mapping Overlay View
+
+struct HUDMappingOverlayView: View {
+    let labels: GestureHUDLabels
+    let shoulderLabels: (left: String, right: String, leftTrigger: String, rightTrigger: String)
+    let duoMode: DuoPerformanceMode
+    let instrument: InstrumentProfile
+    let controllerKind: ControllerKind
+
+    var body: some View {
+        VStack(spacing: 12) {
+            // Header annotation
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "map.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(XTheme.primary)
+                    Text("CONTROL SURFACE MAPPINGS")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(XTheme.primaryLight)
+                }
+                Spacer()
+                Text(instrument.name.uppercased())
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(XTheme.textSecondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.white.opacity(0.08)))
+            }
+
+            // Top row modifiers (Shoulders + Triggers)
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    MappingBadge(input: shoulderLabels.left, action: labels.l1, tint: XTheme.warning)
+                    MappingBadge(
+                        input: shoulderLabels.leftTrigger,
+                        action: instrument.supportsPalmMute ? labels.l2 : "Expression",
+                        tint: XTheme.warning
+                    )
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                Spacer(minLength: 8)
+
+                VStack(alignment: .trailing, spacing: 4) {
+                    MappingBadge(input: shoulderLabels.right, action: labels.r1, tint: XTheme.expression)
+                    MappingBadge(input: shoulderLabels.rightTrigger, action: labels.r2, tint: XTheme.expression)
+                }
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+
+            // Middle layout: Left Stick, D-Pad, Center Core, Face, Right Stick
+            HStack(spacing: 8) {
+                // Left Stick
+                VStack(spacing: 3) {
+                    Text("LEFT STICK")
+                        .font(.system(size: 8, weight: .black, design: .monospaced))
+                        .foregroundStyle(XTheme.primary)
+                    Text(labels.leftStick)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(XTheme.textPrimary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(XTheme.primary.opacity(0.12))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(XTheme.primary.opacity(0.35), lineWidth: 1))
+                )
+
+                // D-Pad
+                VStack(spacing: 3) {
+                    Text("D-PAD")
+                        .font(.system(size: 8, weight: .black, design: .monospaced))
+                        .foregroundStyle(XTheme.textSecondary)
+                    Text("Octaves / Voicings")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(XTheme.textPrimary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.white.opacity(0.05))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.12), lineWidth: 1))
+                )
+
+                // Face buttons
+                VStack(spacing: 3) {
+                    Text("FACE BUTTONS")
+                        .font(.system(size: 8, weight: .black, design: .monospaced))
+                        .foregroundStyle(XTheme.colourful)
+                    Text(duoMode == .drumsAndInstrument ? "Kick · Snare · Hats" : "Root · 3rd · 5th · 7th")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(XTheme.textPrimary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(XTheme.colourful.opacity(0.12))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(XTheme.colourful.opacity(0.35), lineWidth: 1))
+                )
+
+                // Right Stick
+                VStack(spacing: 3) {
+                    Text("RIGHT STICK")
+                        .font(.system(size: 8, weight: .black, design: .monospaced))
+                        .foregroundStyle(XTheme.expression)
+                    Text(labels.rightStick)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(XTheme.textPrimary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(XTheme.expression.opacity(0.12))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(XTheme.expression.opacity(0.35), lineWidth: 1))
+                )
+            }
+
+            // Footer info bar
+            HStack(spacing: 6) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 9))
+                    .foregroundStyle(XTheme.textTertiary)
+                Text("Tap '?' again to dismiss overlay • Edit full scheme in Settings (⌘,)")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(XTheme.textTertiary)
+            }
+            .padding(.top, 2)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: XTheme.radiusMedium)
+                .fill(XTheme.surfaceElevated.opacity(0.96))
+                .overlay(
+                    RoundedRectangle(cornerRadius: XTheme.radiusMedium)
+                        .stroke(XTheme.primary.opacity(0.3), lineWidth: 1)
+                )
+                .shadow(color: Color.black.opacity(0.45), radius: 12)
+        )
+    }
+}
+
+private struct MappingBadge: View {
+    let input: String
+    let action: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(input)
+                .font(.system(size: 9, weight: .black, design: .monospaced))
+                .foregroundStyle(Color.white)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(tint.opacity(0.75)))
+
+            Text(action)
+                .font(.system(size: 9.5, weight: .medium))
+                .foregroundStyle(XTheme.textPrimary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.white.opacity(0.06))
+        )
     }
 }

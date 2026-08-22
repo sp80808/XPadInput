@@ -7,6 +7,9 @@ import XPadController
 public struct ContentView: View {
     @Environment(AppState.self) private var appState
     @State private var isShowingSettings = false
+    @State private var workspaceDirection: WorkspaceTransitionDirection = .forward
+
+    private enum WorkspaceTransitionDirection { case forward, backward }
     
     public init() {}
     
@@ -27,11 +30,17 @@ public struct ContentView: View {
                 if appState.isPracticeRequested {
                     PracticeWorkspaceView()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .transition(.opacity.combined(with: .scale(scale: 0.995)))
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .move(edge: .trailing)),
+                            removal:   .opacity.combined(with: .move(edge: .leading))
+                        ))
                 } else {
                     PlayView(onOpenSettings: { isShowingSettings = true })
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .transition(.opacity.combined(with: .scale(scale: 0.995)))
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .move(edge: .leading)),
+                            removal:   .opacity.combined(with: .move(edge: .trailing))
+                        ))
                 }
                 
                 Divider()
@@ -95,6 +104,9 @@ struct TopPerformanceHeaderView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.viewportMetrics) private var viewport
     var onOpenSettings: () -> Void = {}
+    @State private var gearHovered = false
+    @State private var connectRippleTrigger = 0
+    @State private var wasConnected = false
     
     var body: some View {
         @Bindable var state = appState
@@ -106,6 +118,13 @@ struct TopPerformanceHeaderView: View {
                 Image(systemName: "gamecontroller.fill")
                     .font(.system(size: isCompact ? 14 : 16, weight: .bold))
                     .foregroundColor(XTheme.primary)
+                    .scaleEffect(appState.controllerManager.isConnected ? 1.04 : 1.0)
+                    .animation(
+                        appState.controllerManager.isConnected
+                            ? .easeInOut(duration: 1.6).repeatForever(autoreverses: true)
+                            : .easeOut(duration: 0.2),
+                        value: appState.controllerManager.isConnected
+                    )
                     .xGlow(isActive: appState.controllerManager.isConnected)
                 
                 VStack(alignment: .leading, spacing: 0) {
@@ -147,7 +166,7 @@ struct TopPerformanceHeaderView: View {
                     Circle()
                         .fill(appState.controllerManager.isConnected ? XTheme.controllerConnected : XTheme.primaryLight.opacity(0.6))
                         .frame(width: 7, height: 7)
-                        .xGlow(isActive: appState.controllerManager.isConnected)
+                        .xPulse(isActive: appState.controllerManager.isConnected, color: XTheme.controllerConnected)
                     
                     Text(controllerBadgeText(isCompact: isCompact))
                         .font(.system(size: isCompact ? 10 : 11, weight: .semibold))
@@ -163,12 +182,21 @@ struct TopPerformanceHeaderView: View {
                 .background(XTheme.surface)
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
-                        .stroke(XTheme.border, lineWidth: 1)
+                        .stroke(
+                            appState.controllerManager.isConnected ? XTheme.controllerConnected.opacity(0.5) : XTheme.border,
+                            lineWidth: 1
+                        )
+                        .animation(XTheme.glassIn, value: appState.controllerManager.isConnected)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 6))
+                .xRipple(trigger: connectRippleTrigger, color: XTheme.controllerConnected, size: 56)
             }
             .buttonStyle(.plain)
             .help("Configure Controller Scheme, Calibrate Deadzones, and Remap Buttons")
+            .onChange(of: appState.controllerManager.isConnected) { _, isConnected in
+                if isConnected && !wasConnected { connectRippleTrigger += 1 }
+                wasConnected = isConnected
+            }
             
             // Settings Button
             Button {
@@ -176,13 +204,16 @@ struct TopPerformanceHeaderView: View {
             } label: {
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(XTheme.textSecondary)
+                    .foregroundColor(gearHovered ? XTheme.primary : XTheme.textSecondary)
+                    .rotationEffect(.degrees(gearHovered ? 45 : 0))
+                    .animation(XTheme.snappy, value: gearHovered)
                     .padding(6)
                     .background(XTheme.surface)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
             }
             .buttonStyle(.plain)
             .help("Open Settings")
+            .onHover { gearHovered = $0 }
         }
         .padding(.horizontal, isCompact ? 10 : 16)
         .padding(.vertical, isCompact ? 6 : 8)

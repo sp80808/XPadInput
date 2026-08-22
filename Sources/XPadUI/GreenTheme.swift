@@ -117,10 +117,16 @@ public struct XTheme {
     
     // MARK: - Animation
     
-    public static let springAnimation = Animation.spring(response: 0.35, dampingFraction: 0.7)
-    public static let quickAnimation = Animation.easeOut(duration: 0.15)
-    public static let feedbackFast = Animation.easeOut(duration: 0.09)
-    public static let transitionShort = Animation.easeOut(duration: 0.18)
+    public static let springAnimation  = Animation.spring(response: 0.35, dampingFraction: 0.70)
+    public static let quickAnimation   = Animation.easeOut(duration: 0.15)
+    public static let feedbackFast     = Animation.easeOut(duration: 0.09)
+    public static let transitionShort  = Animation.easeOut(duration: 0.18)
+    /// Playful overshoot spring — use for icon bounces and toggle flips.
+    public static let bouncy           = Animation.spring(response: 0.30, dampingFraction: 0.52)
+    /// Crisp immediate spring with tiny tail — use for tab selections.
+    public static let snappy           = Animation.spring(response: 0.22, dampingFraction: 0.80)
+    /// Fade + slight upward drift — use for surface appearances.
+    public static let glassIn          = Animation.easeOut(duration: 0.22)
 }
 
 // MARK: - View Modifiers
@@ -201,6 +207,138 @@ public struct XGlowModifier: ViewModifier {
     }
 }
 
+// MARK: - XPulseModifier
+
+/// Heartbeat-glow modifier. Emits two concentric rings that expand and fade
+/// continuously while `isActive` is true. Layout-safe: pure overlay.
+public struct XPulseModifier: ViewModifier {
+    public var isActive: Bool
+    public var color: Color
+    public var speed: Double       // 1.0 = ~1.2 s cycle
+    public var rings: Int          // 1 or 2
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pulse1 = false
+    @State private var pulse2 = false
+
+    public init(isActive: Bool, color: Color = XTheme.primary, speed: Double = 1.0, rings: Int = 1) {
+        self.isActive = isActive
+        self.color = color
+        self.speed = speed
+        self.rings = rings
+    }
+
+    public func body(content: Content) -> some View {
+        content
+            .overlay {
+                if isActive && !reduceMotion {
+                    GeometryReader { geo in
+                        let d = max(geo.size.width, geo.size.height)
+                        ZStack {
+                            pulseRing(scale: pulse1 ? 2.1 : 1.0, opacity: pulse1 ? 0 : 0.55, d: d)
+                                .animation(.easeOut(duration: 1.1 / speed).repeatForever(autoreverses: false), value: pulse1)
+                            if rings >= 2 {
+                                pulseRing(scale: pulse2 ? 1.8 : 1.0, opacity: pulse2 ? 0 : 0.35, d: d)
+                                    .animation(.easeOut(duration: 1.1 / speed).delay(0.45).repeatForever(autoreverses: false), value: pulse2)
+                            }
+                        }
+                        .frame(width: geo.size.width, height: geo.size.height)
+                    }
+                }
+            }
+            .onAppear  { if isActive && !reduceMotion { pulse1 = true; pulse2 = true } }
+            .onChange(of: isActive) { _, active in
+                if active && !reduceMotion { pulse1 = true; pulse2 = true }
+                else { pulse1 = false; pulse2 = false }
+            }
+    }
+
+    private func pulseRing(scale: CGFloat, opacity: Double, d: CGFloat) -> some View {
+        Circle()
+            .stroke(color, lineWidth: 1.5)
+            .frame(width: d, height: d)
+            .scaleEffect(scale)
+            .opacity(opacity)
+            .allowsHitTesting(false)
+    }
+}
+
+// MARK: - XShimmerModifier
+
+/// A subtle left-to-right shimmer sweep. Layout-safe: uses `mask` not frame changes.
+public struct XShimmerModifier: ViewModifier {
+    public var isActive: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var phase: CGFloat = -1
+
+    public func body(content: Content) -> some View {
+        content
+            .overlay {
+                if isActive && !reduceMotion {
+                    LinearGradient(
+                        colors: [.clear, .white.opacity(0.12), .clear],
+                        startPoint: .init(x: phase, y: 0),
+                        endPoint:   .init(x: phase + 0.5, y: 0)
+                    )
+                    .blendMode(.overlay)
+                    .allowsHitTesting(false)
+                    .onAppear {
+                        withAnimation(.linear(duration: 1.8).repeatForever(autoreverses: false)) {
+                            phase = 1.5
+                        }
+                    }
+                }
+            }
+    }
+}
+
+// MARK: - XRippleModifier
+
+/// A one-shot ring that expands and fades each time `trigger` changes.
+/// `trigger` should be a value that changes each time the effect is desired
+/// (e.g. an incrementing Int, a Bool toggle, or a Date).
+public struct XRippleModifier: ViewModifier {
+    public var trigger: AnyHashable
+    public var color: Color
+    public var size: CGFloat      // diameter of the ring at peak
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var scale: CGFloat = 0.4
+    @State private var opacity: Double = 0.8
+    @State private var ringID: UUID = UUID()
+
+    public init(trigger: AnyHashable, color: Color = XTheme.primary, size: CGFloat = 48) {
+        self.trigger = trigger
+        self.color = color
+        self.size = size
+    }
+
+    public func body(content: Content) -> some View {
+        content
+            .overlay {
+                if !reduceMotion {
+                    Circle()
+                        .stroke(color, lineWidth: 1.5)
+                        .frame(width: size, height: size)
+                        .scaleEffect(scale)
+                        .opacity(opacity)
+                        .id(ringID)
+                        .allowsHitTesting(false)
+                }
+            }
+            .onChange(of: trigger) { _, _ in
+                guard !reduceMotion else { return }
+                ringID   = UUID()
+                scale    = 0.4
+                opacity  = 0.8
+                withAnimation(.easeOut(duration: 0.55)) {
+                    scale   = 1.8
+                    opacity = 0
+                }
+            }
+    }
+}
+
+// MARK: - View Extension
+
 public extension View {
     func xCard(isActive: Bool = false) -> some View {
         modifier(XCardModifier(isActive: isActive))
@@ -208,5 +346,17 @@ public extension View {
     
     func xGlow(isActive: Bool, color: Color = XTheme.primary) -> some View {
         modifier(XGlowModifier(isActive: isActive, color: color))
+    }
+
+    func xPulse(isActive: Bool, color: Color = XTheme.primary, speed: Double = 1.0, rings: Int = 1) -> some View {
+        modifier(XPulseModifier(isActive: isActive, color: color, speed: speed, rings: rings))
+    }
+
+    func xShimmer(isActive: Bool) -> some View {
+        modifier(XShimmerModifier(isActive: isActive))
+    }
+
+    func xRipple<H: Hashable>(trigger: H, color: Color = XTheme.primary, size: CGFloat = 48) -> some View {
+        modifier(XRippleModifier(trigger: AnyHashable(trigger), color: color, size: size))
     }
 }

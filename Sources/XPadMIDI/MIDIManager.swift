@@ -84,6 +84,10 @@ public final class MIDIEngine: @unchecked Sendable {
     public var onIncomingPerNotePressure: ((UInt8, UInt8, Double) -> Void)?
     /// Invoked when incoming per-note registered controllers are decoded.
     public var onIncomingPerNoteController: ((UInt8, UInt8, UInt8, Double) -> Void)?
+    /// Invoked when incoming standard MIDI 2.0 Registered Per-Note Controllers are decoded.
+    public var onIncomingPerNoteRPNC: ((UInt8, UInt8, MIDI2UMPEncoder.MIDI2RPNC, Double) -> Void)?
+    /// Invoked when incoming Note On messages with non-zero attributes are decoded.
+    public var onIncomingNoteOnAttribute: ((UInt8, UInt8, UInt16, UInt8, UInt16) -> Void)?
     /// Invoked when incoming SysEx / MIDI-CI payloads are assembled.
     public var onIncomingSysEx: (([UInt8]) -> Void)?
 
@@ -346,6 +350,12 @@ public final class MIDIEngine: @unchecked Sendable {
 
                 onIncomingEvent?(event, rawBytes)
 
+            case .noteOnAttribute(let channel, let note, let vel16, let attrType, let attrData):
+                lock.lock()
+                midiActivityTimestamp = Date()
+                lock.unlock()
+                onIncomingNoteOnAttribute?(channel, note, vel16, attrType, attrData)
+
             case .perNotePitchBend(let channel, let note, let semitones, _):
                 lock.lock()
                 midiActivityTimestamp = Date()
@@ -363,6 +373,12 @@ public final class MIDIEngine: @unchecked Sendable {
                 midiActivityTimestamp = Date()
                 lock.unlock()
                 onIncomingPerNoteController?(channel, note, controller, value)
+
+            case .perNoteRPNC(let channel, let note, let rpnc, let value):
+                lock.lock()
+                midiActivityTimestamp = Date()
+                lock.unlock()
+                onIncomingPerNoteRPNC?(channel, note, rpnc, value)
 
             case .perNoteManagement:
                 break
@@ -386,7 +402,9 @@ public final class MIDIEngine: @unchecked Sendable {
         channel: UInt8,
         note: UInt8,
         velocity: UInt8,
-        velocity16: UInt16? = nil
+        velocity16: UInt16? = nil,
+        attributeType: MIDI2UMPEncoder.MIDI2NoteAttributeType = .none,
+        attributeData: UInt16 = 0
     ) {
         let safeChannel = min(15, channel)
         let safeNote = min(127, note)
@@ -410,9 +428,6 @@ public final class MIDIEngine: @unchecked Sendable {
         if lastSentNotes.count > 12 { lastSentNotes.removeFirst() }
         lock.unlock()
 
-        // The semantic layer cannot disambiguate stacked identical notes on one
-        // channel yet. Close an existing voice first so one later Note Off is
-        // deterministic on both transports.
         if wasAlreadyActive {
             emit([0x80 | safeChannel, safeNote, 0], to: port)
         }
@@ -420,7 +435,9 @@ public final class MIDIEngine: @unchecked Sendable {
         let midi2NoteOn = MIDI2UMPEncoder.noteOnMessage(
             channel: safeChannel,
             note: safeNote,
-            velocity16: effective16
+            velocity16: effective16,
+            attributeType: attributeType,
+            attributeData: attributeData
         )
 
         emit(
@@ -428,6 +445,69 @@ public final class MIDIEngine: @unchecked Sendable {
             midi2Override: midi2NoteOn,
             to: port
         )
+    }
+
+    /// Sends a MIDI 2.0 Note On message with Pitch 7.9-bit microtuning attribute offset.
+    public func sendNoteOnWithPitch7_9(
+        port: VirtualPort = .main,
+        channel: UInt8,
+        note: UInt8,
+        velocity: UInt8,
+        velocity16: UInt16? = nil,
+        centOffset: Double
+    ) {
+        let safeVelocity = min(127, velocity)
+        let effective16 = velocity16 ?? MIDI2UMPEncoder.scale7To16(safeVelocity)
+        let attrData = MIDI2UMPEncoder.Pitch7_9Codec.encode(note: note, centOffset: centOffset)
+
+        sendNoteOn(
+            port: port,
+            channel: channel,
+            note: note,
+            velocity: velocity,
+            velocity16: effective16,
+            attributeType: .pitch7_9,
+            attributeData: attrData
+        )
+    }
+
+    /// Sends a standard MIDI 2.0 Registered Per-Note Controller (RPNC).
+    public func sendPerNoteRegisteredController(
+        port: VirtualPort = .mpe,
+        channel: UInt8,
+        note: UInt8,
+        controller: MIDI2UMPEncoder.MIDI2RPNC,
+        normalizedValue: Double
+    ) {
+        let safeChannel = min(15, channel)
+        let safeNote = min(127, note)
+        let clampedValue = normalizedValue.clamped(to: 0.0...1.0)
+
+        if transportProtocol == .midi2 {
+            let rpncUMP = MIDI2UMPEncoder.perNoteRegisteredControllerMessage(
+                channel: safeChannel,
+                note: safeNote,
+                controller: controller,
+                normalizedValue: clampedValue
+            )
+            emitRawMIDI2UMP(rpncUMP, to: port)
+        } else {
+            // Fallback for MIDI 1 / MPE
+            switch controller {
+            case .brightness:
+                sendTimbreCC74(port: port, channel: safeChannel, normalizedValue: clampedValue)
+            case .pan:
+                sendCC(port: port, channel: safeChannel, controller: 10, normalizedValue: clampedValue)
+            case .modulation:
+                sendCC(port: port, channel: safeChannel, controller: 1, normalizedValue: clampedValue)
+            case .expression:
+                sendCC(port: port, channel: safeChannel, controller: 11, normalizedValue: clampedValue)
+            case .resonance:
+                sendCC(port: port, channel: safeChannel, controller: 71, normalizedValue: clampedValue)
+            default:
+                break
+            }
+        }
     }
 
     public func sendNoteOff(note: UInt8, channel: UInt8 = 0) {

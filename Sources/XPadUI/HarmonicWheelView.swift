@@ -7,6 +7,7 @@ import XPadController
 struct HarmonicWheelView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var orbitalRotation: Double = 0
     
     var body: some View {
         GeometryReader { geo in
@@ -43,6 +44,12 @@ struct HarmonicWheelView: View {
                 // Left stick indicator
                 stickIndicator(center: center, maxRadius: chordRadius)
             }
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.linear(duration: 28).repeatForever(autoreverses: false)) {
+                    orbitalRotation = -360
+                }
+            }
         }
     }
     
@@ -56,11 +63,12 @@ struct HarmonicWheelView: View {
             .frame(width: maxRadius * 2, height: maxRadius * 2)
             .position(center)
 
-        // Orbital track passing through chords
+        // Orbital track passing through chords — slow counter-clockwise drift
         Circle()
             .stroke(XTheme.border.opacity(0.6), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
             .frame(width: chordRadius * 2, height: chordRadius * 2)
             .position(center)
+            .rotationEffect(.degrees(orbitalRotation), anchor: UnitPoint(x: center.x / max(1, maxRadius * 2), y: center.y / max(1, maxRadius * 2)))
         
         // Subtle ambient radial glow
         Circle()
@@ -110,9 +118,10 @@ struct HarmonicWheelView: View {
                     path.addLine(to: CGPoint(x: x, y: y))
                 }
                 .stroke(
-                    isSelected ? XTheme.primary.opacity(0.55) : XTheme.border.opacity(0.7),
+                    isSelected ? XTheme.primary.opacity(0.65) : XTheme.border.opacity(0.55),
                     lineWidth: isSelected ? 2 : 1
                 )
+                .animation(XTheme.snappy, value: isSelected)
                 
                 // Chord node
                 ChordNodeView(
@@ -155,12 +164,16 @@ struct HarmonicWheelView: View {
                     .foregroundColor(XTheme.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.75)
+                    .contentTransition(.numericText())
+                    .animation(XTheme.snappy, value: appState.currentKey.displayName)
                 
                 Text(appState.currentScale.shortDisplayName)
                     .font(.system(size: max(8, min(12, innerRadius * 0.25)), weight: .semibold))
                     .foregroundColor(XTheme.textSecondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .animation(XTheme.glassIn, value: appState.currentScale.shortDisplayName)
             }
             .frame(maxWidth: innerRadius * 1.8)
         }
@@ -180,6 +193,20 @@ struct HarmonicWheelView: View {
             let x = center.x + cos(CGFloat(angle)) * indicatorRadius
             let y = center.y - sin(CGFloat(angle)) * indicatorRadius // Flip Y
             let dotSize: CGFloat = max(9, min(14, maxRadius * 0.12))
+
+            // Trail ghost dots at 75%, 50%, 25% radius
+            if !reduceMotion {
+                ForEach([0.75, 0.50, 0.28], id: \.self) { fraction in
+                    let trailRadius = indicatorRadius * fraction
+                    let tx = center.x + cos(CGFloat(angle)) * trailRadius
+                    let ty = center.y - sin(CGFloat(angle)) * trailRadius
+                    Circle()
+                        .fill(XTheme.accent.opacity(0.18 * fraction))
+                        .frame(width: dotSize * 0.7, height: dotSize * 0.7)
+                        .position(x: tx, y: ty)
+                        .allowsHitTesting(false)
+                }
+            }
             
             Circle()
                 .fill(XTheme.accent.opacity(0.75))
@@ -248,7 +275,7 @@ struct ChordNodeView: View {
         )
         .shadow(color: isSelected ? XTheme.primary.opacity(0.32) : .clear, radius: 10)
         .scaleEffect(isSelected && !reduceMotion ? 1.05 : 1.0)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isSelected)
+        .animation(reduceMotion ? nil : XTheme.snappy, value: isSelected)
         .onChange(of: isSelected) { _, newSelected in
             guard newSelected && !reduceMotion else { return }
             pulse = true
@@ -256,5 +283,11 @@ struct ChordNodeView: View {
                 pulse = false
             }
         }
+        // Tension-tinted ripple on each new selection
+        .xRipple(
+            trigger: isSelected ? chord.displayName : "",
+            color: XTheme.tensionColor(tension),
+            size: max(width, height) * 1.6
+        )
     }
 }

@@ -53,8 +53,9 @@ This document outlines the architectural patterns, native frameworks, performanc
 | **Language** | **Swift 6** | Strict concurrency checking, typed actors, `@MainActor`, zero pointers. |
 | **User Interface** | **SwiftUI 2026 / AppKit** | Declarative state management, vector rendering, fluid canvas visualizers. |
 | **Gamepad Hardware** | **`GameController.framework`** | Hardware polling, HID enumeration, extended gamepad profiles, 6-axis IMU, and haptic actuation. |
-| **MIDI & Expression** | **`CoreMIDI.framework`** | Virtual MIDI source endpoints (`MIDISourceCreate`), low-jitter packet dispatching, MPE standard compliance. |
+| **MIDI & Expression** | **`CoreMIDI.framework`** | Virtual MIDI source endpoints (`MIDISourceCreate`), low-jitter packet dispatching, MPE standard compliance, MIDI 2.0 UMP transport. |
 | **DSP & Sound** | **`AVFAudio` (`AVAudioEngine`)** | Real-time C-function audio callback (`AVAudioSourceNode`), 44.1/48kHz 32-bit floating-point DSP. |
+| **Haptics** | **`CoreHaptics.framework`** | Advanced haptic feedback synthesis for DualSense and trackpad tactile output. |
 | **Build System** | **Swift Package Manager (SPM)** | Modular sub-packages, reproducible zero-dependency builds. |
 
 ---

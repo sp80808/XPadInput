@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import AudioToolbox
+import os
 import XPadCore
 
 public enum OscillatorType: String, CaseIterable, Codable, Sendable {
@@ -713,6 +714,33 @@ public final class AudioEngine: @unchecked Sendable {
         lock.unlock()
     }
 
+    public func setPan(for note: UInt8, pan: Double) {
+        lock.lock()
+        voices[note]?.setPan(pan)
+        lock.unlock()
+    }
+
+    public func setResonance(for note: UInt8, resonance: Double) {
+        lock.lock()
+        voices[note]?.setResonanceOffset(resonance)
+        lock.unlock()
+    }
+
+    public func setRPNC(for note: UInt8, controllerIndex: UInt8, normalizedValue: Double) {
+        switch controllerIndex {
+        case 74: // Brightness / Timbre
+            setTimbre(for: note, timbre: normalizedValue)
+        case 10, 8: // Pan
+            setPan(for: note, pan: normalizedValue)
+        case 71: // Resonance
+            setResonance(for: note, resonance: normalizedValue)
+        case 1: // Modulation
+            setPressure(for: note, pressure: normalizedValue)
+        default:
+            break
+        }
+    }
+
     public func setHarmonicEmphasis(for note: UInt8, amount: Double, pinch: Bool) {
         lock.lock()
         voices[note]?.setHarmonic(amount: amount, pinch: pinch)
@@ -758,101 +786,67 @@ public final class AudioEngine: @unchecked Sendable {
 
 private final class VoiceControlState: @unchecked Sendable {
     struct Snapshot {
-        let isReleasing: Bool
-        let isStopped: Bool
-        let pitchOffset: Double
-        let pressure: Double
-        let timbre: Double
-        let damping: Double
-        let harmonic: Double
-        let pinch: Bool
+        var isReleasing: Bool = false
+        var isStopped: Bool = false
+        var pitchOffset: Double = 0.0
+        var pressure: Double = 0.0
+        var timbre: Double = 0.5
+        var damping: Double = 0.0
+        var harmonic: Double = 0.0
+        var pinch: Bool = false
+        var pan: Double = 0.5
+        var resonanceOffset: Double = 0.0
     }
 
-    private let lock = NSLock()
-    private var isReleasing = false
-    private var isStopped = false
-    private var pitchOffset = 0.0
-    private var pressure = 0.0
-    private var timbre = 0.5
-    private var damping = 0.0
-    private var harmonic = 0.0
-    private var pinch = false
+    private let state = OSAllocatedUnfairLock(initialState: Snapshot())
 
     func snapshot() -> Snapshot {
-        lock.lock()
-        let value = Snapshot(
-            isReleasing: isReleasing,
-            isStopped: isStopped,
-            pitchOffset: pitchOffset,
-            pressure: pressure,
-            timbre: timbre,
-            damping: damping,
-            harmonic: harmonic,
-            pinch: pinch
-        )
-        lock.unlock()
-        return value
+        state.withLock { $0 }
     }
 
     /// Audio render threads never wait for control writers. If a write is in
     /// progress, the voice reuses its last complete snapshot for one buffer.
     func trySnapshot() -> Snapshot? {
-        guard lock.try() else { return nil }
-        let value = Snapshot(
-            isReleasing: isReleasing,
-            isStopped: isStopped,
-            pitchOffset: pitchOffset,
-            pressure: pressure,
-            timbre: timbre,
-            damping: damping,
-            harmonic: harmonic,
-            pinch: pinch
-        )
-        lock.unlock()
-        return value
+        state.withLockIfAvailable { $0 }
     }
 
     func startRelease() {
-        lock.lock()
-        isReleasing = true
-        lock.unlock()
+        state.withLock { $0.isReleasing = true }
     }
 
     func stop() {
-        lock.lock()
-        isStopped = true
-        lock.unlock()
+        state.withLock { $0.isStopped = true }
     }
 
     func setPitchOffset(_ semitones: Double) {
-        lock.lock()
-        pitchOffset = semitones
-        lock.unlock()
+        state.withLock { $0.pitchOffset = semitones }
     }
 
     func setPressure(_ value: Double) {
-        lock.lock()
-        pressure = max(0, min(1, value))
-        lock.unlock()
+        state.withLock { $0.pressure = max(0, min(1, value)) }
     }
 
     func setTimbre(_ value: Double) {
-        lock.lock()
-        timbre = max(0, min(1, value))
-        lock.unlock()
+        state.withLock { $0.timbre = max(0, min(1, value)) }
     }
 
     func setDamping(_ value: Double) {
-        lock.lock()
-        damping = max(0, min(1, value))
-        lock.unlock()
+        state.withLock { $0.damping = max(0, min(1, value)) }
+    }
+
+    func setPan(_ value: Double) {
+        state.withLock { $0.pan = max(0, min(1, value)) }
+    }
+
+    func setResonanceOffset(_ value: Double) {
+        state.withLock { $0.resonanceOffset = max(0, min(1, value)) }
     }
 
     func setHarmonic(amount: Double, pinch: Bool) {
-        lock.lock()
-        harmonic = max(0, min(1, amount))
-        self.pinch = pinch
-        lock.unlock()
+        state.withLock {
+            $0.harmonic = max(0, min(1, amount))
+            $0.pinch = pinch
+        }
     }
 }
 
@@ -1169,6 +1163,14 @@ public final class SynthVoice: @unchecked Sendable {
 
     public func setDamping(_ value: Double) {
         controlState.setDamping(value)
+    }
+
+    public func setPan(_ value: Double) {
+        controlState.setPan(value)
+    }
+
+    public func setResonanceOffset(_ value: Double) {
+        controlState.setResonanceOffset(value)
     }
 
     public func setHarmonic(amount: Double, pinch: Bool) {

@@ -18,16 +18,21 @@
 
 Pre-built native macOS universal releases are packaged directly via GitHub Actions CI.
 
-### Alpha 0.0.03 (CI-Validated Latest)
-Validated release build incorporating diatonic consonant chord pitch bending, Universal MIDI Packet (UMP) decoding, accurate MIDI Passthru routing, enhanced DualSense/CoreHaptics feedback, and macOS Force Touch trackpad tactile support:
-- **Recommended:** [Download XPadInput-0.0.03.dmg](https://github.com/sp80808/XPadInput/releases)
-- **Fallback ZIP:** [Download XPadInput-0.0.03.zip](https://github.com/sp80808/XPadInput/releases)
+### Alpha 0.0.04 (CI-Validated Latest)
+Validated release build incorporating dynamic animated micro-interactions, spring physics, live visualizer radar scanner, matched-geometry tab capsules, diatonic consonant chord pitch bending, Universal MIDI Packet (UMP) decoding, accurate MIDI Passthru routing, enhanced DualSense/CoreHaptics feedback, and macOS Force Touch trackpad tactile support:
+- **Recommended:** [Download XPadInput-0.0.04.dmg](https://github.com/sp80808/XPadInput/releases)
+- **Fallback ZIP:** [Download XPadInput-0.0.04.zip](https://github.com/sp80808/XPadInput/releases)
+- **Full Release Notes:** See [CHANGELOG.md](CHANGELOG.md)
 
 SHA-256:
 ```text
-685747bb757b9fd29913174bf3c9e2e0de655126d7a147b6e4f79f6e565f86ae  XPadInput-0.0.03.dmg
-2e92ac2cfcd31e4657b99f2d89505e0d0b361ebdcf189b2e93b2a6ced1760f8f  XPadInput-0.0.03.zip
+b6107d03977c5e5cabc7b43662d1d967339034da241c7a97411ca7b107b2164f  XPadInput-0.0.04.dmg
+35929c2490a7eba8c821c323f9c7311be589684bab24fe27a7e8944f56411f67  XPadInput-0.0.04.zip
 ```
+
+### Alpha 0.0.03
+- [Download XPadInput-0.0.03.dmg](https://github.com/sp80808/XPadInput/releases)
+- [Download XPadInput-0.0.03.zip](https://github.com/sp80808/XPadInput/releases)
 
 ### Alpha 0.0.02
 - [Download XPadInput-0.0.02.dmg](https://github.com/sp80808/XPadInput/releases)
@@ -105,6 +110,24 @@ Please test controller detection, analog sticks, triggers, chord selection, virt
 - Interactive lessons for mastering chord progressions and harmonic movement.
 - Real-time chord evaluation with timing accuracy feedback.
 - Progress tracking with session history and improvement metrics.
+
+### 8. 🔌 AUv3 Plugin & Virtual Audio Driver
+- **AUv3 MIDI FX & Instrument**: Package XPI as an Audio Unit v3 plugin for direct hosting inside Logic Pro, Ableton Live, Bitwig Studio, and Cubase.
+- **Virtual Audio Driver**: Direct virtual loopback audio stream for zero-configuration system audio capture.
+- **Built-in Drums**: Dedicated drum synthesis engine for rhythm production.
+
+### 9. 🎧 Spatial Audio Engine
+- Real-time binaural spatial audio rendering with head-related transfer function (HRTF) processing.
+- 3D audio positioning for immersive performance experience.
+
+### 10. 🎛️ Semantic Control Schemes
+- **7 Built-in Control Schemes**: Performance (default), Classic, Low-Fatigue, Left-Handed, One-Hand Left, One-Hand Right, Custom.
+- **Semantic Musical Action Layer**: Decouples physical inputs from instrument profiles for flexible remapping.
+- **Runtime Remapping**: `ControlSurfaceResolver` projects bindings onto canonical performance layout.
+
+### 11. 📋 Open Controller Definition Standard (OCDS)
+- Open-source JSON schema for community controller mapping profiles.
+- Visual 3D skinning support for niche controllers.
 
 ---
 
@@ -232,6 +255,7 @@ XPadInput/
 ├── .github/workflows/         # Automated macOS CI & packaging workflow (macos-ci.yml)
 ├── .agents/skills/            # Specialized agent skills and workflow guides
 ├── AGENTS.md                  # Agent operating instructions and modular rules
+├── CHANGELOG.md               # Version history and detailed changelogs
 ├── DESIGN.md                  # Authoritative interaction, feedback, and ergonomic rules
 ├── INSTRUMENT_TECHNIQUES.md   # Semantic technique and instrument-profile contract
 ├── MIDI2_ROADMAP.md           # MIDI 2.0 & MIDI-CI experimental roadmap

@@ -28,11 +28,90 @@ public enum MIDITransportProtocol: String, CaseIterable, Identifiable, Sendable 
     }
 }
 
+/// Standard MIDI 2.0 Registered Per-Note Controllers (RPNC).
+public enum MIDI2RPNC: UInt8, CaseIterable, Identifiable, Codable, Equatable, Hashable, Sendable {
+    case modulation = 1
+    case breath = 2
+    case pitchOffset7_9 = 3
+    case volume = 7
+    case pan = 10
+    case expression = 11
+    case soundVariation = 70
+    case resonance = 71
+    case releaseTime = 72
+    case attackTime = 73
+    case brightness = 74
+    case decayTime = 75
+    case vibratoRate = 76
+    case vibratoDepth = 77
+    case vibratoDelay = 78
+
+    public var id: UInt8 { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .modulation: "Modulation"
+        case .breath: "Breath"
+        case .pitchOffset7_9: "Pitch 7.9 Offset"
+        case .volume: "Volume"
+        case .pan: "Pan"
+        case .expression: "Expression"
+        case .soundVariation: "Sound Variation"
+        case .resonance: "Resonance"
+        case .releaseTime: "Release Time"
+        case .attackTime: "Attack Time"
+        case .brightness: "Brightness / Cutoff"
+        case .decayTime: "Decay Time"
+        case .vibratoRate: "Vibrato Rate"
+        case .vibratoDepth: "Vibrato Depth"
+        case .vibratoDelay: "Vibrato Delay"
+        }
+    }
+}
+
+/// MIDI 2.0 Note On & Note Off Attribute Types (M2-104-UM).
+public enum MIDI2NoteAttributeType: UInt8, CaseIterable, Identifiable, Codable, Equatable, Hashable, Sendable {
+    case none = 0x00
+    case manufacturerSpecific = 0x01
+    case profileSpecific = 0x02
+    case pitch7_9 = 0x03
+
+    public var id: UInt8 { rawValue }
+}
+
+/// Codec for MIDI 2.0 Pitch 7.9-bit microtuning representation.
+/// (Bits 9...15: semitone note 0...127, Bits 0...8: 512ths of a semitone).
+public enum Pitch7_9Codec {
+    public static func encode(note: UInt8, centOffset: Double) -> UInt16 {
+        let baseNote = Int(note & 0x7F)
+        let cents = centOffset.clamped(to: -100.0...100.0)
+        let totalFraction = cents / 100.0 // -1.0 ... +1.0
+
+        let noteAndFraction = Double(baseNote) + totalFraction
+        let effectiveNote = Int(floor(noteAndFraction)).clamped(to: 0...127)
+        let fraction = (noteAndFraction - floor(noteAndFraction)) * 512.0
+        let clampedFraction = UInt16(min(511, max(0, Int(fraction.rounded()))))
+
+        return (UInt16(effectiveNote & 0x7F) << 9) | clampedFraction
+    }
+
+    public static func decode(_ data: UInt16) -> (note: UInt8, centOffsetFromBase: Double) {
+        let note = UInt8((data >> 9) & 0x7F)
+        let fraction512 = Double(data & 0x1FF)
+        let centOffset = (fraction512 / 512.0) * 100.0
+        return (note, centOffset)
+    }
+}
+
 /// Translates XPI channel-message semantics into native MIDI 2.0 Channel Voice
 /// UMP. Legacy byte-shaped events remain supported, while normalized/high-
 /// resolution helpers allow expressive values to bypass unnecessary 7/14-bit
 /// quantization when the selected transport is MIDI 2.0.
 public enum MIDI2UMPEncoder {
+    public typealias MIDI2RPNC = XPadMIDI.MIDI2RPNC
+    public typealias MIDI2NoteAttributeType = XPadMIDI.MIDI2NoteAttributeType
+    public typealias Pitch7_9Codec = XPadMIDI.Pitch7_9Codec
+
     public static let group: UInt8 = 0
     public static let pitchBendCentre: UInt32 = 0x8000_0000
 
@@ -195,7 +274,22 @@ public enum MIDI2UMPEncoder {
     }
 
     /// Generates a native 64-bit UMP Registered Per-Note Controller (PNRC, Status 0x00).
-    /// Used for per-note Timbre (Controller 74), Cutoff, Modulation, and Vibrato.
+    public static func perNoteRegisteredControllerMessage(
+        channel: UInt8,
+        note: UInt8,
+        controller: MIDI2RPNC,
+        normalizedValue: Double
+    ) -> MIDIMessage_64 {
+        perNoteRegisteredControllerMessage(
+            channel: channel,
+            note: note,
+            controllerIndex: controller.rawValue,
+            normalizedValue: normalizedValue
+        )
+    }
+
+    /// Generates a native 64-bit UMP Registered Per-Note Controller (PNRC, Status 0x00).
+    /// Used for per-note Timbre (Controller 74), Cutoff, Resonance, Pan, Modulation, and Vibrato.
     public static func perNoteRegisteredControllerMessage(
         channel: UInt8,
         note: UInt8,
@@ -232,20 +326,53 @@ public enum MIDI2UMPEncoder {
         return MIDIMessage_64(word0: word0, word1: 0)
     }
 
-    // MARK: - Note On / Note Off with 16-bit Velocity
+    // MARK: - Note On / Note Off with 16-bit Velocity & Attributes
 
     public static func noteOnMessage(
         channel: UInt8,
         note: UInt8,
         velocity16: UInt16,
-        attributeType: UInt8 = 0,
+        attributeType: MIDI2NoteAttributeType = .none,
         attributeData: UInt16 = 0
     ) -> MIDIMessage_64 {
         MIDI2NoteOn(
             group,
             min(15, channel),
             min(127, note),
-            attributeType,
+            attributeType.rawValue,
+            velocity16,
+            attributeData
+        )
+    }
+
+    public static func noteOnWithPitch7_9(
+        channel: UInt8,
+        note: UInt8,
+        velocity16: UInt16,
+        centOffset: Double
+    ) -> MIDIMessage_64 {
+        let attrData = Pitch7_9Codec.encode(note: note, centOffset: centOffset)
+        return noteOnMessage(
+            channel: channel,
+            note: note,
+            velocity16: velocity16,
+            attributeType: .pitch7_9,
+            attributeData: attrData
+        )
+    }
+
+    public static func noteOnMessage(
+        channel: UInt8,
+        note: UInt8,
+        velocity16: UInt16,
+        rawAttributeType: UInt8,
+        attributeData: UInt16 = 0
+    ) -> MIDIMessage_64 {
+        MIDI2NoteOn(
+            group,
+            min(15, channel),
+            min(127, note),
+            rawAttributeType,
             velocity16,
             attributeData
         )
@@ -255,14 +382,31 @@ public enum MIDI2UMPEncoder {
         channel: UInt8,
         note: UInt8,
         velocity16: UInt16 = 0,
-        attributeType: UInt8 = 0,
+        attributeType: MIDI2NoteAttributeType = .none,
         attributeData: UInt16 = 0
     ) -> MIDIMessage_64 {
         MIDI2NoteOff(
             group,
             min(15, channel),
             min(127, note),
-            attributeType,
+            attributeType.rawValue,
+            velocity16,
+            attributeData
+        )
+    }
+
+    public static func noteOffMessage(
+        channel: UInt8,
+        note: UInt8,
+        velocity16: UInt16 = 0,
+        rawAttributeType: UInt8,
+        attributeData: UInt16 = 0
+    ) -> MIDIMessage_64 {
+        MIDI2NoteOff(
+            group,
+            min(15, channel),
+            min(127, note),
+            rawAttributeType,
             velocity16,
             attributeData
         )
@@ -411,9 +555,11 @@ public enum MIDIPassthruMode: String, CaseIterable, Identifiable, Codable, Senda
 /// Structured representation of a decoded Universal MIDI Packet (UMP).
 public enum DecodedMIDIMessage: Equatable, Sendable {
     case channelVoice(event: PerformanceEvent, rawBytes: [UInt8])
+    case noteOnAttribute(channel: UInt8, note: UInt8, velocity16: UInt16, attributeType: UInt8, attributeData: UInt16)
     case perNotePitchBend(channel: UInt8, note: UInt8, semitoneOffset: Double, pitch32: UInt32)
     case perNotePressure(channel: UInt8, note: UInt8, normalizedPressure: Double)
     case perNoteController(channel: UInt8, note: UInt8, controller: UInt8, normalizedValue: Double)
+    case perNoteRPNC(channel: UInt8, note: UInt8, rpnc: MIDI2RPNC, normalizedValue: Double)
     case perNoteManagement(channel: UInt8, note: UInt8, detach: Bool, reset: Bool)
     case sysEx(bytes: [UInt8])
     case systemRealtime(status: UInt8)
@@ -543,7 +689,26 @@ public enum MIDI2UMPDecoder {
 
                 case 0x9: // Note On
                     let note = data1
-                    let vel16 = UInt16(word1 & 0xFFFF)
+                    let attrType = data2
+                    let vel16_low = UInt16(word1 & 0xFFFF)
+                    let vel16_high = UInt16((word1 >> 16) & 0xFFFF)
+                    let vel16: UInt16
+                    let attrData: UInt16
+
+                    if attrType == 0 {
+                        vel16 = vel16_low != 0 ? vel16_low : vel16_high
+                        attrData = 0
+                    } else {
+                        // When attribute is present, distinguish velocity and attribute data
+                        if vel16_low != 0 {
+                            vel16 = vel16_low
+                            attrData = vel16_high
+                        } else {
+                            vel16 = vel16_high
+                            attrData = vel16_low
+                        }
+                    }
+
                     let vel7 = MIDI2UMPEncoder.scale16To7(vel16)
                     if vel16 == 0 {
                         let event = PerformanceEvent.noteOff(channel: channel, note: note)
@@ -551,6 +716,15 @@ public enum MIDI2UMPDecoder {
                     } else {
                         let event = PerformanceEvent.noteOn(channel: channel, note: note, velocity: vel7)
                         results.append(.channelVoice(event: event, rawBytes: [0x90 | channel, note, vel7]))
+                        if attrType != 0 {
+                            results.append(.noteOnAttribute(
+                                channel: channel,
+                                note: note,
+                                velocity16: vel16,
+                                attributeType: attrType,
+                                attributeData: attrData
+                            ))
+                        }
                     }
 
                 case 0xA: // Poly Pressure
@@ -595,6 +769,9 @@ public enum MIDI2UMPDecoder {
                     let controller = data2
                     let normVal = MIDI2UMPEncoder.scale32ToNormalized(word1)
                     results.append(.perNoteController(channel: channel, note: note, controller: controller, normalizedValue: normVal))
+                    if let rpnc = MIDI2RPNC(rawValue: controller) {
+                        results.append(.perNoteRPNC(channel: channel, note: note, rpnc: rpnc, normalizedValue: normVal))
+                    }
 
                 case 0x6: // Per-Note Pitch Bend
                     let note = data1

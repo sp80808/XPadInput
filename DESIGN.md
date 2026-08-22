@@ -921,7 +921,7 @@ The same visual language should apply across:
 
 ---
 
-## 18. Haptic Design Language
+## 19. Haptic Design Language
 
 Build a small, learnable vocabulary.
 
@@ -972,7 +972,7 @@ Use sparingly for:
 
 ---
 
-## 19. First-Run Experience
+## 20. First-Run Experience
 
 The first launch must demonstrate the instrument before teaching the application.
 
@@ -1152,16 +1152,23 @@ Suggested categories:
 - `strokeSubtle`
 - `strokeActive`
 
-### Motion
+### Motion & Micro-Interactions
 
-- `feedbackFast`
-- `transitionShort`
-- `springStandard`
-- reduced-motion alternatives
+- `feedbackFast`: `Animation.easeOut(duration: 0.09)` — tactile touch/key press response.
+- `quickAnimation`: `Animation.easeOut(duration: 0.15)` — control hover and menu transitions.
+- `transitionShort`: `Animation.easeOut(duration: 0.18)` — subtle disclosure state changes.
+- `springAnimation`: `Animation.spring(response: 0.35, dampingFraction: 0.70)` — standard UI physics.
+- `bouncy`: `Animation.spring(response: 0.30, dampingFraction: 0.52)` — playful overshoot for toggles & icon bounces.
+- `snappy`: `Animation.spring(response: 0.22, dampingFraction: 0.80)` — crisp immediate spring for tab selections & numeric badges.
+- `glassIn`: `Animation.easeOut(duration: 0.22)` — surface and overlay entrances.
 
-### Performance
+### Micro-Interaction Modifiers
+- `XPulseModifier` (`.xPulse(isActive:color:speed:rings:)`): Concentric expanding heartbeat ring glow for active recording, MIDI activity, and player status.
+- `XShimmerModifier` (`.xShimmer(isActive:)`): Subtle horizontal shimmer sweep for active/selected items.
+- `XRippleModifier` (`.xRipple(trigger:color:size:)`): One-shot tactile expanding ring effect triggered on user actions (chord hits, button taps, connect events).
 
-Keep live position/trajectory update timing outside decorative animation tokens.
+### Accessibility & Reduced Motion
+Every motion modifier and interactive component must strictly observe `@Environment(\.accessibilityReduceMotion)` to suppress animations when reduced motion is requested. All animated effects must be purely additive overlays/scale/opacity with zero layout shift.
 
 ---
 
@@ -1333,7 +1340,7 @@ Do not introduce the following without a compelling reason:
 
 ### P1 — Workspace completion
 
-Apply the same design language to Harmony, Sequence, Map, and Library as their implementations mature.
+Apply the same design language to Harmony, Sequence, Map, Library, and Practice as their implementations mature.
 
 ### P2 — Compact DAW companion mode
 

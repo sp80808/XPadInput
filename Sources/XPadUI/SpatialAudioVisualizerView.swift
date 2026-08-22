@@ -6,7 +6,9 @@ import XPadController
 /// Interactive 3D Spatial Audio & IMU Gyro Panning Visualizer.
 public struct SpatialAudioVisualizerView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulseAnimation = false
+    @State private var radarSweepAngle: Double = 0.0
 
     public init() {}
 
@@ -70,6 +72,26 @@ public struct SpatialAudioVisualizerView: View {
                     }
                     .stroke(XTheme.border.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
 
+                    // Radar Scanner Sweep Beam
+                    if !reduceMotion && appState.audioEngine.spatialEngine.isEnabled {
+                        Circle()
+                            .fill(
+                                AngularGradient(
+                                    gradient: Gradient(colors: [
+                                        XTheme.primary.opacity(0.20),
+                                        XTheme.primary.opacity(0.04),
+                                        .clear
+                                    ]),
+                                    center: .center,
+                                    startAngle: .degrees(0),
+                                    endAngle: .degrees(75)
+                                )
+                            )
+                            .frame(width: 140, height: 140)
+                            .rotationEffect(.degrees(radarSweepAngle))
+                            .allowsHitTesting(false)
+                    }
+
                     // Listener Head Indicator at Center
                     Circle()
                         .fill(XTheme.surfaceElevated)
@@ -127,8 +149,13 @@ public struct SpatialAudioVisualizerView: View {
                         .stroke(XTheme.border, lineWidth: 1)
                 )
                 .onAppear {
-                    withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: false)) {
-                        pulseAnimation = true
+                    if !reduceMotion {
+                        withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: false)) {
+                            pulseAnimation = true
+                        }
+                        withAnimation(.linear(duration: 4.0).repeatForever(autoreverses: false)) {
+                            radarSweepAngle = 360.0
+                        }
                     }
                 }
 

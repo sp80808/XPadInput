@@ -19,6 +19,12 @@ public struct AnalogStickHUD: View {
             Circle()
                 .fill(Color.black.opacity(0.4))
                 .overlay(Circle().stroke(Color.white.opacity(0.1), lineWidth: 1))
+                .overlay {
+                    // Near-edge ring pulse — layout-safe overlay
+                    Circle()
+                        .stroke(Color.orange.opacity(0.0), lineWidth: 1)
+                        .xPulse(isActive: state.isNearEdge, color: .orange, speed: 1.2)
+                }
                 
             // Grid lines
             Path { path in
@@ -55,6 +61,7 @@ public struct AnalogStickHUD: View {
                 VelocityPulse(color: color, velocity: state.movementVelocity)
                     .frame(width: 24, height: 24)
                     .offset(x: CGFloat(state.x) * 50, y: CGFloat(-state.y) * 50)
+                    .id(state.movementVelocity)  // re-trigger onAppear each time velocity changes
             }
             
             Text(label)
@@ -114,6 +121,7 @@ public struct AnalogTriggerHUD: View {
                         .fill(Color.white.opacity(Double(min(1.0, state.attackVelocity))))
                         .frame(width: 30, height: CGFloat(state.value) * 100)
                         .blendMode(.overlay)
+                        .animation(.easeOut(duration: 0.12), value: state.attackVelocity)
                 }
             }
         }
@@ -139,9 +147,12 @@ public struct VelocityPulse: View {
             .scaleEffect(scale)
             .opacity(opacity)
             .onAppear {
+                // Reset then animate — .id(velocity) on parent ensures re-trigger each appearance
+                scale   = 1.0
+                opacity = 0.5
                 let intensity = Double(min(1.0, velocity / 10.0))
-                withAnimation(.easeOut(duration: 0.3 * (1.0 - intensity)).repeatForever(autoreverses: false)) {
-                    scale = 1.0 + CGFloat(intensity) * 1.5
+                withAnimation(.easeOut(duration: 0.3 * (1.0 - intensity))) {
+                    scale   = 1.0 + CGFloat(intensity) * 1.5
                     opacity = 0.0
                 }
             }
@@ -272,5 +283,6 @@ public struct AdaptiveTriggerVisualizerHUD: View {
             RoundedRectangle(cornerRadius: XTheme.radiusSmall)
                 .stroke(XTheme.border, lineWidth: 1)
         )
+        .xShimmer(isActive: feedbackState.isInDetent)
     }
 }

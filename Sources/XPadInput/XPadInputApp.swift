@@ -23,9 +23,9 @@ struct XPadInputApp: App {
                     appState.panic()
                 }
                 .keyboardShortcut(".", modifiers: [.command, .shift])
-                
+
                 Divider()
-                
+
                 Toggle("Enable Virtual MIDI", isOn: $appState.midiEngine.virtualMIDIEnabled)
                     .keyboardShortcut("m", modifiers: [.command, .shift])
             }

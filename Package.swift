@@ -111,7 +111,8 @@ let package = Package(
                 "XPadMIDI",
                 "XPadAudio",
                 "XPadSequencer",
-                "XPadPractice"
+                "XPadPractice",
+                "XPadUI"
             ],
             path: "Sources/XPadTests"
         ),

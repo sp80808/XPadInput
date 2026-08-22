@@ -76,6 +76,7 @@ public struct PlayView: View {
             
             let chordDisplayHeight: CGFloat = isCompactH ? 58 : (isExpandedH ? 80 : 72)
             let wheelMinH: CGFloat = isCompactH ? 180 : (isExpandedH ? 280 : 230)
+            let arcadeLaneH: CGFloat = isCompactH ? 108 : 128
             let tabMinH: CGFloat = isCompactH ? 130 : 170
             let controllerH: CGFloat = isCompactH ? 215 : (isExpandedH ? 295 : 255)
             let quickControlsH: CGFloat = isCompactH ? 44 : 50
@@ -107,6 +108,13 @@ public struct PlayView: View {
                     // Contextual Hint (when active)
                     ContextualHintSlot()
 
+                    // Arcade Frets lane (hidden Guitar Hero mode)
+                    if appState.isArcadeModeEnabled {
+                        ArcadeLaneView()
+                            .frame(height: arcadeLaneH)
+                            .transition(.opacity)
+                    }
+
                     // Harmonic Wheel - chord selection via stick
                     HarmonicWheelView()
                         .frame(minHeight: wheelMinH, maxHeight: .infinity)
@@ -133,6 +141,7 @@ public struct PlayView: View {
                 .frame(width: leftWidth)
                 .animation(.easeInOut(duration: 0.25), value: appState.multiJamManager.isSessionActive)
                 .animation(.easeInOut(duration: 0.25), value: appState.isSoloModeActive)
+                .animation(.easeInOut(duration: 0.25), value: appState.isArcadeModeEnabled)
                 
                 Divider().background(XTheme.border)
                 
@@ -225,7 +234,10 @@ private struct ContextualHintSlot: View {
                 Spacer()
             }
             .frame(height: 32)
-            .transition(.opacity)
+            .transition(.asymmetric(
+                insertion: .opacity.combined(with: .move(edge: .top)),
+                removal:   .opacity
+            ))
         }
     }
 }
@@ -237,6 +249,7 @@ struct EnhancedChordDisplayView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.viewportMetrics) private var viewport
     @State private var previousChordName: String?
+    @State private var chordFlash: Bool = false
     
     var body: some View {
         let currentName = appState.currentChord?.displayName ?? "-"
@@ -253,6 +266,13 @@ struct EnhancedChordDisplayView: View {
                     .minimumScaleFactor(0.7)
                     .frame(height: isCompact ? 30 : 38)
                     .animation(reduceMotion ? nil : .spring(response: 0.2, dampingFraction: 0.75), value: currentName)
+                    .overlay {
+                        if chordFlash && !reduceMotion {
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(XTheme.primary.opacity(0.22))
+                                .allowsHitTesting(false)
+                        }
+                    }
                 if let chord = appState.currentChord {
                     HStack(spacing: 6) {
                         if let roman = chord.romanNumeral(in: appState.currentKey, scale: appState.currentScale) {
@@ -288,6 +308,9 @@ struct EnhancedChordDisplayView: View {
         .xCard(isActive: appState.currentChord != nil)
         .onChange(of: currentName) { _, newName in
             previousChordName = newName
+            guard !reduceMotion else { return }
+            chordFlash = true
+            withAnimation(.easeOut(duration: 0.35)) { chordFlash = false }
         }
     }
 }
@@ -305,12 +328,14 @@ private struct HarmonicTabbedWorkspace: View {
     let harmonicSuggestions: [ChordSuggestion]
     let onAuditionChord: (Chord) -> Void
     let onSendToSequencer: () -> Void
+    @Namespace private var tabNS
     
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 4) {
                 ForEach(HarmonicWorkspaceTab.allCases) { t in
-                    TabButton(title: t.rawValue, isSelected: tab == t) { tab = t }
+                    TabButton(title: t.rawValue, isSelected: tab == t, action: { tab = t },
+                              namespace: tabNS, namespaceID: "harmonic-tab-pill")
                 }
                 Spacer()
             }
@@ -346,12 +371,14 @@ private struct DSPTabbedWorkspace: View {
     @Binding var resonance: Double
     @Binding var drive: Double
     @Binding var reverb: Double
+    @Namespace private var dspTabNS
     
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 4) {
                 ForEach(DSPWorkspaceTab.allCases) { t in
-                    TabButton(title: t.rawValue, isSelected: tab == t) { tab = t }
+                    TabButton(title: t.rawValue, isSelected: tab == t, action: { tab = t },
+                              namespace: dspTabNS, namespaceID: "dsp-tab-pill")
                 }
                 Spacer()
             }
@@ -376,6 +403,9 @@ private struct TabButton: View {
     let title: String
     let isSelected: Bool
     let action: () -> Void
+    var namespace: Namespace.ID? = nil
+    var namespaceID: String = ""
+
     var body: some View {
         Button(action: action) {
             Text(title)
@@ -384,18 +414,20 @@ private struct TabButton: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .frame(minWidth: 48)
-                .background(
-                    Capsule()
-                        .fill(isSelected ? XTheme.primary.opacity(0.18) : Color.clear)
-                )
-                .overlay(
-                    Capsule()
-                        .stroke(isSelected ? XTheme.primary : Color.clear, lineWidth: 1)
-                )
+                .background {
+                    if isSelected {
+                        Capsule()
+                            .fill(XTheme.primary.opacity(0.18))
+                            .overlay(Capsule().stroke(XTheme.primary, lineWidth: 1))
+                            .matchedGeometryEffect(id: namespaceID, in: namespace ?? Namespace().wrappedValue)
+                    } else {
+                        Capsule().fill(Color.clear)
+                    }
+                }
         }
         .buttonStyle(.plain)
         .scaleEffect(isSelected ? 1.02 : 1.0)
-        .animation(.spring(response: 0.22, dampingFraction: 0.78), value: isSelected)
+        .animation(XTheme.snappy, value: isSelected)
     }
 }
 
@@ -614,19 +646,7 @@ struct DiatonicChordPadsRow: View {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 7), spacing: 6) {
                 ForEach(Array(chords.enumerated()), id: \.offset) { index, chord in
                     let isActive = activeChord?.symbol == chord.symbol
-                    Button { onSelect(chord) } label: {
-                        VStack(spacing: 3) {
-                            Text(romanNumeral(for: index + 1)).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(isActive ? XTheme.primaryLight : XTheme.primary)
-                            Text(chord.symbol).font(.system(size: 11, weight: .bold)).foregroundColor(isActive ? .white : XTheme.textPrimary).lineLimit(1).fixedSize(horizontal: true, vertical: false)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 54, maxHeight: 54)
-                        .background(isActive ? XTheme.primary.opacity(0.3) : XTheme.surface)
-                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(isActive ? XTheme.primary : XTheme.border, lineWidth: 1))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                    }
-                    .buttonStyle(.plain)
-                    .scaleEffect(isActive && !reduceMotion ? 0.94 : 1.0)
-                    .animation(reduceMotion ? nil : XTheme.feedbackFast, value: isActive)
+                    ChordPadButton(chord: chord, index: index, isActive: isActive, reduceMotion: reduceMotion, onSelect: onSelect)
                 }
             }
         }
@@ -634,6 +654,41 @@ struct DiatonicChordPadsRow: View {
     }
     private func romanNumeral(for degree: Int) -> String {
         ["I","ii","iii","IV","V","vi","vii°"][degree-1] ?? "\(degree)"
+    }
+}
+
+/// Individual diatonic chord pad — isolated so xRipple state is per-pad.
+private struct ChordPadButton: View {
+    let chord: Chord
+    let index: Int
+    let isActive: Bool
+    let reduceMotion: Bool
+    let onSelect: (Chord) -> Void
+    @State private var rippleTrigger = 0
+
+    private func romanNumeral(for degree: Int) -> String {
+        ["I","ii","iii","IV","V","vi","vii°"][degree-1] ?? "\(degree)"
+    }
+
+    var body: some View {
+        Button {
+            if !reduceMotion { rippleTrigger += 1 }
+            onSelect(chord)
+        } label: {
+            VStack(spacing: 3) {
+                Text(romanNumeral(for: index + 1)).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(isActive ? XTheme.primaryLight : XTheme.primary)
+                Text(chord.symbol).font(.system(size: 11, weight: .bold)).foregroundColor(isActive ? .white : XTheme.textPrimary).lineLimit(1).fixedSize(horizontal: true, vertical: false)
+            }
+            .frame(maxWidth: .infinity, minHeight: 54, maxHeight: 54)
+            .background(isActive ? XTheme.primary.opacity(0.3) : XTheme.surface)
+            .xShimmer(isActive: isActive)
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(isActive ? XTheme.primary : XTheme.border, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+        .scaleEffect(isActive && !reduceMotion ? 0.94 : 1.0)
+        .animation(reduceMotion ? nil : XTheme.feedbackFast, value: isActive)
+        .xRipple(trigger: rippleTrigger, color: XTheme.primary, size: 54)
     }
 }
 
@@ -675,10 +730,12 @@ struct ChordProgressionBuilderSection: View {
                             }
                             .frame(width: 72, height: 60)
                             .background(isSelected ? XTheme.primary.opacity(0.22) : XTheme.surface)
+                            .xShimmer(isActive: isSelected)
                             .overlay(RoundedRectangle(cornerRadius: 8).stroke(isSelected ? XTheme.primary : XTheme.border, lineWidth: 1.5))
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                         .buttonStyle(.plain)
+                        .animation(XTheme.snappy, value: isSelected)
                     }
                     Button {
                         progression.blocks.append(ChordBlock(chord: currentChord, durationBeats: 4.0))
@@ -862,7 +919,8 @@ struct PerformanceMonitorView: View {
                     label: "Bend",
                     value: appState.lastFrame?.bend.bendSemitones ?? 0,
                     range: -12...12,
-                    color: XTheme.expression
+                    color: XTheme.expression,
+                    trail: appState.expressionTrails.bend
                 )
                 
                 // Pressure / Aftertouch
@@ -870,7 +928,8 @@ struct PerformanceMonitorView: View {
                     label: "Pressure",
                     value: appState.lastFrame?.pressure.smoothed ?? 0,
                     range: 0...1,
-                    color: XTheme.primary
+                    color: XTheme.primary,
+                    trail: appState.expressionTrails.pressure
                 )
                 
                 // Timbre / CC74
@@ -878,7 +937,8 @@ struct PerformanceMonitorView: View {
                     label: "Timbre",
                     value: appState.lastFrame?.timbre ?? 0,
                     range: 0...1,
-                    color: XTheme.tense
+                    color: XTheme.tense,
+                    trail: appState.expressionTrails.timbre
                 )
                 
                 // Palm Mute
@@ -886,7 +946,8 @@ struct PerformanceMonitorView: View {
                     label: "Mute",
                     value: appState.lastFrame?.palmMuteAmount ?? 0,
                     range: 0...1,
-                    color: XTheme.accent
+                    color: XTheme.accent,
+                    trail: appState.expressionTrails.mute
                 )
                 
                 // Active notes count
@@ -915,6 +976,7 @@ private struct ExpressionBar: View {
     let value: Double
     let range: ClosedRange<Double>
     let color: Color
+    var trail: [Double]? = nil
     
     private var normalized: Double {
         let minVal = range.lowerBound
@@ -931,38 +993,50 @@ private struct ExpressionBar: View {
                 .font(.system(size: 8, weight: .medium, design: .monospaced))
                 .foregroundColor(XTheme.textTertiary)
             GeometryReader { geo in
-                let mid = geo.size.width / 2
+                let width = geo.size.width
+                let height = geo.size.height
+                let mid = width / 2
+                
                 ZStack(alignment: .leading) {
+                    // Waveform Sparkline Trail in background
+                    if let trail = trail, trail.count > 1 {
+                        ExpressionSparkline(values: trail, range: range, color: color)
+                            .frame(width: width, height: height)
+                    }
+
                     // Track
                     Capsule()
-                        .fill(XTheme.surface)
+                        .fill(XTheme.surface.opacity(trail != nil ? 0.45 : 1.0))
                         .frame(height: 6)
+                        .position(x: mid, y: height / 2)
+
                     if isBipolar {
                         // Center marker
                         Rectangle()
                             .fill(XTheme.border)
                             .frame(width: 1, height: 6)
-                            .offset(x: mid - 0.5)
+                            .position(x: mid, y: height / 2)
                         // Fill from center
                         if normalized >= 0.5 {
                             Capsule()
-                                .fill(color.opacity(0.7))
-                                .frame(width: max(0, (normalized - 0.5) * geo.size.width), height: 6)
-                                .offset(x: mid)
+                                .fill(color.opacity(0.85))
+                                .frame(width: max(0, (normalized - 0.5) * width), height: 6)
+                                .position(x: mid + max(0, (normalized - 0.5) * width) / 2, y: height / 2)
                         } else {
                             Capsule()
-                                .fill(color.opacity(0.7))
-                                .frame(width: max(0, (0.5 - normalized) * geo.size.width), height: 6)
-                                .offset(x: normalized * geo.size.width)
+                                .fill(color.opacity(0.85))
+                                .frame(width: max(0, (0.5 - normalized) * width), height: 6)
+                                .position(x: normalized * width + max(0, (0.5 - normalized) * width) / 2, y: height / 2)
                         }
                     } else {
                         Capsule()
-                            .fill(color.opacity(0.7))
-                            .frame(width: max(0, normalized * geo.size.width), height: 6)
+                            .fill(color.opacity(0.85))
+                            .frame(width: max(0, normalized * width), height: 6)
+                            .position(x: max(0, normalized * width) / 2, y: height / 2)
                     }
                 }
             }
-            .frame(height: 6)
+            .frame(height: 14)
             Text(formatValue())
                 .font(.system(size: 9, weight: .bold, design: .monospaced))
                 .foregroundColor(XTheme.textSecondary)
@@ -975,6 +1049,44 @@ private struct ExpressionBar: View {
             return String(format: "%+.1f", value)
         }
         return String(format: "%.0f%%", normalized * 100)
+    }
+}
+
+private struct ExpressionSparkline: View {
+    let values: [Double]
+    let range: ClosedRange<Double>
+    let color: Color
+
+    var body: some View {
+        Canvas { context, size in
+            guard values.count > 1, size.width > 0, size.height > 0 else { return }
+            let minVal = range.lowerBound
+            let maxVal = range.upperBound
+            guard maxVal > minVal else { return }
+            let span = maxVal - minVal
+
+            var path = Path()
+            let step = size.width / CGFloat(values.count - 1)
+
+            for (index, val) in values.enumerated() {
+                let clamped = max(minVal, min(maxVal, val))
+                let norm = (clamped - minVal) / span
+                let x = CGFloat(index) * step
+                let y = (1.0 - CGFloat(norm)) * (size.height - 2) + 1
+
+                if index == 0 {
+                    path.move(to: CGPoint(x: x, y: y))
+                } else {
+                    path.addLine(to: CGPoint(x: x, y: y))
+                }
+            }
+
+            context.stroke(
+                path,
+                with: .color(color.opacity(0.35)),
+                lineWidth: 1.5
+            )
+        }
     }
 }
 
