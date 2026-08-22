@@ -12,6 +12,7 @@ public struct MPEVoice: Equatable, Sendable {
     public var currentPressureNormalized: Double
     public var currentTimbreNormalized: Double
     public var attackVelocity: UInt8
+    public var attackVelocity16: UInt16
     public var technique: MusicalTechnique
     public var legatoSource: UInt8?
     var currentPitchBendValue: UInt16
@@ -27,6 +28,7 @@ public struct MPEVoice: Equatable, Sendable {
         currentPressure: UInt8 = 0,
         currentTimbre: UInt8 = 64,
         attackVelocity: UInt8 = 80,
+        attackVelocity16: UInt16? = nil,
         technique: MusicalTechnique = .normal,
         legatoSource: UInt8? = nil
     ) {
@@ -34,6 +36,8 @@ public struct MPEVoice: Equatable, Sendable {
         let safeTimbre = min(127, currentTimbre)
         let pressureNormalized = Double(safePressure) / 127.0
         let timbreNormalized = Double(safeTimbre) / 127.0
+        let vel7 = min(127, attackVelocity)
+        let vel16 = attackVelocity16 ?? MIDI2UMPEncoder.scale7To16(vel7)
 
         self.note = note
         self.channel = channel
@@ -43,7 +47,8 @@ public struct MPEVoice: Equatable, Sendable {
         self.currentTimbre = safeTimbre
         self.currentPressureNormalized = pressureNormalized
         self.currentTimbreNormalized = timbreNormalized
-        self.attackVelocity = min(127, attackVelocity)
+        self.attackVelocity = vel7
+        self.attackVelocity16 = vel16
         self.technique = technique
         self.legatoSource = legatoSource
         self.currentPitchBendValue = 8192
@@ -170,7 +175,13 @@ public final class MPEManager: @unchecked Sendable {
     }
 
     /// Starts an MPE note after resetting expression on its allocated member channel.
-    public func noteOn(note: UInt8, velocity: UInt8, technique: MusicalTechnique = .normal, legatoSource: UInt8? = nil) {
+    public func noteOn(
+        note: UInt8,
+        velocity: UInt8,
+        velocity16: UInt16? = nil,
+        technique: MusicalTechnique = .normal,
+        legatoSource: UInt8? = nil
+    ) {
         // CoreMIDI sources do not retain setup traffic for clients that attach later.
         // Re-advertise the lower zone and bend range at the start of every idle phrase.
         lock.lock()
@@ -210,7 +221,8 @@ public final class MPEManager: @unchecked Sendable {
             port: .mpe,
             channel: channel,
             note: note,
-            velocity: velocity
+            velocity: velocity,
+            velocity16: velocity16
         )
 
         activeVoices[note] = MPEVoice(
@@ -218,6 +230,7 @@ public final class MPEManager: @unchecked Sendable {
             channel: channel,
             timestamp: ProcessInfo.processInfo.systemUptime,
             attackVelocity: velocity,
+            attackVelocity16: velocity16,
             technique: technique,
             legatoSource: legatoSource
         )

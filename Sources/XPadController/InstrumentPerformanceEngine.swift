@@ -157,11 +157,25 @@ public struct InstrumentPerformanceEngine: Sendable {
         pitchEngine.configure(profile: profile, destination: destination, assist: settings.pitchAssist)
         pressureEngine.curve = profile.defaultPressureCurve
         vibratoEngine.configure(profile: profile)
-        stringModel = profile.family == .bass ? .bassStandard() : .guitarStandard()
         pitchEngine.reset()
         pressureEngine.reset()
         vibratoEngine.reset()
+        resetMelodicTargeting(rearmFaceButtons: true)
+    }
+
+    /// Clears voice-leading history when the instrument or face-button register
+    /// changes. Re-arming edge detection lets an already-held face control sound
+    /// immediately in the new register on the next controller frame.
+    public mutating func resetMelodicTargeting(rearmFaceButtons: Bool = false) {
+        intervalMemory = IntervalMemory()
+        lastMelodicNote = nil
+        lastMelodicTime = 0
+        preparedLowerNote = nil
+        stringModel = profile.family == .bass ? .bassStandard() : .guitarStandard()
         slideEngine.cancel()
+        if rearmFaceButtons {
+            previousFace = (false, false, false, false)
+        }
     }
 
     public mutating func setDestination(_ destination: DestinationCapabilityProfile) {

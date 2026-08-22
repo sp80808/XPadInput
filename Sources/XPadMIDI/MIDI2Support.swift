@@ -232,10 +232,56 @@ public enum MIDI2UMPEncoder {
         return MIDIMessage_64(word0: word0, word1: 0)
     }
 
+    // MARK: - Note On / Note Off with 16-bit Velocity
+
+    public static func noteOnMessage(
+        channel: UInt8,
+        note: UInt8,
+        velocity16: UInt16,
+        attributeType: UInt8 = 0,
+        attributeData: UInt16 = 0
+    ) -> MIDIMessage_64 {
+        MIDI2NoteOn(
+            group,
+            min(15, channel),
+            min(127, note),
+            attributeType,
+            velocity16,
+            attributeData
+        )
+    }
+
+    public static func noteOffMessage(
+        channel: UInt8,
+        note: UInt8,
+        velocity16: UInt16 = 0,
+        attributeType: UInt8 = 0,
+        attributeData: UInt16 = 0
+    ) -> MIDIMessage_64 {
+        MIDI2NoteOff(
+            group,
+            min(15, channel),
+            min(127, note),
+            attributeType,
+            velocity16,
+            attributeData
+        )
+    }
+
     /// Full-range conversion that preserves 0 and 127 exactly.
     public static func scale7To16(_ value: UInt8) -> UInt16 {
         let clamped = UInt32(min(127, value))
         return UInt16((clamped * UInt32(UInt16.max) + 63) / 127)
+    }
+
+    /// Converts a 16-bit velocity to standard 7-bit MIDI velocity.
+    public static func scale16To7(_ value: UInt16) -> UInt8 {
+        UInt8((UInt32(value) * 127 + 32767) / UInt32(UInt16.max))
+    }
+
+    /// Converts a normalized float (0.0 ... 1.0) directly to 16-bit unsigned integer.
+    public static func floatTo16Bit(_ value: Double) -> UInt16 {
+        scaleNormalizedTo16(value)
     }
 
     /// Full-range conversion that preserves 0 and 127 exactly.

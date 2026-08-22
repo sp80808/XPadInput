@@ -1,6 +1,7 @@
 import XCTest
 @testable import XPadCore
 @testable import XPadController
+@testable import XPadTheory
 
 final class PerformanceControlTests: XCTestCase {
     private let cMajorVoice = ChordGateVoice(
@@ -153,5 +154,42 @@ final class PerformanceControlTests: XCTestCase {
         let frame = engine.process(state: state)
         XCTAssertTrue(frame.drumHits.isEmpty)
         XCTAssertFalse(frame.suppressesInstrumentFaceButtons)
+    }
+
+    func testMelodicTargetResetRearmsHeldFaceButtonInNewRegister() {
+        var engine = InstrumentPerformanceEngine(profile: .guitar)
+        let state = ControllerState()
+        state.buttonA = true
+        let chord = Chord(root: .d, quality: .minor)
+
+        let lowAttack = engine.process(
+            state: state,
+            context: MusicalContext(
+                key: .d,
+                scale: Scale(root: .d, type: .naturalMinor),
+                chord: chord,
+                registerOctave: 2
+            ),
+            heldNotes: [],
+            timestamp: 1.0
+        )
+        XCTAssertEqual(lowAttack.faceEvents.first?.note, Note(pitchClass: .d, octave: 2))
+
+        engine.resetMelodicTargeting(rearmFaceButtons: true)
+        let highAttack = engine.process(
+            state: state,
+            context: MusicalContext(
+                key: .d,
+                scale: Scale(root: .d, type: .naturalMinor),
+                chord: chord,
+                registerOctave: 4
+            ),
+            heldNotes: [],
+            timestamp: 1.1
+        )
+
+        XCTAssertEqual(highAttack.faceEvents.count, 1)
+        XCTAssertTrue(highAttack.faceEvents.first?.isOn == true)
+        XCTAssertEqual(highAttack.faceEvents.first?.note, Note(pitchClass: .d, octave: 4))
     }
 }

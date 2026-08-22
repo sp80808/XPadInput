@@ -318,12 +318,14 @@ public final class MIDIEngine: @unchecked Sendable {
         port: VirtualPort,
         channel: UInt8,
         note: UInt8,
-        velocity: UInt8
+        velocity: UInt8,
+        velocity16: UInt16? = nil
     ) {
         let safeChannel = min(15, channel)
         let safeNote = min(127, note)
         let safeVelocity = min(127, velocity)
-        guard safeVelocity > 0 else {
+        let effective16 = velocity16 ?? MIDI2UMPEncoder.scale7To16(safeVelocity)
+        guard safeVelocity > 0 || effective16 > 0 else {
             sendNoteOff(port: port, channel: safeChannel, note: safeNote)
             return
         }
@@ -348,8 +350,15 @@ public final class MIDIEngine: @unchecked Sendable {
             emit([0x80 | safeChannel, safeNote, 0], to: port)
         }
 
+        let midi2NoteOn = MIDI2UMPEncoder.noteOnMessage(
+            channel: safeChannel,
+            note: safeNote,
+            velocity16: effective16
+        )
+
         emit(
             [0x90 | safeChannel, safeNote, safeVelocity],
+            midi2Override: midi2NoteOn,
             to: port
         )
     }

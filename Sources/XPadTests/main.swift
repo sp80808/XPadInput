@@ -163,6 +163,53 @@ final class TestRunner {
                 }
             }
 
+            test("Performance Lane Registers Clamp and Recall per Instrument") {
+                var memory = PerformanceLaneRegisterMemory()
+                var guitar = memory.settings(for: .guitar)
+                let bass = memory.settings(for: .bass)
+
+                assertEqual(guitar.strumOctave, 3)
+                assertEqual(guitar.faceButtonOctave, 3)
+                assertEqual(bass.strumOctave, 2)
+                assertEqual(bass.faceButtonOctave, 2)
+
+                guitar.setStrumOctave(8)
+                guitar.setFaceButtonOctave(4)
+                memory.remember(guitar, for: .guitar)
+                assertEqual(memory.settings(for: .guitar).strumOctave, 5)
+                assertEqual(memory.settings(for: .guitar).faceButtonOctave, 4)
+                guitar.shiftBoth(by: -10)
+                assertEqual(guitar.strumOctave, 2)
+                assertEqual(guitar.faceButtonOctave, 2)
+                guitar.shiftBoth(by: .max)
+                assertEqual(guitar.strumOctave, 5)
+                assertEqual(guitar.faceButtonOctave, 5)
+                guitar.shiftBoth(by: .min)
+                assertEqual(guitar.strumOctave, 2)
+                assertEqual(guitar.faceButtonOctave, 2)
+            }
+
+            test("Strum Register Anchors Voicing Independently of Face Register") {
+                let chord = Chord(root: .d, quality: .minor)
+                var registers = PerformanceLaneRegisters(strumOctave: 2, faceButtonOctave: 4)
+                let lowVoicing = ChordVoicing.strummed(
+                    chord: chord,
+                    strings: 4,
+                    baseOctave: registers.strumOctave
+                )
+
+                registers.setStrumOctave(5)
+                let highVoicing = ChordVoicing.strummed(
+                    chord: chord,
+                    strings: 4,
+                    baseOctave: registers.strumOctave
+                )
+
+                assertEqual(lowVoicing.bassNote, Note(pitchClass: .d, octave: 2))
+                assertEqual(highVoicing.bassNote, Note(pitchClass: .d, octave: 5))
+                assertEqual(registers.faceButtonOctave, 4)
+            }
+
             test("PerformanceEvent MIDI Cases") {
                 let event = PerformanceEvent.noteOn(channel: 0, note: 60, velocity: 100)
                 if case .noteOn(_, let note, let velocity) = event {
@@ -398,6 +445,33 @@ final class TestRunner {
                 assertEqual(release.faceEvents.count, 1)
                 assertTrue(release.faceEvents.first?.isOn == false)
                 assertEqual(release.faceEvents.first?.note, sustainedNote)
+            }
+
+            test("Face Register Reset Rearms a Held Button at the New Octave") {
+                var engine = InstrumentPerformanceEngine(profile: .guitar)
+                let state = ControllerState()
+                state.buttonA = true
+                let chord = Chord(root: .d, quality: .minor)
+                let scale = Scale(root: .d, type: .naturalMinor)
+
+                let lowAttack = engine.process(
+                    state: state,
+                    context: MusicalContext(key: .d, scale: scale, chord: chord, registerOctave: 2),
+                    heldNotes: [],
+                    timestamp: 2.0
+                )
+                assertEqual(lowAttack.faceEvents.first?.note, Note(pitchClass: .d, octave: 2))
+
+                engine.resetMelodicTargeting(rearmFaceButtons: true)
+                let highAttack = engine.process(
+                    state: state,
+                    context: MusicalContext(key: .d, scale: scale, chord: chord, registerOctave: 4),
+                    heldNotes: [],
+                    timestamp: 2.1
+                )
+                assertEqual(highAttack.faceEvents.count, 1)
+                assertTrue(highAttack.faceEvents.first?.isOn == true)
+                assertEqual(highAttack.faceEvents.first?.note, Note(pitchClass: .d, octave: 4))
             }
 
             test("Chord Gate Releases and Duo Drums Trigger Only on Edges") {
@@ -660,6 +734,28 @@ final class TestRunner {
                 assertTrue(release.events.contains(.pitchBend(channel: 1, value: 0)))
                 assertTrue(release.events.contains(.channelPressure(channel: 1, pressure: 0)))
                 assertTrue(release.events.contains(.timbreCC74(channel: 1, value: 64)))
+            }
+
+            test("Technique Recorder Closes a Note Before Register Retarget") {
+                let recorder = TechniqueRecorder()
+                let low = Note(pitchClass: .d, octave: 2)
+                let high = Note(pitchClass: .d, octave: 4)
+                recorder.start()
+
+                recorder.record(
+                    InstrumentPerformanceEvent(note: low, phase: .began, velocity: 96),
+                    tick: 100
+                )
+                recorder.recordNoteOff(note: low.midiNote, tick: 120)
+                recorder.record(
+                    InstrumentPerformanceEvent(note: high, phase: .began, velocity: 96),
+                    tick: 120
+                )
+                recorder.recordNoteOff(note: high.midiNote, tick: 160)
+
+                let events = recorder.stop()
+                assertEqual(events.map(\.event.note), [low, high])
+                assertEqual(events.map(\.durationTicks), [UInt64(20), UInt64(40)])
             }
 
             test("Virtual MIDI Enable Configures MPE and Disable Delivers Panic") {

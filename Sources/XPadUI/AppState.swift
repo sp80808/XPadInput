@@ -28,7 +28,20 @@ public final class AppState: @unchecked Sendable {
     public var practiceEngine = PracticeEngine()
     public var progressTracker = ProgressTracker.shared
     public var isSoloModeActive: Bool = false
-    public var performanceOctaveOffset: Int = 0
+    public private(set) var performanceRegisters = PerformanceLaneRegisters.defaults(for: .guitar)
+
+    @available(*, deprecated, message: "Use performanceRegisters and the lane-specific register setters.")
+    public var performanceOctaveOffset: Int {
+        get {
+            let defaultOctave = PerformanceLaneRegisters.defaults(for: instrumentProfile.family).strumOctave
+            return performanceRegisters.strumOctave - defaultOctave
+        }
+        set {
+            var updated = PerformanceLaneRegisters.defaults(for: instrumentProfile.family)
+            updated.shiftBoth(by: newValue)
+            applyPerformanceRegisters(updated)
+        }
+    }
     public var voicingInversion: Int = 0
 
     public var currentKey: PitchClass = .d
@@ -110,6 +123,7 @@ public final class AppState: @unchecked Sendable {
     )
     private var velocityStabilizer = VelocityStabilizer()
     private var duoControlEngine = DuoControlEngine()
+    private var performanceRegisterMemory = PerformanceLaneRegisterMemory()
     private var hostDetectionObserver: NSObjectProtocol?
 
     public init() {
@@ -148,18 +162,24 @@ public final class AppState: @unchecked Sendable {
             self?.panic()
         }
         applyHostRouting()
-        hostDetectionObserver = NSWorkspace.shared.notificationCenter.addObserver(
+        let notificationCenter = NSWorkspace.shared.notificationCenter
+        if let hostDetectionObserver {
+            notificationCenter.removeObserver(hostDetectionObserver)
+        }
+        hostDetectionObserver = notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            guard let self, self.hostSelection == .autoDetect else { return }
-            let detected = HostMIDIContextResolver.resolve(
-                selection: .autoDetect,
-                signals: HostRuntimeDetector.signals()
-            )
-            guard detected.kind != self.activeHostKind else { return }
-            self.applyHostRouting()
+            Task { @MainActor [weak self] in
+                guard let self, self.hostSelection == .autoDetect else { return }
+                let detected = HostMIDIContextResolver.resolve(
+                    selection: .autoDetect,
+                    signals: HostRuntimeDetector.signals()
+                )
+                guard detected.kind != self.activeHostKind else { return }
+                self.applyHostRouting()
+            }
         }
     }
 
@@ -185,6 +205,62 @@ public final class AppState: @unchecked Sendable {
     public func setInstrument(_ profile: InstrumentProfile) {
         stopActiveNotes()
         applyInstrument(profile)
+    }
+
+    public func setStrumOctave(_ octave: Int) {
+        var updated = performanceRegisters
+        updated.setStrumOctave(octave)
+        applyPerformanceRegisters(updated)
+    }
+
+    public func setFaceButtonOctave(_ octave: Int) {
+        var updated = performanceRegisters
+        updated.setFaceButtonOctave(octave)
+        applyPerformanceRegisters(updated)
+    }
+
+    public func shiftPerformanceOctaves(by octaveDelta: Int) {
+        var updated = performanceRegisters
+        updated.shiftBoth(by: octaveDelta)
+        applyPerformanceRegisters(updated)
+    }
+
+    private func applyPerformanceRegisters(_ updated: PerformanceLaneRegisters) {
+        let strumChanged = updated.strumOctave != performanceRegisters.strumOctave
+        let faceChanged = updated.faceButtonOctave != performanceRegisters.faceButtonOctave
+        guard strumChanged || faceChanged else { return }
+
+        if strumChanged {
+            stopStrumLane()
+            previousVoicing = nil
+        }
+        if faceChanged {
+            stopFaceLane()
+            performanceEngine.resetMelodicTargeting(rearmFaceButtons: true)
+        }
+
+        performanceRegisters = updated
+        performanceRegisterMemory.remember(updated, for: instrumentProfile)
+    }
+
+    private func stopStrumLane() {
+        chordGateReleaseWorkItem?.cancel()
+        chordGateReleaseWorkItem = nil
+        cancelPendingStrumNotes()
+        let releaseEvents = chordGateEngine.releaseAll()
+        handleChordGateEvents(
+            releaseEvents,
+            velocity: lastVelocity,
+            direction: lastStrumDirection
+        )
+        velocityStabilizer.reset()
+        strumState = StrumState()
+    }
+
+    private func stopFaceLane() {
+        for role in Array(heldFaceNotes.keys) {
+            stopFaceNote(for: role)
+        }
     }
 
     public func setPerformancePreset(_ preset: PerformancePreset) {
@@ -351,11 +427,14 @@ public final class AppState: @unchecked Sendable {
     }
 
     private func applyInstrument(_ profile: InstrumentProfile) {
+        performanceRegisterMemory.remember(performanceRegisters, for: instrumentProfile)
         instrumentProfile = profile
+        performanceRegisters = performanceRegisterMemory.settings(for: profile)
         controllerManager.configureForInstrumentProfile(profile)
         performanceEngine.setProfile(profile)
         midiTranslator.profile = profile
         midiTranslator.destination = destinationProfile
+        previousVoicing = nil
         lastFrame = nil
         lastHint = nil
     }
@@ -369,7 +448,7 @@ public final class AppState: @unchecked Sendable {
             currentNote: currentNote ?? activeNotes.max(),
             chromaticMode: expressionSettings.chromaticMode,
             pitchAssist: expressionSettings.pitchAssist,
-            registerOctave: (instrumentProfile.family == .bass ? 2 : 3) + performanceOctaveOffset
+            registerOctave: performanceRegisters.faceButtonOctave
         )
     }
 
@@ -426,15 +505,23 @@ public final class AppState: @unchecked Sendable {
             controllerManager.playTechniqueHaptic(haptic)
         }
 
+        if state.hasMotion {
+            audioEngine.updateSpatialFromIMU(
+                gyroPitch: Float(state.gyroX),
+                gyroRoll: Float(state.gyroY),
+                gyroYaw: Float(state.gyroZ)
+            )
+        }
+
         lastInputTime = now
     }
 
     private func applySurfaceActions(_ frame: ControlSurfaceFrame) {
         if frame.didRise(.octaveUp) {
-            performanceOctaveOffset = min(2, performanceOctaveOffset + 1)
+            shiftPerformanceOctaves(by: 1)
         }
         if frame.didRise(.octaveDown) {
-            performanceOctaveOffset = max(-2, performanceOctaveOffset - 1)
+            shiftPerformanceOctaves(by: -1)
         }
         if frame.didRise(.voicingNext) {
             cycleVoicing(by: 1)
@@ -511,7 +598,7 @@ public final class AppState: @unchecked Sendable {
         guard expressionSettings.chordToneLayout, let chord = currentChord else { return }
         let targeter = ContextualPitchTargeter()
         let heldSnapshot = Array(heldFaceNotes)
-        let baseOctave = instrumentProfile.family == .bass ? 2 : 3
+        let baseOctave = performanceRegisters.faceButtonOctave
         for (role, previous) in heldSnapshot {
             let next = targeter.note(for: role, chord: chord, previous: previous, baseOctave: baseOctave)
             if next.midiNote != previous.midiNote {
@@ -780,7 +867,7 @@ public final class AppState: @unchecked Sendable {
     private func makeChordVoice(_ chord: Chord) -> ChordGateVoice {
         let voicing: ChordVoicing
         let voiceCount = instrumentProfile.stringCount == 0 ? 5 : instrumentProfile.stringCount
-        let baseOctave = instrumentProfile.family == .bass ? 2 : 3
+        let baseOctave = performanceRegisters.strumOctave
         if let prev = previousVoicing {
             voicing = ChordVoicing.voiceLed(
                 chord: chord,
@@ -906,6 +993,7 @@ public final class AppState: @unchecked Sendable {
         if destinationProfile.supportsMPE {
             mpeManager.noteOn(note: note.midiNote, velocity: velocity, technique: technique)
         }
+        controllerManager.coreHapticsEngine.playNotePluck(velocity: velocity)
         lastMIDITranslation = midiTranslator.translate(
             InstrumentPerformanceEvent(note: note, phase: .began, technique: technique, velocity: velocity),
             memberChannel: mpeManager.voice(for: note.midiNote)?.channel

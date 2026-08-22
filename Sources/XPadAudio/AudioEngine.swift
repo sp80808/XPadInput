@@ -259,6 +259,24 @@ public final class AudioEngine: @unchecked Sendable {
         configureReverb(settings, reloadPreset: styleChanged)
     }
     
+    public let spatialEngine = SpatialAudioEngine()
+
+    public func setSpatialCoordinates(azimuth: Float, elevation: Float, distance: Float) {
+        spatialEngine.setCoordinates(azimuth: azimuth, elevation: elevation, distance: distance)
+    }
+
+    public func updateSpatialFromIMU(gyroPitch: Float, gyroRoll: Float, gyroYaw: Float, accelMagnitude: Float = 1.0) {
+        spatialEngine.updateFromIMU(gyroPitch: gyroPitch, gyroRoll: gyroRoll, gyroYaw: gyroYaw, accelMagnitude: accelMagnitude)
+    }
+
+    public func setSpatialMode(_ mode: SpatialAudioMode) {
+        spatialEngine.mode = mode
+    }
+
+    public func setSpatialEnabled(_ enabled: Bool) {
+        spatialEngine.isEnabled = enabled
+    }
+
     private var engine: AVAudioEngine?
     private var mixer: AVAudioMixerNode?
     private var equalizer: AVAudioUnitEQ?

@@ -22,6 +22,7 @@ public final class ControllerManager: @unchecked Sendable {
     // Input Processors
     public var analogPipeline = AnalogControlPipeline()
     public var adaptiveTriggerEngine = AdaptiveTriggerEngine()
+    public var coreHapticsEngine = CoreHapticsEngine()
     public var smartSoloEngine = SmartSoloEngine()
 
     public var leftStickProcessor: StickProcessor {
@@ -137,6 +138,7 @@ public final class ControllerManager: @unchecked Sendable {
         }
 
         prepareHaptics(for: controller)
+        coreHapticsEngine.attach(to: controller)
     }
     
     private func controllerDisconnected() {
@@ -147,6 +149,7 @@ public final class ControllerManager: @unchecked Sendable {
         controllerState = ControllerState()
         currentState = GamepadState()
         controllerKind = .simulated
+        coreHapticsEngine.detach()
         hapticEngine?.stop(completionHandler: nil)
         hapticEngine = nil
         onStateChanged?(controllerState)

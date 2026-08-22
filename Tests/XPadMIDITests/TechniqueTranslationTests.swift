@@ -161,6 +161,28 @@ final class TechniqueTranslationTests: XCTestCase {
         ))
     }
 
+    func testRecorderClosesOriginalNoteBeforeRegisterRetarget() {
+        let recorder = TechniqueRecorder()
+        let low = Note(pitchClass: .d, octave: 2)
+        let high = Note(pitchClass: .d, octave: 4)
+        recorder.start()
+
+        recorder.record(
+            InstrumentPerformanceEvent(note: low, phase: .began, velocity: 96),
+            tick: 100
+        )
+        recorder.recordNoteOff(note: low.midiNote, tick: 120)
+        recorder.record(
+            InstrumentPerformanceEvent(note: high, phase: .began, velocity: 96),
+            tick: 120
+        )
+        recorder.recordNoteOff(note: high.midiNote, tick: 160)
+
+        let events = recorder.stop()
+        XCTAssertEqual(events.map(\.event.note), [low, high])
+        XCTAssertEqual(events.map(\.durationTicks), [20, 40])
+    }
+
     func testTechniqueExportProducesSMF() {
         let exporter = SMFExporter()
         let events = [

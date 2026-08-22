@@ -19,6 +19,7 @@ enum DSPWorkspaceTab: String, CaseIterable, Identifiable {
     case performance = "Performance"
     case synth = "Synth"
     case fx = "FX"
+    case spatial = "Spatial 3D"
     var id: String { rawValue }
 }
 
@@ -79,12 +80,12 @@ public struct PlayView: View {
                             .transition(.opacity)
                     }
                     if !appState.multiJamManager.isSessionActive {
-                        Spacer().frame(height: 90)
+                        Spacer().frame(height: 50)
                     }
 
                     // Current Chord Display
                     EnhancedChordDisplayView()
-                        .frame(height: 72)
+                        .frame(height: 80)
 
                     // Solo HUD or reserved space
                     if appState.instrumentProfile.family == .synthLead || appState.isSoloModeActive {
@@ -92,12 +93,12 @@ public struct PlayView: View {
                             .transition(.opacity)
                     }
                     if !(appState.instrumentProfile.family == .synthLead || appState.isSoloModeActive) {
-                        Spacer().frame(height: 100)
+                        Spacer().frame(height: 60)
                     }
 
                     // Contextual Hint
                     ContextualHintSlot()
-                        .frame(height: 32)
+                        .frame(height: 36)
 
                     // Harmonic Wheel - chord selection via stick
                     HarmonicWheelView()
@@ -116,11 +117,10 @@ public struct PlayView: View {
                         onAuditionChord: auditionChord,
                         onSendToSequencer: sendProgressionToSequencer
                     )
-                    .frame(height: 200)
+                    .frame(minHeight: 180, maxHeight: .infinity)
 
                     // Active Notes
                     ActiveNotesView()
-                        .frame(height: 40)
                 }
                 .padding(12)
                 .frame(width: leftWidth)
@@ -133,7 +133,7 @@ public struct PlayView: View {
                 VStack(spacing: 10) {
                     // Controller Visualizer - Prominent
                     ControllerVisualizerView()
-                        .frame(height: 300)
+                        .frame(height: 270)
 
                     // Performance Quick Controls
                     PerformanceQuickControlsView()
@@ -151,7 +151,7 @@ public struct PlayView: View {
                         drive: $saturation,
                         reverb: $reverbMix
                     )
-                    .frame(height: 170)
+                    .frame(minHeight: 150, maxHeight: .infinity)
 
                     // Strum Indicator & MIDI Activity
                     HStack(spacing: 10) {
@@ -351,6 +351,7 @@ private struct DSPTabbedWorkspace: View {
                 case .performance: PerformanceDSPPanel()
                 case .synth: MasterDSPStrip(cutoff: $cutoff, resonance: $resonance, drive: $drive, reverb: $reverb)
                 case .fx: FXDSPPanel(cutoff: $cutoff, resonance: $resonance, drive: $drive, reverb: $reverb)
+                case .spatial: SpatialAudioVisualizerView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -392,23 +393,165 @@ private struct TabButton: View {
 
 private struct PerformanceDSPPanel: View {
     @Environment(AppState.self) private var appState
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("PERFORMANCE").font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(XTheme.textTertiary)
-            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
-                GridRow {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Octave").font(.system(size: 9)).foregroundColor(XTheme.textSecondary)
-                        Slider(value: .constant(0.5), in: -2...2).tint(XTheme.primary)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Bend Range").font(.system(size: 9)).foregroundColor(XTheme.textSecondary)
-                        Slider(value: .constant(2.0), in: 1...24).tint(XTheme.expression)
-                    }
-                }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("PERFORMANCE LANES")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundColor(XTheme.textTertiary)
+                Spacer()
+                Text(appState.instrumentProfile.name.uppercased())
+                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .foregroundColor(XTheme.primary)
+            }
+
+            HStack(spacing: 8) {
+                RegisterLaneStepper(
+                    title: "Strum",
+                    subtitle: "Chord voicing",
+                    icon: "guitars.fill",
+                    accent: XTheme.primary,
+                    value: Binding(
+                        get: { appState.performanceRegisters.strumOctave },
+                        set: { appState.setStrumOctave($0) }
+                    )
+                )
+
+                RegisterLaneStepper(
+                    title: "Face",
+                    subtitle: "Root · 3rd · 5th · 7th",
+                    icon: "circle.grid.2x2.fill",
+                    accent: XTheme.expression,
+                    value: Binding(
+                        get: { appState.performanceRegisters.faceButtonOctave },
+                        set: { appState.setFaceButtonOctave($0) }
+                    )
+                )
+
+                PerformanceOutputStatus()
             }
         }
         .padding(4)
+    }
+}
+
+private struct RegisterLaneStepper: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let accent: Color
+    let value: Binding<Int>
+
+    var body: some View {
+        Stepper(value: value, in: PerformanceLaneRegisters.supportedOctaves) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(accent)
+                    .frame(width: 20)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(title)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(XTheme.textPrimary)
+                        Text("OCT \(value.wrappedValue)")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundColor(accent)
+                    }
+                    Text(subtitle)
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundColor(XTheme.textTertiary)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, minHeight: 52)
+        .background(
+            RoundedRectangle(cornerRadius: XTheme.radiusSmall)
+                .fill(XTheme.surfaceElevated.opacity(0.78))
+                .overlay(
+                    RoundedRectangle(cornerRadius: XTheme.radiusSmall)
+                        .stroke(accent.opacity(0.24), lineWidth: 1)
+                )
+        )
+        .accessibilityLabel("\(title) register")
+        .accessibilityValue("Octave \(value.wrappedValue)")
+        .help("Set the \(title.lowercased()) lane to octave \(value.wrappedValue)")
+    }
+}
+
+private struct PerformanceOutputStatus: View {
+    @Environment(AppState.self) private var appState
+
+    private var protocolLabel: String {
+        appState.resolvedLayout.usesMPE ? "MPE" : "MIDI"
+    }
+
+    private var outputState: String {
+        if appState.midiEngine.virtualMIDIEnabled,
+           appState.midiEngine.setupErrorDescription != nil {
+            return "MIDI SETUP ERROR"
+        }
+        return appState.midiEngine.virtualMIDIEnabled ? "VIRTUAL MIDI ON" : "INTERNAL AUDIO"
+    }
+
+    private var statusColor: Color {
+        if appState.midiEngine.virtualMIDIEnabled,
+           appState.midiEngine.setupErrorDescription != nil {
+            return XTheme.tense
+        }
+        return appState.midiEngine.virtualMIDIEnabled ? XTheme.midiActivity : XTheme.primary
+    }
+
+    private var bendLabel: String {
+        let range = appState.destinationProfile.bendRangeSemitones
+        return range.rounded() == range ? "±\(Int(range)) ST" : String(format: "±%.1f ST", range)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 6, height: 6)
+                Text(outputState)
+                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .foregroundColor(XTheme.textSecondary)
+            }
+
+            Text(appState.activeHostKind.rawValue)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(XTheme.textPrimary)
+                .lineLimit(1)
+
+            Text("\(protocolLabel) · \(bendLabel)")
+                .font(.system(size: 8, weight: .medium, design: .monospaced))
+                .foregroundColor(XTheme.textTertiary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(minWidth: 122, maxWidth: .infinity, minHeight: 52, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: XTheme.radiusSmall)
+                .fill(XTheme.surface.opacity(0.72))
+                .overlay(
+                    RoundedRectangle(cornerRadius: XTheme.radiusSmall)
+                        .stroke(XTheme.border, lineWidth: 1)
+                )
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Performance output")
+        .accessibilityValue("\(outputState), \(appState.activeHostKind.rawValue), \(protocolLabel), bend range \(bendLabel)")
+        .help(
+            appState.midiEngine.virtualMIDIEnabled
+                ? appState.midiEngine.setupErrorDescription ?? "Virtual MIDI sources are enabled"
+                : "Internal audio is active; virtual MIDI sources are off"
+        )
     }
 }
 
