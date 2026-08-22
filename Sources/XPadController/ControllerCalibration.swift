@@ -303,4 +303,19 @@ public final class ControllerSettingsStore: @unchecked Sendable {
         dict.removeValue(forKey: controllerId)
         defaults.set(dict, forKey: calibrationsKey)
     }
+
+    // MARK: - Background Monitoring Storage
+
+    private let backgroundMonitoringKey = "com.xpadinput.controls.backgroundMonitoring"
+
+    public func loadBackgroundMonitoring() -> Bool {
+        if defaults.object(forKey: backgroundMonitoringKey) == nil {
+            return true // Default to true so background input works out of the box
+        }
+        return defaults.bool(forKey: backgroundMonitoringKey)
+    }
+
+    public func saveBackgroundMonitoring(_ enabled: Bool) {
+        defaults.set(enabled, forKey: backgroundMonitoringKey)
+    }
 }

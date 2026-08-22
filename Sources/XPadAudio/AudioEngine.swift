@@ -271,6 +271,7 @@ public final class AudioEngine: @unchecked Sendable {
     /// `nil` once the engine starts successfully.
     public private(set) var startErrorDescription: String?
     public var volume: Float = 0.7
+    public private(set) var isMuted: Bool = false
     public var currentPreset: SynthPreset = .acousticSine
     public private(set) var velocityCurve: SynthVelocityCurve = .balanced
     public private(set) var effectsSettings: SynthEffectsSettings = .polished
@@ -516,6 +517,7 @@ public final class AudioEngine: @unchecked Sendable {
             noteOff(note: note)
             return
         }
+        guard !isMuted else { return }
         guard let engine = engine, let mixer = mixer else { return }
         
         if !isRunning {
@@ -564,7 +566,7 @@ public final class AudioEngine: @unchecked Sendable {
     /// limiter as the melodic synth. The matching General MIDI note is exposed
     /// on `BuiltInDrumSound` so Duo mode can mirror the hit to a DAW.
     public func triggerDrum(_ sound: BuiltInDrumSound, velocity: UInt8) {
-        guard velocity > 0, let engine, let mixer else { return }
+        guard velocity > 0, !isMuted, let engine, let mixer else { return }
 
         if !isRunning {
             start()
@@ -734,7 +736,23 @@ public final class AudioEngine: @unchecked Sendable {
     
     public func setVolume(_ vol: Float) {
         volume = max(0, min(1, vol))
-        mixer?.outputVolume = volume
+        if !isMuted {
+            mixer?.outputVolume = volume
+        }
+    }
+
+    public func setMuted(_ muted: Bool) {
+        isMuted = muted
+        if muted {
+            mixer?.outputVolume = 0.0
+            allNotesOff()
+        } else {
+            mixer?.outputVolume = volume
+        }
+    }
+
+    public func toggleMute() {
+        setMuted(!isMuted)
     }
 }
 

@@ -40,7 +40,16 @@ struct XPadInputApp: App {
                     appState.controllerManager.scanForControllers()
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
+
+                Toggle("Background Input", isOn: Binding(
+                    get: { appState.controllerManager.isBackgroundMonitoringEnabled },
+                    set: { appState.controllerManager.isBackgroundMonitoringEnabled = $0 }
+                ))
             }
+        }
+
+        MenuBarExtra("XPI: Game Controller MIDI", systemImage: appState.controllerManager.isConnected ? "gamecontroller.fill" : "gamecontroller") {
+            MenuBarContentView(appState: appState)
         }
     }
 }

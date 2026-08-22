@@ -57,10 +57,21 @@ public final class ControllerManager: @unchecked Sendable {
     public var onDisconnected: (() -> Void)?
     public var onSchemeChanged: ((ControlScheme) -> Void)?
     
+    // Background Event Monitoring
+    public var isBackgroundMonitoringEnabled: Bool {
+        didSet {
+            GCController.shouldMonitorBackgroundEvents = isBackgroundMonitoringEnabled
+            ControllerSettingsStore.shared.saveBackgroundMonitoring(isBackgroundMonitoringEnabled)
+        }
+    }
+    
     private var observers: [Any] = []
     private var hapticEngine: CHHapticEngine?
     
     public init() {
+        let bgMonitoring = ControllerSettingsStore.shared.loadBackgroundMonitoring()
+        self.isBackgroundMonitoringEnabled = bgMonitoring
+        GCController.shouldMonitorBackgroundEvents = bgMonitoring
         loadPersistedSchemeAndCalibration()
         setupNotifications()
         scanForControllers()
@@ -110,6 +121,7 @@ public final class ControllerManager: @unchecked Sendable {
     }
     
     public func scanForControllers() {
+        GCController.shouldMonitorBackgroundEvents = isBackgroundMonitoringEnabled
         GCController.startWirelessControllerDiscovery {
             // Discovery completed
         }

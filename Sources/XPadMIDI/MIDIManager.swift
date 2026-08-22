@@ -279,6 +279,18 @@ public final class MIDIEngine: @unchecked Sendable {
         let numPackets = Int(eventList.pointee.numPackets)
         guard numPackets > 0 else { return }
 
+        var forwardedDirectly = false
+        lock.lock()
+        let shouldForward = passthruMode.routesToOutputs && virtualMIDIEnabled
+        let mainEndpoint = shouldForward ? outputs[.main] : nil
+        lock.unlock()
+
+        // Zero-copy fast-path: forward raw UMP event list directly to destination virtual output
+        if let mainEndpoint, mainEndpoint != 0 {
+            MIDIReceivedEventList(mainEndpoint, eventList)
+            forwardedDirectly = true
+        }
+
         let wordCapacity = MemoryLayout.size(ofValue: eventList.pointee.packet.words)
             / MemoryLayout<UInt32>.size
 
@@ -294,13 +306,13 @@ public final class MIDIEngine: @unchecked Sendable {
                 ) { buf in
                     Array(UnsafeBufferPointer(start: buf, count: count))
                 }
-                processIncomingUMPWords(words)
+                processIncomingUMPWords(words, alreadyForwardedToOutputs: forwardedDirectly)
             }
             packetPtr = MIDIEventPacketNext(packetPtr)
         }
     }
 
-    private func processIncomingUMPWords(_ words: [UInt32]) {
+    private func processIncomingUMPWords(_ words: [UInt32], alreadyForwardedToOutputs: Bool = false) {
         let messages = MIDI2UMPDecoder.decodeStream(words: words, sysExBuffer: &incomingSysExBuffer)
         for message in messages {
             switch message {
@@ -316,6 +328,11 @@ public final class MIDIEngine: @unchecked Sendable {
                 onIncomingSysEx?(bytes)
 
             case .channelVoice(let event, let rawBytes):
+                // Prioritize DAW output if not already forwarded directly on wire
+                if passthruMode.routesToOutputs && !alreadyForwardedToOutputs {
+                    emit(rawBytes, to: .main)
+                }
+
                 lock.lock()
                 midiActivityTimestamp = Date()
                 let record = MIDIMessageRecord(port: .main, bytes: rawBytes)
@@ -328,10 +345,6 @@ public final class MIDIEngine: @unchecked Sendable {
                 lock.unlock()
 
                 onIncomingEvent?(event, rawBytes)
-
-                if passthruMode.routesToOutputs {
-                    emit(rawBytes, to: .main)
-                }
 
             case .perNotePitchBend(let channel, let note, let semitones, _):
                 lock.lock()

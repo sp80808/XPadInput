@@ -190,11 +190,23 @@ public final class AppState: @unchecked Sendable {
         midiEngine.passthruMode = mode
     }
 
+    public var isSynthMuted: Bool {
+        audioEngine.isMuted
+    }
+
+    public func toggleSynthMute() {
+        audioEngine.toggleMute()
+    }
+
+    public func setSynthMuted(_ muted: Bool) {
+        audioEngine.setMuted(muted)
+    }
+
     private func setupIncomingMIDIPassthru() {
         midiEngine.passthruMode = midiPassthruMode
         midiEngine.onIncomingEvent = { [weak self] event, _ in
             guard let self else { return }
-            guard self.midiPassthruMode.routesToAudio else { return }
+            guard self.midiPassthruMode.routesToAudio, !self.audioEngine.isMuted else { return }
             Task { @MainActor in
                 switch event {
                 case .noteOn(_, let note, let velocity):
@@ -232,19 +244,19 @@ public final class AppState: @unchecked Sendable {
             }
         }
         midiEngine.onIncomingPerNotePitchBend = { [weak self] _, note, semitones in
-            guard let self, self.midiPassthruMode.routesToAudio else { return }
+            guard let self, self.midiPassthruMode.routesToAudio, !self.audioEngine.isMuted else { return }
             Task { @MainActor in
                 self.audioEngine.setPitchBend(for: note, semitones: semitones)
             }
         }
         midiEngine.onIncomingPerNotePressure = { [weak self] _, note, pressure in
-            guard let self, self.midiPassthruMode.routesToAudio else { return }
+            guard let self, self.midiPassthruMode.routesToAudio, !self.audioEngine.isMuted else { return }
             Task { @MainActor in
                 self.audioEngine.setPressure(for: note, pressure: pressure)
             }
         }
         midiEngine.onIncomingPerNoteController = { [weak self] _, note, controller, value in
-            guard let self, self.midiPassthruMode.routesToAudio else { return }
+            guard let self, self.midiPassthruMode.routesToAudio, !self.audioEngine.isMuted else { return }
             if controller == 74 {
                 Task { @MainActor in
                     self.audioEngine.setTimbre(for: note, timbre: value)
@@ -1075,9 +1087,11 @@ public final class AppState: @unchecked Sendable {
     }
 
     private func beginPhysicalVoice(_ note: Note, velocity: UInt8, technique: MusicalTechnique) {
-        audioEngine.noteOn(note: note.midiNote, velocity: velocity, technique: technique)
         if destinationProfile.supportsMPE {
             mpeManager.noteOn(note: note.midiNote, velocity: velocity, technique: technique)
+        }
+        if !audioEngine.isMuted {
+            audioEngine.noteOn(note: note.midiNote, velocity: velocity, technique: technique)
         }
         controllerManager.coreHapticsEngine.playNotePluck(velocity: velocity)
         lastMIDITranslation = midiTranslator.translate(
@@ -1088,11 +1102,13 @@ public final class AppState: @unchecked Sendable {
 
     private func finishPhysicalVoiceIfUnowned(_ note: Note) {
         guard !isNoteOwned(note.midiNote) else { return }
-        audioEngine.noteOff(note: note.midiNote)
-        audioEngine.setPitchBend(for: note.midiNote, semitones: 0)
         if destinationProfile.supportsMPE {
             mpeManager.setPitchBend(for: note.midiNote, semitones: 0)
             mpeManager.noteOff(note: note.midiNote)
+        }
+        if !audioEngine.isMuted {
+            audioEngine.noteOff(note: note.midiNote)
+            audioEngine.setPitchBend(for: note.midiNote, semitones: 0)
         }
         activeNotes.removeAll { $0.midiNote == note.midiNote }
         if activeNotes.isEmpty {

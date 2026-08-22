@@ -268,27 +268,52 @@ struct TransportBar: View {
     @ViewBuilder
     private func masterVolumeSection(sliderWidth: CGFloat) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: "speaker.wave.2.fill")
-                .font(.system(size: 9))
-                .foregroundStyle(XTheme.textTertiary)
-
-            // Stereo Level Bars
-            VStack(spacing: 2) {
-                levelBar(level: appState.virtualAudioDriver.levelMeter.linearLevelLeft)
-                levelBar(level: appState.virtualAudioDriver.levelMeter.linearLevelRight)
+            // Interactive Mute Synth button with responsive XTheme styling
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    appState.toggleSynthMute()
+                }
+            } label: {
+                Image(systemName: appState.isSynthMuted ? "speaker.slash.fill" : (appState.audioEngine.volume > 0.5 ? "speaker.wave.2.fill" : "speaker.wave.1.fill"))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(appState.isSynthMuted ? XTheme.warning : XTheme.textSecondary)
+                    .frame(width: 24, height: 24)
             }
+            .buttonStyle(
+                XTactileButtonStyle(
+                    isActive: appState.isSynthMuted,
+                    activeColor: XTheme.warning
+                )
+            )
+            .help(appState.isSynthMuted ? "Unmute Built-in Synth" : "Mute Built-in Synth (Prioritizes MIDI/DAW Passthru)")
+            .accessibilityLabel("Mute Synth")
+            .accessibilityValue(appState.isSynthMuted ? "Muted" : "Active")
+            .keyboardShortcut("m", modifiers: [])
 
-            // Volume Slider
+            // Stereo Level Bars (dimmed when muted)
+            VStack(spacing: 2) {
+                levelBar(level: appState.isSynthMuted ? 0 : appState.virtualAudioDriver.levelMeter.linearLevelLeft)
+                levelBar(level: appState.isSynthMuted ? 0 : appState.virtualAudioDriver.levelMeter.linearLevelRight)
+            }
+            .opacity(appState.isSynthMuted ? 0.35 : 1.0)
+
+            // Volume Slider (dimmed when muted, un-mutes automatically when dragged)
             Slider(
                 value: Binding(
                     get: { Double(appState.audioEngine.volume) },
-                    set: { appState.audioEngine.setVolume(Float($0)) }
+                    set: {
+                        appState.audioEngine.setVolume(Float($0))
+                        if appState.isSynthMuted {
+                            appState.setSynthMuted(false)
+                        }
+                    }
                 ),
                 in: 0.0...1.0
             )
-            .tint(XTheme.primary)
+            .tint(appState.isSynthMuted ? XTheme.textTertiary : XTheme.primary)
+            .opacity(appState.isSynthMuted ? 0.45 : 1.0)
             .frame(width: sliderWidth)
-            .help("Master Synthesizer Output Volume")
+            .help(appState.isSynthMuted ? "Synth is muted — Drag to unmute and adjust volume" : "Master Synthesizer Output Volume")
         }
     }
     

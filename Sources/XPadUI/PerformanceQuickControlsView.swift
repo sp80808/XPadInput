@@ -116,6 +116,26 @@ struct PerformanceQuickControlsView: View {
             }
             .help("DualSense motor resistance, string tension and mod-wheel detents")
 
+            Button {
+                withAnimation(XTheme.springAnimation) {
+                    appState.toggleSynthMute()
+                }
+            } label: {
+                QuickControlLabel(
+                    icon: appState.isSynthMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
+                    title: "Synth",
+                    value: compact ? nil : (appState.isSynthMuted ? "Muted" : "On"),
+                    compact: compact
+                )
+            }
+            .buttonStyle(
+                XTactileButtonStyle(
+                    isActive: appState.isSynthMuted,
+                    activeColor: XTheme.warning
+                )
+            )
+            .help(appState.isSynthMuted ? "Synth muted — MIDI passthru prioritized" : "Mute built-in synthesizer")
+
             Spacer(minLength: compact ? 2 : 8)
 
             Button { showsEQ.toggle() } label: {

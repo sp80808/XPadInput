@@ -278,6 +278,21 @@ public struct ControlSchemeSettingsView: View {
     
     private var ergonomicsView: some View {
         VStack(spacing: 16) {
+            // Focus & Background Input
+            settingsCard(title: "Background Input & Focus Retention", icon: "macwindow.on.rectangle") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle("Background Gamepad Input", isOn: Binding(
+                        get: { appState.controllerManager.isBackgroundMonitoringEnabled },
+                        set: { appState.controllerManager.isBackgroundMonitoringEnabled = $0 }
+                    ))
+                    .font(.system(size: 13))
+                    
+                    Text("Allows XPadInput to continuously receive controller inputs, play notes, and send MPE MIDI even when you switch to your DAW, web browser, or when the window is minimized.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(XTheme.textTertiary)
+                }
+            }
+
             // Hand Roles & Orientation
             settingsCard(title: "Hand Orientation & Roles", icon: "arrow.left.and.right.square") {
                 VStack(alignment: .leading, spacing: 10) {

@@ -1,4 +1,5 @@
 import Foundation
+import GameController
 import AudioToolbox
 import AVFoundation
 import XPadCore
@@ -397,6 +398,23 @@ final class TestRunner {
                 let manager = ControllerManager()
                 assertFalse(manager.isConnected)
                 assertEqual(manager.controllerName, "No Controller")
+            }
+
+            test("ControllerManager Background Monitoring Configuration & Persistence") {
+                let manager = ControllerManager()
+                assertTrue(manager.isBackgroundMonitoringEnabled, "Background monitoring should be enabled by default")
+                assertTrue(GameController.GCController.shouldMonitorBackgroundEvents, "GCController.shouldMonitorBackgroundEvents must be true by default")
+
+                manager.isBackgroundMonitoringEnabled = false
+                assertFalse(manager.isBackgroundMonitoringEnabled)
+                assertFalse(GameController.GCController.shouldMonitorBackgroundEvents)
+                assertFalse(ControllerSettingsStore.shared.loadBackgroundMonitoring())
+
+                // Restore
+                manager.isBackgroundMonitoringEnabled = true
+                assertTrue(manager.isBackgroundMonitoringEnabled)
+                assertTrue(GameController.GCController.shouldMonitorBackgroundEvents)
+                assertTrue(ControllerSettingsStore.shared.loadBackgroundMonitoring())
             }
 
             test("Simulated Face Button Sustains Without Retrigger") {
@@ -943,6 +961,39 @@ final class TestRunner {
                 assertEqual(audio.trackedVoiceCount, 1, "A release tail must remain tracked until it detaches.")
                 audio.panic()
                 assertEqual(audio.trackedVoiceCount, 0, "Panic must hard-stop active and releasing voices.")
+                audio.stop()
+            }
+
+            test("AudioEngine Mute State & Resource Bypassing") {
+                let audio = AudioEngine()
+                audio.start()
+                assertEqual(audio.isMuted, false)
+                audio.setVolume(0.85)
+                assertEqual(audio.volume, 0.85)
+
+                audio.noteOn(note: 60, velocity: 100)
+                assertEqual(audio.trackedVoiceCount, 1)
+
+                // Muting should immediately stop all sounding voices
+                audio.setMuted(true)
+                assertEqual(audio.isMuted, true)
+                assertEqual(audio.trackedVoiceCount, 0, "Muting must clear all active sounding voices")
+
+                // Triggering notes while muted should not allocate any voices
+                audio.noteOn(note: 62, velocity: 100)
+                assertEqual(audio.trackedVoiceCount, 0, "Muted synth must bypass voice node allocation")
+                audio.triggerDrum(.kick, velocity: 100)
+                assertEqual(audio.trackedDrumVoiceCount, 0, "Muted synth must bypass drum voice allocation")
+
+                // Toggle unmute restores engine and stored volume
+                audio.toggleMute()
+                assertEqual(audio.isMuted, false)
+                assertEqual(audio.volume, 0.85, "Volume setting must be preserved through mute cycle")
+
+                audio.noteOn(note: 64, velocity: 100)
+                assertEqual(audio.trackedVoiceCount, 1)
+                audio.panic()
+                assertEqual(audio.trackedVoiceCount, 0)
                 audio.stop()
             }
 
