@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "lineLength": 120,
+  "indentation": {
+    "spaces": 4
+  },
+  "respectsExistingLineBreaks": true,
+  "tabWidth": 4,
+  "fileHeader": null,
+  "rules": {
+    "AllPublicDeclarationsHaveDocumentation": false,
+    "AlwaysUseLowerCamelCase": true,
+    "BeginDocumentationCommentWithOneLineSummary": false,
+    "DoNotUseShorthandTypeNames": false,
+    "DontRepeatTypeInStaticProperties": true,
+    "FileHeader": false,
+    "FullyIndirectEnum": true,
+    "GroupNumericLiterals": true,
+    "IdentifiersMustBeASCII": true,
+    "NeverUseForceTry": false,
+    "NeverUseImplicitlyUnwrappedOptionals": false,
+    "OrderedImports": true,
+    "ReturnVoidInsteadOfEmptyTuple": true,
+    "UseEarlyExits": true,
+    "UseLetInEveryBoundCaseVariable": true,
+    "UseShorthandTypeNames": true,
+    "UseSynthesizedInitializer": true,
+    "UseTripleSlashForDocumentationComments": true,
+    "ValidateDocumentationComments": false
+  }
+}

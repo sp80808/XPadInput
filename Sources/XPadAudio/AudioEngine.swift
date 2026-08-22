@@ -3,6 +3,7 @@ import AVFoundation
 import AudioToolbox
 import os
 import XPadCore
+import XPadTheory
 
 public enum OscillatorType: String, CaseIterable, Codable, Sendable {
     case sine = "Sine"
@@ -10,6 +11,8 @@ public enum OscillatorType: String, CaseIterable, Codable, Sendable {
     case square = "Square"
     case triangle = "Triangle"
     case noise = "Noise"
+    case unison = "Unison Saw"
+    case strings = "Strings"
 }
 
 public enum FilterType: String, CaseIterable, Codable, Sendable {
@@ -257,8 +260,65 @@ public struct SynthPreset: Identifiable, Codable, Sendable {
     public static let allPresets: [SynthPreset] = [
         .acousticSine, .nylonSine, .cleanElectricSine,
         .polyLead, .rhodesEP, .ambientPad, .warmPad, .pluck, .subBass, 
-        .analogBrass, .digitalBell
+        .analogBrass, .digitalBell,
+        .superSaw, .jungStrings, .glassyBell
     ]
+
+    // MARK: - New quality presets
+
+    /// Seven detuned saws for a thick supersaw sound
+    public static let superSaw = SynthPreset(
+        id: "superSaw",
+        name: "Super Saw",
+        osc1Type: .unison,
+        osc2Type: .saw,
+        attack: 0.01,
+        decay: 0.18,
+        sustain: 0.78,
+        release: 0.32,
+        filterCutoffHz: 3600,
+        filterResonance: 0.30,
+        filterType: .lowPass,
+        osc2Level: 0.18,
+        osc2DetuneCents: 12.0,
+        saturationAmount: 0.10
+    )
+
+    /// Slow-attack string ensemble using the strings oscillator
+    public static let jungStrings = SynthPreset(
+        id: "jungStrings",
+        name: "String Ensemble",
+        osc1Type: .strings,
+        osc2Type: .triangle,
+        attack: 0.18,
+        decay: 0.55,
+        sustain: 0.88,
+        release: 0.9,
+        filterCutoffHz: 2200,
+        filterResonance: 0.15,
+        filterType: .lowPass,
+        osc2Level: 0.22,
+        osc2DetuneCents: 6.0,
+        saturationAmount: 0.06
+    )
+
+    /// Clean FM-style bell with triangle + detuned sine for inharmonic shimmer
+    public static let glassyBell = SynthPreset(
+        id: "glassyBell",
+        name: "Glassy Bell",
+        osc1Type: .triangle,
+        osc2Type: .sine,
+        attack: 0.001,
+        decay: 0.65,
+        sustain: 0.22,
+        release: 0.55,
+        filterCutoffHz: 5500,
+        filterResonance: 0.55,
+        filterType: .lowPass,
+        osc2Level: 0.42,
+        osc2DetuneCents: 24.0,
+        saturationAmount: 0.0
+    )
 }
 
 /// Simple polyphonic synthesizer using AVAudioEngine.
@@ -331,6 +391,11 @@ public final class AudioEngine: @unchecked Sendable {
         spatialEngine.isEnabled = enabled
     }
 
+    public var temperament: MicrotonalTemperament = .equalTemperament
+    public var scaleRoot: PitchClass = .c
+    public var activeChordRoot: PitchClass? = nil
+    public var isMinorChord: Bool = false
+
     private var engine: AVAudioEngine?
     private var mixer: AVAudioMixerNode?
     private var equalizer: AVAudioUnitEQ?
@@ -341,7 +406,10 @@ public final class AudioEngine: @unchecked Sendable {
     private var releasingVoices: [ObjectIdentifier: SynthVoice] = [:]
     private var percussionVoices: [ObjectIdentifier: PercussionVoice] = [:]
     private let lock = NSLock()
-    private let sampleRate: Double = 44100
+    /// Resolved once at setup from the hardware output format; never hardcoded.
+    private var sampleRate: Double = 44100
+    private var monoFormat: AVAudioFormat?
+    private let voiceCleanupQueue = DispatchQueue(label: "com.xpadinput.audio.cleanup", qos: .userInitiated)
     private let maxVoices = 16
     private let maxPercussionVoices = 24
     
@@ -355,6 +423,23 @@ public final class AudioEngine: @unchecked Sendable {
     
     private func setupEngine() {
         let engine = AVAudioEngine()
+
+        // Resolve the hardware sample rate so oscillator math is always correct
+        // regardless of whether the device runs at 44.1 kHz, 48 kHz, 96 kHz, etc.
+        let hwSampleRate = engine.outputNode.outputFormat(forBus: 0).sampleRate
+        sampleRate = hwSampleRate > 0 ? hwSampleRate : 44100
+        monoFormat = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)
+
+        // Request a small I/O buffer for lower latency (~5 ms at 48 kHz = 256 frames).
+        // AVAudioEngine will pick the closest hardware-supported size; this is advisory only.
+        #if os(iOS) || os(tvOS) || os(watchOS)
+        do {
+            try AVAudioSession.sharedInstance().setPreferredIOBufferDuration(0.005)
+        } catch {
+            // Silently ignore if not supported
+        }
+        #endif
+
         let mixer = AVAudioMixerNode()
         let equalizer = AVAudioUnitEQ(numberOfBands: 3)
         let compressor = AVAudioUnitEffect(
@@ -544,16 +629,24 @@ public final class AudioEngine: @unchecked Sendable {
             }
         }
         
+        let tuningOffset = temperament.tuningOffsetInSemitones(
+            for: note,
+            scaleRoot: scaleRoot,
+            activeChordRoot: activeChordRoot,
+            isMinorChord: isMinorChord
+        )
+
         let voice = SynthVoice(
             note: note,
             velocity: velocity,
             sampleRate: sampleRate,
             technique: technique,
             preset: currentPreset,
-            velocityCurve: velocityCurve
+            velocityCurve: velocityCurve,
+            tuningOffsetSemitones: tuningOffset
         )
         
-        let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
+        let format = monoFormat ?? AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
         engine.attach(voice.sourceNode)
         engine.connect(voice.sourceNode, to: mixer, format: format)
         
@@ -581,7 +674,7 @@ public final class AudioEngine: @unchecked Sendable {
             sampleRate: sampleRate
         )
         let voiceID = ObjectIdentifier(voice)
-        let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
+        let format = monoFormat ?? AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!
 
         lock.lock()
         if percussionVoices.count >= maxPercussionVoices,
@@ -595,7 +688,7 @@ public final class AudioEngine: @unchecked Sendable {
         percussionVoices[voiceID] = voice
         lock.unlock()
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + voice.duration + 0.03) { [weak self] in
+        voiceCleanupQueue.asyncAfter(deadline: .now() + voice.duration + 0.03) { [weak self] in
             self?.finishPercussionVoice(voice)
         }
     }
@@ -614,7 +707,7 @@ public final class AudioEngine: @unchecked Sendable {
             releasingVoices[voiceID] = voice
             lock.unlock()
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + releaseTime) { [weak self] in
+            voiceCleanupQueue.asyncAfter(deadline: .now() + releaseTime) { [weak self] in
                 self?.finishRelease(voice)
             }
         } else {
@@ -873,11 +966,12 @@ public final class SynthVoice: @unchecked Sendable {
         sampleRate: Double,
         technique: MusicalTechnique = .normal,
         preset: SynthPreset = .acousticSine,
-        velocityCurve: SynthVelocityCurve = .balanced
+        velocityCurve: SynthVelocityCurve = .balanced,
+        tuningOffsetSemitones: Double = 0.0
     ) {
         self.note = note
         self.sampleRate = sampleRate
-        self.baseFrequency = 440.0 * pow(2.0, (Double(note) - 69.0) / 12.0)
+        self.baseFrequency = 440.0 * pow(2.0, (Double(note) + tuningOffsetSemitones - 69.0) / 12.0)
         self.targetAmplitude = velocityCurve.normalizedAmplitude(for: velocity)
         self.startTime = Date()
 
@@ -928,6 +1022,10 @@ public final class SynthVoice: @unchecked Sendable {
         
         var oscillator1Phase = 0.0
         var oscillator2Phase = 0.0
+        // Unison saw: 7 detuned voices for thickness (phases staggered to avoid transient burst)
+        var unisonPhases: [Double] = (0..<7).map { i in Double(i) / 7.0 }
+        // Strings: 4 slightly detuned saws with independent phases
+        var stringsPhases: [Double] = (0..<4).map { i in Double(i) / 4.0 }
         var envPhase = 0.0
         var releasePhase = 0.0
         var releaseStartAmp = 0.0
@@ -1016,11 +1114,43 @@ public final class SynthVoice: @unchecked Sendable {
                 let h = controlSnapshot.harmonic
 
                 // Generate oscillator samples
-                let first = SynthVoice.oscillatorSample(
-                    type: oscillator1,
-                    phase: oscillator1Phase,
-                    increment: oscillator1Increment
-                )
+                let first: Double
+                switch oscillator1 {
+                case .unison:
+                    // 7-voice detuned saw stack: detunes ±35 cents spread
+                    let unisonDetunes: [Double] = [-0.35, -0.22, -0.10, 0.0, 0.10, 0.22, 0.35]
+                    var unisonMix = 0.0
+                    for vi in 0..<7 {
+                        let df = frequency * (pow(2.0, unisonDetunes[vi] / 12.0) - 1.0)
+                        let inc = min((frequency + df) / sampleRate, 0.49)
+                        let s = (unisonPhases[vi] * 2.0 - 1.0)
+                            - DSPMath.polyBLEP(phase: unisonPhases[vi], increment: inc)
+                        unisonMix += s
+                        unisonPhases[vi] += inc
+                        if unisonPhases[vi] >= 1.0 { unisonPhases[vi] -= floor(unisonPhases[vi]) }
+                    }
+                    first = unisonMix * 0.18 // normalise 7 voices
+                case .strings:
+                    // 4-voice slightly detuned saws for string-ensemble chorus effect
+                    let stringDetunes: [Double] = [-0.08, -0.025, 0.025, 0.08]
+                    var strMix = 0.0
+                    for vi in 0..<4 {
+                        let df = frequency * (pow(2.0, stringDetunes[vi] / 12.0) - 1.0)
+                        let inc = min((frequency + df) / sampleRate, 0.49)
+                        let s = (stringsPhases[vi] * 2.0 - 1.0)
+                            - DSPMath.polyBLEP(phase: stringsPhases[vi], increment: inc)
+                        strMix += s
+                        stringsPhases[vi] += inc
+                        if stringsPhases[vi] >= 1.0 { stringsPhases[vi] -= floor(stringsPhases[vi]) }
+                    }
+                    first = strMix * 0.30
+                default:
+                    first = SynthVoice.oscillatorSample(
+                        type: oscillator1,
+                        phase: oscillator1Phase,
+                        increment: oscillator1Increment
+                    )
+                }
                 
                 let second = SynthVoice.oscillatorSample(
                     type: oscillator2,
@@ -1028,12 +1158,13 @@ public final class SynthVoice: @unchecked Sendable {
                     increment: oscillator2Increment
                 )
                 
-                // Handle noise oscillator
+                // Handle noise oscillator — xorshift32 for better spectral distribution
                 let noiseSample: Double
                 if oscillator2 == .noise {
-                    noiseState = noiseState &* 1_664_525 &+ 1_013_904_223
-                    let unitNoise = Double(noiseState) / Double(UInt32.max)
-                    noiseSample = unitNoise * 2.0 - 1.0
+                    noiseState ^= noiseState << 13
+                    noiseState ^= noiseState >> 17
+                    noiseState ^= noiseState << 5
+                    noiseSample = Double(Int32(bitPattern: noiseState)) / Double(Int32.max)
                 } else {
                     noiseSample = 0.0
                 }
@@ -1058,12 +1189,15 @@ public final class SynthVoice: @unchecked Sendable {
                         + 0.12 * sin(oscillator1Phase * 2.0 * .pi * 5.0)
                 }
 
-                // Apply saturation (soft clipping) for warmth
+                // Apply saturation — tanh-approximated tube warmth
                 let saturatedSample: Double
                 if saturationAmount > 0 {
-                    let x = sample * 2.0
-                    let softClip = x - (x * x * x) / 3.0
-                    saturatedSample = (sample * (1.0 - saturationAmount)) + (softClip * saturationAmount * 0.3)
+                    let drive = 1.0 + saturationAmount * 3.5
+                    let x = sample * drive
+                    // Padé approximant of tanh(x) for |x| < 4 — cheaper than Foundation tanh
+                    let x2 = x * x
+                    let softClip = x * (27.0 + x2) / (27.0 + 9.0 * x2)
+                    saturatedSample = softClip / drive
                 } else {
                     saturatedSample = sample
                 }
@@ -1126,6 +1260,15 @@ public final class SynthVoice: @unchecked Sendable {
             return 1.0 - 4.0 * abs(phase - 0.5)
         case .noise:
             return 0.0
+        case .unison:
+            let saw1 = (phase * 2.0 - 1.0) - DSPMath.polyBLEP(phase: phase, increment: increment)
+            let phaseDetuned = (phase * 1.003).truncatingRemainder(dividingBy: 1.0)
+            let saw2 = (phaseDetuned * 2.0 - 1.0) - DSPMath.polyBLEP(phase: phaseDetuned, increment: increment)
+            return (saw1 + saw2) * 0.5
+        case .strings:
+            let saw = (phase * 2.0 - 1.0) - DSPMath.polyBLEP(phase: phase, increment: increment)
+            let sub = sin(phase * .pi)
+            return saw * 0.7 + sub * 0.3
         }
     }
 

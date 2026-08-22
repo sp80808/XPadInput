@@ -11,9 +11,9 @@ public extension ControllerKind {
         let identity = "\(vendorName ?? "") \(productCategory)".lowercased()
         if identity.contains("dualsense") || identity.contains("ps5") { return .dualSense }
         if identity.contains("dualshock") || identity.contains("ps4") { return .dualShock4 }
-        if identity.contains("xbox") { return .xbox }
-        if identity.contains("switch") || identity.contains("pro controller") { return .switchPro }
+        if identity.contains("xbox") || identity.contains("microsoft") || identity.contains("xinput") || identity.contains("series x") || identity.contains("series s") || identity.contains("elite") { return .xbox }
+        if identity.contains("switch") || identity.contains("pro controller") || identity.contains("joy-con") { return .switchPro }
         if identity.contains("steam") { return .steamDeck }
-        return .generic
+        return ControllerVendorDatabase.classify(vendorName: vendorName, productCategory: productCategory)
     }
 }

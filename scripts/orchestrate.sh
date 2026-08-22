@@ -80,6 +80,10 @@ run_quality_gate() {
     cd "${REPO_ROOT}"
     log_info "Executing XPadInput Automated Quality Gate..."
 
+    echo -e "  ↳ Purging AppleDouble files (._*)..."
+    find "${REPO_ROOT}/Sources" "${REPO_ROOT}/Tests" -name "._*" -delete 2>/dev/null || true
+    log_success "Sanitation complete."
+
     echo -e "  ↳ Compiling Swift packages..."
     if ! swift build -c debug; then
         log_error "Build failed! Quality gate rejected."
@@ -87,7 +91,7 @@ run_quality_gate() {
     fi
     log_success "Compilation succeeded."
 
-    echo -e "  ↳ Running exhaustive test suite (133+ assertions)..."
+    echo -e "  ↳ Running exhaustive test suite (141+ assertions)..."
     if ! swift run XPadTests; then
         log_error "Unit test suite failed! Quality gate rejected."
         return 1

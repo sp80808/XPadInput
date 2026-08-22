@@ -277,8 +277,219 @@ public enum ControlSchemePreset {
         )
     }
 
+    // MARK: - 7. Arcade Fight Stick
+
+    /// Single-lever arcade cabinet layout for fight-stick style controllers.
+    public static var arcadeFightStick: ControlScheme {
+        var bindings: [SemanticMusicalAction: PhysicalControlBinding] = [:]
+        
+        // Ball-Top Lever: Harmonic Navigation & Lead Solo Toggle
+        bindings[.harmonyNavigate2D] = .defaultBinding(for: .leftStick2D)
+        bindings[.soloModeToggle] = .defaultBinding(for: .leftStickClick)
+        
+        // Face Buttons: Direct Voice Plucks (Root, 3rd, 5th, 7th)
+        bindings[.voiceDegree1] = .defaultBinding(for: .buttonSouth)
+        bindings[.voiceDegree3] = .defaultBinding(for: .buttonWest)
+        bindings[.voiceDegree5] = .defaultBinding(for: .buttonNorth)
+        bindings[.voiceDegree7] = .defaultBinding(for: .buttonEast)
+        
+        // Top-Row Buttons: Technique Modifiers & Ringing Sustain
+        bindings[.techniqueModifier] = .defaultBinding(for: .leftShoulder)
+        bindings[.sustainLatch] = .defaultBinding(for: .rightShoulder)
+        
+        // Front Buttons / Triggers: Palm-Mute Damping & Pressure Swell
+        bindings[.dampingExpression] = .defaultBinding(for: .leftTrigger)
+        bindings[.pressureExpression] = .defaultBinding(for: .rightTrigger)
+        
+        // D-Pad: Octave & Inversion Shifts
+        bindings[.octaveUp] = .defaultBinding(for: .dpadUp)
+        bindings[.octaveDown] = .defaultBinding(for: .dpadDown)
+        bindings[.voicingNext] = .defaultBinding(for: .dpadRight)
+        bindings[.voicingPrevious] = .defaultBinding(for: .dpadLeft)
+        
+        // System
+        bindings[.duoModeToggle] = .defaultBinding(for: .buttonShare)
+        bindings[.panic] = .defaultBinding(for: .buttonOptions)
+        
+        return ControlScheme(
+            id: "xpi_arcade_stick",
+            name: "Arcade Fight Stick",
+            description: "Classic arcade cabinet layout: the ball-top lever steers the harmonic wheel (clicking it toggles Lead Solo), the four face buttons pluck Root, 3rd, 5th and 7th, top-row buttons arm technique and latch sustain, front triggers damp and swell, and the D-Pad shifts octaves and inversions.",
+            isBuiltIn: true,
+            version: 1,
+            bindings: bindings,
+            stickFeel: .responsive,
+            triggerFeel: .firm,
+            haptics: .normal,
+            isMotionEnabled: false,
+            isLeftRightSwapped: false
+        )
+    }
+
+    // MARK: - 8. Racing Wheel & Pedals
+
+    /// Sim-racing cockpit layout: wheel for bends, pedals for strum & damping, paddles for articulation.
+    public static var racingWheelCruise: ControlScheme {
+        var bindings: [SemanticMusicalAction: PhysicalControlBinding] = [:]
+        
+        // Steering Wheel Axis (enumerates as Left Stick X): Pitch Bends & Vibrato
+        bindings[.pitchExpression] = .defaultBinding(for: .leftStickX)
+        
+        // Gas Pedal (Right Trigger): Boosted Strum Excitation
+        bindings[.primaryExcitation] = PhysicalControlBinding(input: .rightTrigger, sensitivity: 1.2)
+        
+        // Brake Pedal (Left Trigger): Palm-Mute Damping
+        bindings[.dampingExpression] = .defaultBinding(for: .leftTrigger)
+        
+        // Paddle Shifters: Latched Sustain Rings & Technique Arming
+        bindings[.sustainLatch] = PhysicalControlBinding(input: .rightShoulder, digitalBehavior: .stepped)
+        bindings[.techniqueModifier] = .defaultBinding(for: .leftShoulder)
+        
+        // Face Buttons: Direct Voice Plucks (Root, 3rd, 5th, 7th)
+        bindings[.voiceDegree1] = .defaultBinding(for: .buttonSouth)
+        bindings[.voiceDegree3] = .defaultBinding(for: .buttonWest)
+        bindings[.voiceDegree5] = .defaultBinding(for: .buttonNorth)
+        bindings[.voiceDegree7] = .defaultBinding(for: .buttonEast)
+        
+        // D-Pad: Octave & Inversion Shifts
+        bindings[.octaveUp] = .defaultBinding(for: .dpadUp)
+        bindings[.octaveDown] = .defaultBinding(for: .dpadDown)
+        bindings[.voicingNext] = .defaultBinding(for: .dpadRight)
+        bindings[.voicingPrevious] = .defaultBinding(for: .dpadLeft)
+        
+        // Stub Right Stick: Harmonic Wheel Navigation (rebindable on wheels without one)
+        bindings[.harmonyNavigate2D] = .defaultBinding(for: .rightStick2D)
+        
+        // System
+        bindings[.panic] = .defaultBinding(for: .buttonOptions)
+        
+        return ControlScheme(
+            id: "xpi_racing_wheel",
+            name: "Racing Wheel & Pedals",
+            description: "Sim-racing cockpit mapping: turn the wheel (left-stick X) for pitch bends, floor the gas pedal (right trigger) to strum chords, feather the brake pedal (left trigger) to damp, snap the paddle shifters to latch sustain and arm techniques, pluck chord tones with the face buttons, shift octaves and inversions on the D-Pad, and steer harmony with the rim's stub right stick.",
+            isBuiltIn: true,
+            version: 1,
+            bindings: bindings,
+            stickFeel: .precise,
+            triggerFeel: .linear,
+            haptics: .normal,
+            isMotionEnabled: false,
+            isLeftRightSwapped: false
+        )
+    }
+
+    // MARK: - 9. Flight HOTAS Deck
+
+    /// Flight-stick & throttle quadrant layout: deflection, twist, throttle and split triggers.
+    public static var flightDeckHOTAS: ControlScheme {
+        var bindings: [SemanticMusicalAction: PhysicalControlBinding] = [:]
+        
+        // Joystick Deflection: Harmonic Wheel Navigation
+        bindings[.harmonyNavigate2D] = .defaultBinding(for: .leftStick2D)
+        
+        // Twist Grip: Pitch Bends & Vibrato
+        bindings[.pitchExpression] = .defaultBinding(for: .leftStickX)
+        
+        // Throttle Lever (Right Stick Y): Smooth Pressure Swells While Held
+        bindings[.pressureExpression] = PhysicalControlBinding(input: .rightStickY, digitalBehavior: .linearRamp)
+        
+        // Primary Trigger: Strum Excitation | Second Trigger Stage: Filter Timbre
+        bindings[.primaryExcitation] = .defaultBinding(for: .rightTrigger)
+        bindings[.timbreExpression] = .defaultBinding(for: .leftTrigger)
+        
+        // Base Buttons / Paddles: Technique Modifiers & Ringing Sustain
+        bindings[.techniqueModifier] = .defaultBinding(for: .leftShoulder)
+        bindings[.sustainLatch] = .defaultBinding(for: .rightShoulder)
+        
+        // Hat / Face Buttons: Direct Voice Plucks (Root, 3rd, 5th, 7th)
+        bindings[.voiceDegree1] = .defaultBinding(for: .buttonSouth)
+        bindings[.voiceDegree3] = .defaultBinding(for: .buttonWest)
+        bindings[.voiceDegree5] = .defaultBinding(for: .buttonNorth)
+        bindings[.voiceDegree7] = .defaultBinding(for: .buttonEast)
+        
+        // D-Pad: Octave & Inversion Shifts
+        bindings[.octaveUp] = .defaultBinding(for: .dpadUp)
+        bindings[.octaveDown] = .defaultBinding(for: .dpadDown)
+        bindings[.voicingNext] = .defaultBinding(for: .dpadRight)
+        bindings[.voicingPrevious] = .defaultBinding(for: .dpadLeft)
+        
+        // Stick Clicks: Mode Switches
+        bindings[.soloModeToggle] = .defaultBinding(for: .rightStickClick)
+        bindings[.duoModeToggle] = .defaultBinding(for: .leftStickClick)
+        
+        // System
+        bindings[.panic] = .defaultBinding(for: .buttonOptions)
+        
+        return ControlScheme(
+            id: "xpi_flight_deck",
+            name: "Flight HOTAS Deck",
+            description: "Flight-sim deck mapping: deflect the joystick to steer the harmonic wheel, twist the grip for pitch bends, push the throttle lever forward for pressure swells, pull the trigger to strum, ride the second trigger stage for filter timbre, flip base paddles for technique and sustain, pluck chord tones on the hat buttons, and click stick or throttle for Solo and Duo modes.",
+            isBuiltIn: true,
+            version: 1,
+            bindings: bindings,
+            stickFeel: .balanced,
+            triggerFeel: .linear,
+            haptics: .normal,
+            isMotionEnabled: false,
+            isLeftRightSwapped: false
+        )
+    }
+
+    // MARK: - 10. Rhythm Pad Compact
+
+    /// Compact drum-pad layout for taiko / pop'n / Guitar-Hero style extended gamepads.
+    public static var rhythmPadCompact: ControlScheme {
+        var bindings: [SemanticMusicalAction: PhysicalControlBinding] = [:]
+        
+        // Face Buttons: Direct Voice Plucks (Root, 3rd, 5th, 7th)
+        bindings[.voiceDegree1] = .defaultBinding(for: .buttonSouth)
+        bindings[.voiceDegree3] = .defaultBinding(for: .buttonWest)
+        bindings[.voiceDegree5] = .defaultBinding(for: .buttonNorth)
+        bindings[.voiceDegree7] = .defaultBinding(for: .buttonEast)
+        
+        // Drum Surface (D-Pad): Full Strike, Instant Palm Mute, Inversion Cycling
+        bindings[.primaryExcitation] = PhysicalControlBinding(input: .dpadUp, digitalBehavior: .fixedFull)
+        bindings[.dampingExpression] = PhysicalControlBinding(input: .dpadDown, digitalBehavior: .fixedFull)
+        bindings[.voicingPrevious] = .defaultBinding(for: .dpadLeft)
+        bindings[.voicingNext] = .defaultBinding(for: .dpadRight)
+        
+        // Shoulder Buttons: Technique Modifiers & Ringing Sustain
+        bindings[.techniqueModifier] = .defaultBinding(for: .leftShoulder)
+        bindings[.sustainLatch] = .defaultBinding(for: .rightShoulder)
+        
+        // Triggers: Gradual Pressure Swell Ramp
+        bindings[.pressureExpression] = PhysicalControlBinding(input: .rightTrigger, digitalBehavior: .linearRamp)
+        
+        // Compact Stick: Harmonic Navigation, Clicks Shift Register, Center Toggles Solo
+        bindings[.harmonyNavigate2D] = .defaultBinding(for: .leftStick2D)
+        bindings[.octaveUp] = .defaultBinding(for: .rightStickClick)
+        bindings[.octaveDown] = .defaultBinding(for: .leftStickClick)
+        bindings[.soloModeToggle] = .defaultBinding(for: .buttonCenter)
+        
+        // System
+        bindings[.metronomeToggle] = .defaultBinding(for: .buttonShare)
+        bindings[.panic] = .defaultBinding(for: .buttonOptions)
+        
+        return ControlScheme(
+            id: "xpi_rhythm_pad",
+            name: "Rhythm Pad Compact",
+            description: "Compact drum-pad layout for taiko, pop'n and Guitar-Hero style controllers: the four face buttons ring Root, 3rd, 5th and 7th, tapping D-Pad Up strikes the whole chord while Down palm-mutes instantly and the sides cycle inversions, bumpers arm technique and latch sustain, the right trigger swells pressure gradually, and the small stick steers harmony (clicks shift octaves).",
+            isBuiltIn: true,
+            version: 1,
+            bindings: bindings,
+            stickFeel: .responsive,
+            triggerFeel: .soft,
+            haptics: .subtle,
+            isMotionEnabled: false,
+            isLeftRightSwapped: false
+        )
+    }
+
     /// All factory built-in schemes.
     public static var allBuiltIn: [ControlScheme] {
-        [xpiPerformance, xpiClassic, lowFatigue, leftHandedPerformance, oneHandLeft, oneHandRight]
+        [
+            xpiPerformance, xpiClassic, lowFatigue, leftHandedPerformance, oneHandLeft, oneHandRight,
+            arcadeFightStick, racingWheelCruise, flightDeckHOTAS, rhythmPadCompact,
+        ]
     }
 }

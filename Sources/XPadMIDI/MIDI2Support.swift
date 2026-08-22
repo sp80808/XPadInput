@@ -340,8 +340,8 @@ public enum MIDI2UMPEncoder {
             min(15, channel),
             min(127, note),
             attributeType.rawValue,
-            velocity16,
-            attributeData
+            attributeData,
+            velocity16
         )
     }
 
@@ -373,8 +373,8 @@ public enum MIDI2UMPEncoder {
             min(15, channel),
             min(127, note),
             rawAttributeType,
-            velocity16,
-            attributeData
+            attributeData,
+            velocity16
         )
     }
 
@@ -390,8 +390,8 @@ public enum MIDI2UMPEncoder {
             min(15, channel),
             min(127, note),
             attributeType.rawValue,
-            velocity16,
-            attributeData
+            attributeData,
+            velocity16
         )
     }
 
@@ -407,8 +407,8 @@ public enum MIDI2UMPEncoder {
             min(15, channel),
             min(127, note),
             rawAttributeType,
-            velocity16,
-            attributeData
+            attributeData,
+            velocity16
         )
     }
 
@@ -684,30 +684,16 @@ public enum MIDI2UMPDecoder {
                 switch opcode {
                 case 0x8: // Note Off
                     let note = data1
+                    let vel16 = UInt16((word1 >> 16) & 0xFFFF)
+                    let vel7 = MIDI2UMPEncoder.scale16To7(vel16)
                     let event = PerformanceEvent.noteOff(channel: channel, note: note)
-                    results.append(.channelVoice(event: event, rawBytes: [0x80 | channel, note, 0]))
+                    results.append(.channelVoice(event: event, rawBytes: [0x80 | channel, note, vel7]))
 
                 case 0x9: // Note On
                     let note = data1
                     let attrType = data2
-                    let vel16_low = UInt16(word1 & 0xFFFF)
-                    let vel16_high = UInt16((word1 >> 16) & 0xFFFF)
-                    let vel16: UInt16
-                    let attrData: UInt16
-
-                    if attrType == 0 {
-                        vel16 = vel16_low != 0 ? vel16_low : vel16_high
-                        attrData = 0
-                    } else {
-                        // When attribute is present, distinguish velocity and attribute data
-                        if vel16_low != 0 {
-                            vel16 = vel16_low
-                            attrData = vel16_high
-                        } else {
-                            vel16 = vel16_high
-                            attrData = vel16_low
-                        }
-                    }
+                    let vel16 = UInt16((word1 >> 16) & 0xFFFF)
+                    let attrData = UInt16(word1 & 0xFFFF)
 
                     let vel7 = MIDI2UMPEncoder.scale16To7(vel16)
                     if vel16 == 0 {

@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.0.04] - 2026-08-22
 
 ### Added
+- **MIDI 2 Attack Velocity Normalization (#15)**:
+  - `VelocityStabilizer.process16(normalizedIntensity:)` returns a `(velocity7: UInt8, velocity16: UInt16)` pair, preserving sub-step precision from the strum intensity float rather than upscaling a quantized 7-bit value.
+  - `AppState` threads `velocity16` from the strum sensor through `handleChordGateEvents` → `startChordVoice` → `beginPhysicalVoice` → `MPEManager.noteOn` and `MIDIManager.sendNoteOn`.
+  - Per-string velocity taper in chord strums scales `velocity16` proportionally so the 16-bit resolution is maintained across the strum arpeggio.
+  - MIDI 1 / 7-bit paths are unchanged; `velocity16` is an additive opt-in for MIDI 2 UMP transports.
 - **UI Design System & Motion Engine (`GreenTheme.swift`)**:
   - `XTheme.bouncy`: Spring with playful overshoot for toggles and icon bounces (`response: 0.30, dampingFraction: 0.52`).
   - `XTheme.snappy`: Crisp, responsive spring for tab switches and selections (`response: 0.22, dampingFraction: 0.80`).

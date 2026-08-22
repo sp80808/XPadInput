@@ -29,6 +29,12 @@ public final class MIDICISession: @unchecked Sendable {
         case profileEnabledReport = 0x24
         case profileDisabledReport = 0x25
         case profileSpecificData = 0x2F
+        case getCapabilityInquiry = 0x30
+        case getCapabilityReply = 0x31
+        case getPropertyDataInquiry = 0x34
+        case getPropertyDataReply = 0x35
+        case setPropertyDataInquiry = 0x36
+        case setPropertyDataReply = 0x37
     }
 
     /// Standard 5-byte MIDI-CI Profile ID for MPE (M2-120-UM_v2-0-3).
@@ -96,6 +102,12 @@ public final class MIDICISession: @unchecked Sendable {
 
         case SubID2.profileSpecificData.rawValue:
             return handleProfileSpecificData(bytes: bytes, targetMUID: srcMUID)
+
+        case SubID2.getCapabilityInquiry.rawValue:
+            return buildPropertyCapabilityReply(targetMUID: srcMUID)
+
+        case SubID2.getPropertyDataInquiry.rawValue:
+            return handleGetPropertyDataInquiry(bytes: bytes, targetMUID: srcMUID)
 
         default:
             return nil
@@ -266,8 +278,78 @@ public final class MIDICISession: @unchecked Sendable {
             }
         }
 
-        // Return Profile Specific Data Acknowledgement
         return nil
+    }
+
+    private func buildPropertyCapabilityReply(targetMUID: UInt32) -> [UInt8] {
+        var msg: [UInt8] = [
+            0xF0,
+            Self.universalSysExNonRealTime,
+            Self.universalSysExAllChannels,
+            Self.midiCISubID1,
+            SubID2.getCapabilityReply.rawValue,
+            0x02
+        ]
+        msg.append(contentsOf: writeMUID(myMUID))
+        msg.append(contentsOf: writeMUID(targetMUID))
+        // Max simultaneous Property Exchange requests (e.g. 4)
+        msg.append(0x04)
+        // Major / Minor PE Version supported (Version 1.0 = 0x01)
+        msg.append(0x01)
+        msg.append(0xF7)
+        return msg
+    }
+
+    private func handleGetPropertyDataInquiry(bytes: [UInt8], targetMUID: UInt32) -> [UInt8]? {
+        guard bytes.count >= 16 else { return nil }
+        let requestId = bytes[14]
+        
+        // Extract JSON header / resource name if present
+        let headerLength = Int(bytes[15]) | (Int(bytes[16]) << 7)
+        var resourceName = "ResourceList"
+        if bytes.count >= 17 + headerLength {
+            let headerBytes = Array(bytes[17..<(17 + headerLength)])
+            if let headerStr = String(bytes: headerBytes, encoding: .utf8),
+               headerStr.contains("DeviceInfo") {
+                resourceName = "DeviceInfo"
+            } else if let headerStr = String(bytes: headerBytes, encoding: .utf8),
+                      headerStr.contains("MPEConfiguration") {
+                resourceName = "MPEConfiguration"
+            }
+        }
+
+        let jsonPayload: String
+        switch resourceName {
+        case "DeviceInfo":
+            jsonPayload = "{\"manufacturer\":\"XPadInput\",\"model\":\"XPI Workstation\",\"version\":\"0.0.02\",\"midiVersion\":\"2.0\",\"mpeSupported\":true}"
+        case "MPEConfiguration":
+            jsonPayload = "{\"masterChannel\":0,\"memberChannels\":\"1-15\",\"pitchBendRange\":48,\"perNotePitchBend\":true,\"perNotePressure\":true,\"perNoteTimbre\":true}"
+        default:
+            jsonPayload = "[{\"resource\":\"DeviceInfo\",\"canGet\":true},{\"resource\":\"MPEConfiguration\",\"canGet\":true},{\"resource\":\"ResourceList\",\"canGet\":true}]"
+        }
+
+        guard let payloadData = jsonPayload.data(using: .utf8) else { return nil }
+        let payloadBytes = [UInt8](payloadData)
+
+        var reply: [UInt8] = [
+            0xF0,
+            Self.universalSysExNonRealTime,
+            Self.universalSysExAllChannels,
+            Self.midiCISubID1,
+            SubID2.getPropertyDataReply.rawValue,
+            0x02
+        ]
+        reply.append(contentsOf: writeMUID(myMUID))
+        reply.append(contentsOf: writeMUID(targetMUID))
+        reply.append(requestId)
+        // Status code: 200 OK (0x00, 0xC8 = 200 in 7-bit)
+        reply.append(contentsOf: [0x00, 0x01, 0x48])
+        // Data length in 7-bit little endian
+        reply.append(UInt8(payloadBytes.count & 0x7F))
+        reply.append(UInt8((payloadBytes.count >> 7) & 0x7F))
+        reply.append(contentsOf: payloadBytes)
+        reply.append(0xF7)
+        return reply
     }
 
     // MARK: - MUID Serialization Helpers (7-bit little-endian)

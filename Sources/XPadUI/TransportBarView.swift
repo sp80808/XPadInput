@@ -57,6 +57,7 @@ struct TransportBar: View {
                 HStack(spacing: 8) {
                     KeySelectorView()
                     ScaleSelectorView()
+                    TemperamentSelectorView()
                 }
                 
                 divider()

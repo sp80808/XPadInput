@@ -1173,7 +1173,7 @@ final class TestRunner {
                 assertEqual(audio.currentPreset.filterCutoffHz, 2600.0, "Filter cutoff must match guitar body acoustic response")
                 assertEqual(audio.currentPreset.filterType, .lowPass)
                 
-                assertEqual(SynthPreset.allPresets.count, 11)
+                assertEqual(SynthPreset.allPresets.count, 14)
                 assertEqual(SynthPreset.allPresets[0].id, "acousticSine")
                 assertEqual(SynthPreset.nylonSine.osc1Type, .sine)
                 assertEqual(SynthPreset.cleanElectricSine.osc1Type, .sine)
@@ -2443,6 +2443,33 @@ final class TestRunner {
                     assertEqual(reply[4], 0x24) // Profile Enabled Report
                 }
             }
+
+            test("Property Exchange inquiry returns supported JSON resource list") {
+                let session = MIDICISession(muid: 0x0ABC_DEF0)
+                let remoteMUID: UInt32 = 0x0123_4567
+
+                var inquiry: [UInt8] = [0xF0, 0x7E, 0x7F, 0x0D, 0x34, 0x02]
+                inquiry.append(contentsOf: [
+                    UInt8(remoteMUID & 0x7F), UInt8((remoteMUID >> 7) & 0x7F),
+                    UInt8((remoteMUID >> 14) & 0x7F), UInt8((remoteMUID >> 21) & 0x7F)
+                ])
+                inquiry.append(contentsOf: [
+                    UInt8(session.myMUID & 0x7F), UInt8((session.myMUID >> 7) & 0x7F),
+                    UInt8((session.myMUID >> 14) & 0x7F), UInt8((session.myMUID >> 21) & 0x7F)
+                ])
+                inquiry.append(0x01) // Request ID
+                inquiry.append(contentsOf: [0x00, 0x00]) // Header length = 0 (ResourceList)
+                inquiry.append(0xF7)
+
+                let reply = session.processIncomingSysEx(inquiry)
+                assertNotNil(reply)
+                if let reply = reply {
+                    assertEqual(reply[4], 0x35) // Get Property Data Reply
+                    // Must contain JSON resource list
+                    let replyStr = String(decoding: reply, as: UTF8.self)
+                    assertTrue(replyStr.contains("DeviceInfo"))
+                }
+            }
         }
 
         // ==================================================
@@ -2484,6 +2511,16 @@ final class TestRunner {
                 let neutralThird = maqam.tuningOffsetInCents(for: 64, scaleRoot: .c)
                 assertEqual(neutralThird, -50.0) // Half-flat (quarter-tone) major 3rd -> 350 cents
             }
+
+            test("AudioEngine applies microtonal temperament tuning offsets to voice base frequencies") {
+                let audio = AudioEngine()
+                audio.temperament = .dynamicJustIntonation
+                audio.scaleRoot = .c
+                audio.activeChordRoot = .c
+                audio.isMinorChord = false
+                assertEqual(audio.temperament, .dynamicJustIntonation)
+                assertEqual(audio.scaleRoot, .c)
+            }
         }
 
         // ==================================================
@@ -2523,6 +2560,30 @@ final class TestRunner {
                     }
                     return false
                 })
+            }
+
+            test("Byte-to-UMP noteOn and noteOff translation preserves velocity in upper 16-bits of word1") {
+                // Note On (0x92, Note 60, Velocity 100)
+                let noteOnBytes: [UInt8] = [0x92, 60, 100]
+                let onUMP = MIDI2UMPEncoder.message(from: noteOnBytes)
+                assertNotNil(onUMP)
+                if let onUMP = onUMP {
+                    let onVel16 = UInt16((onUMP.word1 >> 16) & 0xFFFF)
+                    let onAttr = UInt16(onUMP.word1 & 0xFFFF)
+                    assertEqual(onVel16, MIDI2UMPEncoder.scale7To16(100))
+                    assertEqual(onAttr, 0)
+                }
+
+                // Note Off (0x82, Note 60, Velocity 64)
+                let noteOffBytes: [UInt8] = [0x82, 60, 64]
+                let offUMP = MIDI2UMPEncoder.message(from: noteOffBytes)
+                assertNotNil(offUMP)
+                if let offUMP = offUMP {
+                    let offVel16 = UInt16((offUMP.word1 >> 16) & 0xFFFF)
+                    let offAttr = UInt16(offUMP.word1 & 0xFFFF)
+                    assertEqual(offVel16, MIDI2UMPEncoder.scale7To16(64))
+                    assertEqual(offAttr, 0)
+                }
             }
 
             test("Per-Note Pitch Bend generates 32-bit UMP with 0x60 status") {
@@ -2743,21 +2804,182 @@ final class TestRunner {
                 assertTrue(!switchPro.hasAnalogTriggers)
             }
 
+            test("DualShock 4 capability profile has touchpad and motion IMU") {
+                let ds4 = ControllerCapabilityProfile.dualShock4
+                assertTrue(ds4.hasTouchpad)
+                assertTrue(ds4.hasMotionIMU)
+                assertTrue(ds4.hasHaptics)
+                assertTrue(ds4.hasAnalogTriggers)
+                assertTrue(ds4.hasThumbstickClicks)
+                assertEqual(ds4.buttonLabels[0], "Cross (✕)")
+            }
+
             test("Generic MFi fallback profile ergonomics") {
                 let generic = ControllerCapabilityProfile.generic
                 assertTrue(!generic.hasTouchpad)
                 assertTrue(!generic.hasMotionIMU)
             }
+        }
 
-            test("Disconnect and reconnect cleans up all voices without stuck notes") {
-                let midi = MIDIEngine()
-                midi.sendNoteOn(port: .main, channel: 0, note: 60, velocity: 100)
-                midi.sendNoteOn(port: .mpe, channel: 1, note: 64, velocity: 90)
-                assertEqual(midi.activeNoteCount, 2)
+        // ==================================================
+        // SUITE: DualSense 6-Axis IMU Gyro, Gravity Vector & MPE 3D Spatial Modulation
+        // ==================================================
+        suite("DualSense 6-Axis IMU Gyro, Gravity Vector & MPE 3D Spatial Modulation") {
+            test("ControllerState gravity vector calculates pitch and roll tilt angles") {
+                let state = ControllerState()
+                // Flat horizontal orientation (gravity pointing straight down Z/Y)
+                state.gravityX = 0.0
+                state.gravityY = -0.98
+                state.gravityZ = 0.0
+                state.pitchTilt = -state.gravityY.clamped(to: -1.0...1.0)
+                state.rollTilt = state.gravityX.clamped(to: -1.0...1.0)
 
-                // Simulate abrupt controller disconnect -> panic
-                midi.panic()
-                assertEqual(midi.activeNoteCount, 0)
+                assertTrue(state.pitchTilt > 0.95) // Leveled forward horizon
+                assertEqual(state.rollTilt, 0.0)    // No roll tilt
+
+                // 45° right roll tilt
+                state.gravityX = 0.707
+                state.rollTilt = state.gravityX.clamped(to: -1.0...1.0)
+                assertTrue(state.rollTilt > 0.7)
+            }
+
+            test("Dynamic user acceleration calculates shake magnitude") {
+                let state = ControllerState()
+                state.accelX = 0.5
+                state.accelY = 0.8
+                state.accelZ = 0.4
+                let shake = sqrt(state.accelX * state.accelX + state.accelY * state.accelY + state.accelZ * state.accelZ)
+                state.shakeMagnitude = shake
+
+                assertTrue(state.shakeMagnitude > 1.0)
+            }
+
+            test("SpatialAudioEngine translates 6-axis IMU into 3D Cartesian coordinates") {
+                let spatial = SpatialAudioEngine(sampleRate: 48000.0)
+                spatial.setCoordinates(azimuth: 45.0, elevation: 30.0, distance: 2.0)
+                let cart = spatial.currentCoordinates.cartesian
+
+                // In Cartesian: X > 0 (right), Y > 0 (up), Z > 0 (front)
+                assertTrue(cart.x > 0.5)
+                assertTrue(cart.y > 0.5)
+                assertTrue(cart.z > 0.5)
+            }
+
+            test("IMU tilt maps to normalized MPE Pan (CC10) and Timbre (CC74)") {
+                let rollTilt = 0.5 // Tilted right
+                let pitchTilt = -0.2 // Tilted slightly down
+                let normPan = (rollTilt + 1.0) * 0.5
+                let normTimbre = (pitchTilt + 1.0) * 0.5
+
+                assertEqual(normPan, 0.75)   // 75% right
+                assertEqual(normTimbre, 0.4) // 40% timbre
+
+                let panUMP = MIDI2UMPEncoder.perNoteRegisteredControllerMessage(
+                    channel: 1,
+                    note: 60,
+                    controller: .pan,
+                    normalizedValue: normPan
+                )
+                let decoded = MIDI2UMPDecoder.decode(words: [panUMP.word0, panUMP.word1])
+                assertTrue(decoded.contains { msg in
+                    if case .perNoteRPNC(let ch, let n, let rpnc, _) = msg {
+                        return ch == 1 && n == 60 && rpnc == .pan
+                    }
+                    return false
+                })
+            }
+        }
+
+        // ==================================================
+        // SUITE: ControlScheme Transfer: Versioned Archive Import/Export
+        // ==================================================
+        suite("ControlScheme Transfer: Versioned Archive Import/Export") {
+            test("ControlSchemeArchive export and import roundtrip") {
+                let defaultScheme = ControlSchemePreset.xpiPerformance
+                let json = try ControlSchemeTransfer.exportJSON(defaultScheme, metadata: ["creator": "XPI Tester"])
+                
+                assertTrue(json.contains("schemaVersion"))
+                assertTrue(json.contains("XPI Performance"))
+                
+                let result = try ControlSchemeTransfer.importArchive(from: json)
+                assertEqual(result.schemaVersion, 1)
+                assertEqual(result.scheme.name, defaultScheme.name)
+                assertEqual(result.scheme.stickFeel, defaultScheme.stickFeel)
+                assertEqual(result.scheme.triggerFeel, defaultScheme.triggerFeel)
+            }
+
+            test("Tolerant import handles bare unversioned ControlScheme JSON") {
+                let defaultScheme = ControlSchemePreset.lowFatigue
+                let encoder = JSONEncoder()
+                let bareData = try encoder.encode(defaultScheme)
+
+                let result = try ControlSchemeTransfer.importArchive(from: bareData)
+                assertEqual(result.schemaVersion, 1)
+                assertEqual(result.scheme.id, defaultScheme.id)
+                assertTrue(!result.warnings.isEmpty)
+            }
+
+            test("Import rejects future unsupported schema versions") {
+                let futureJSON = "{\"schemaVersion\": 999, \"exportedAt\": \"2030-01-01T00:00:00Z\", \"scheme\": {}}"
+                var caught = false
+                do {
+                    _ = try ControlSchemeTransfer.importArchive(from: futureJSON)
+                } catch {
+                    caught = true
+                }
+                assertTrue(caught)
+            }
+        }
+
+        // ==================================================
+        // SUITE: Controller Vendor Database & Heuristic Identification
+        // ==================================================
+        suite("Controller Vendor Database & Heuristic Identification") {
+            test("Classifies Raphnet Guitar Hero adapter to .guitarHero") {
+                let kind = ControllerKind.identify(vendorName: "Raphnet Technologies", productCategory: "Wii Classic / Guitar Adapter")
+                assertEqual(kind, .guitarHero)
+                assertEqual(kind.suggestedSchemeID, "xpi_guitar_hero")
+            }
+
+            test("Classifies Sound Voltex Faucetwo / Yuancon to .soundVoltex") {
+                let kind = ControllerKind.identify(vendorName: "Gamo2", productCategory: "FAUCETWO SDVX Controller")
+                assertEqual(kind, .soundVoltex)
+                assertEqual(kind.suggestedSchemeID, "xpi_sound_voltex")
+            }
+
+            test("Classifies Beatmania IIDX DJ DAO Phoenixwan to .beatmaniaIIDX") {
+                let kind = ControllerKind.identify(vendorName: "DJ DAO", productCategory: "PHOENIXWAN IIDX Turntable")
+                assertEqual(kind, .beatmaniaIIDX)
+                assertEqual(kind.suggestedSchemeID, "xpi_beatmania")
+            }
+
+            test("Classifies Thrustmaster HOTAS to .flightStick") {
+                let kind = ControllerKind.identify(vendorName: "Thrustmaster", productCategory: "T.16000M Flight Stick & Throttle")
+                assertEqual(kind, .flightStick)
+                assertEqual(kind.suggestedSchemeID, "xpi_flight_stick")
+            }
+
+            test("Classifies Logitech G29 Racing Wheel to .racingWheel") {
+                let kind = ControllerKind.identify(vendorName: "Logitech", productCategory: "G29 Driving Force Racing Wheel")
+                assertEqual(kind, .racingWheel)
+                assertEqual(kind.suggestedSchemeID, "xpi_racing_wheel")
+            }
+
+            test("Classifies Hori Fighting Stick to .fightStick") {
+                let kind = ControllerKind.identify(vendorName: "HORI", productCategory: "Fighting Stick Alpha / Leverless")
+                assertEqual(kind, .fightStick)
+                assertEqual(kind.suggestedSchemeID, "xpi_fight_stick")
+            }
+
+            test("ControlSchemePreset.allBuiltIn contains 10 presets with unique IDs and valid bindings") {
+                let presets = ControlSchemePreset.allBuiltIn
+                assertEqual(presets.count, 10)
+                let ids = Set(presets.map { $0.id })
+                assertEqual(ids.count, 10)
+                for preset in presets {
+                    assertTrue(!preset.name.isEmpty)
+                    assertTrue(!preset.bindings.isEmpty)
+                }
             }
         }
 

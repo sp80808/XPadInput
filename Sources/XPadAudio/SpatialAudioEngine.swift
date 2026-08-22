@@ -86,6 +86,7 @@ public final class SpatialAudioEngine: @unchecked Sendable {
         targetAzimuth = azimuth.clamped(to: -180.0...180.0)
         targetElevation = elevation.clamped(to: -90.0...90.0)
         targetDistance = max(0.2, min(10.0, distance))
+        currentCoordinates = SpatialCoordinates(azimuthDegrees: targetAzimuth, elevationDegrees: targetElevation, distanceMeters: targetDistance)
         lock.unlock()
     }
 

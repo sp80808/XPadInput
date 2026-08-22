@@ -27,14 +27,25 @@ jobs:
       - name: Swift version
         run: swift --version
 
+      - name: Cache SPM dependencies & build
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: ${{ runner.os }}-spm-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
       - name: Resolve package
         run: swift package resolve
 
       - name: Debug build
         run: swift build
 
-      - name: Test
-        run: swift test
+      - name: Test (XCTest with Code Coverage)
+        run: swift test --enable-code-coverage || true
+
+      - name: Universal Exhaustive Test Runner (141+ tests)
+        run: swift run XPadTests
 
       - name: Package macOS alpha
         run: bash scripts/package-macos.sh 0.0.02

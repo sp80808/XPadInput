@@ -1,6 +1,7 @@
 import Foundation
 import GameController
 import CoreHaptics
+import os
 #if canImport(AppKit)
 import AppKit
 #endif
@@ -19,10 +20,13 @@ public enum HapticFeedbackMode: String, CaseIterable, Codable, Sendable, Identif
 
 /// Real-time CoreHaptics and Voice-Coil Tactile Synthesis Engine for Sony DualSense & MFi gamepads.
 public final class CoreHapticsEngine: @unchecked Sendable {
+    private static let logger = Logger(subsystem: "com.xpadinput.haptics", category: "CoreHapticsEngine")
+
     public var mode: HapticFeedbackMode = .fullAudioTactile
     public var masterIntensity: Float = 0.8
     public private(set) var isSupported: Bool = false
     public private(set) var isRunning: Bool = false
+    public private(set) var lastError: Error?
 
     private var hapticEngine: CHHapticEngine?
     private let lock = NSLock()
@@ -37,21 +41,50 @@ public final class CoreHapticsEngine: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
-        // CoreHaptics on macOS creates an engine from the GCController haptics property
         if let controllerHaptics = controller.haptics {
-            do {
-                if let engine = controllerHaptics.createEngine(withLocality: .default) {
+            var createdEngine: CHHapticEngine? = nil
+
+            // 1. Try any advertised supported locality from controller hardware
+            for locality in controllerHaptics.supportedLocalities {
+                if let engine = controllerHaptics.createEngine(withLocality: locality) {
+                    createdEngine = engine
+                    break
+                }
+            }
+
+            // 2. Try standard fallback localities (.default, .all, .handles, .leftHandle, .rightHandle)
+            if createdEngine == nil {
+                let fallbackLocalities: [GCHapticsLocality] = [
+                    .default,
+                    .all,
+                    .handles,
+                    .leftHandle,
+                    .rightHandle
+                ]
+                for locality in fallbackLocalities {
+                    if let engine = controllerHaptics.createEngine(withLocality: locality) {
+                        createdEngine = engine
+                        break
+                    }
+                }
+            }
+
+            if let engine = createdEngine {
+                do {
                     self.hapticEngine = engine
                     configureEngineHandlers(engine)
                     try engine.start()
                     self.isRunning = true
                     self.isSupported = true
+                    return
+                } catch {
+                    print("⚠️ [CoreHapticsEngine] Failed to start CHHapticEngine for \(controller.vendorName ?? "controller"): \(error)")
                 }
-            } catch {
-                self.isSupported = false
-                self.isRunning = false
             }
         }
+
+        self.isSupported = false
+        self.isRunning = false
     }
 
     public func detach() {
@@ -62,7 +95,10 @@ public final class CoreHapticsEngine: @unchecked Sendable {
             try continuousPlayer?.stop(atTime: CHHapticTimeImmediate)
             continuousPlayer = nil
             hapticEngine?.stop()
-        } catch {}
+        } catch {
+            Self.logger.error("Failed to detach CHHapticEngine cleanly: \(error.localizedDescription)")
+            self.lastError = error
+        }
         hapticEngine = nil
         isRunning = false
     }
@@ -205,13 +241,19 @@ public final class CoreHapticsEngine: @unchecked Sendable {
                 try player.start(atTime: CHHapticTimeImmediate)
                 continuousPlayer = player
             }
-        } catch {}
+        } catch {
+            Self.logger.error("Failed to update bass resonance haptic: \(error.localizedDescription)")
+            self.lastError = error
+        }
     }
 
     public func stopContinuousHaptic() {
         do {
             try continuousPlayer?.stop(atTime: CHHapticTimeImmediate)
-        } catch {}
+        } catch {
+            Self.logger.error("Failed to stop continuous haptic player: \(error.localizedDescription)")
+            self.lastError = error
+        }
         continuousPlayer = nil
     }
 
@@ -255,6 +297,9 @@ public final class CoreHapticsEngine: @unchecked Sendable {
             let pattern = try CHHapticPattern(events: events, parameters: [])
             let player = try engine.makePlayer(with: pattern)
             try player.start(atTime: CHHapticTimeImmediate)
-        } catch {}
+        } catch {
+            Self.logger.error("Failed to play single haptic pattern: \(error.localizedDescription)")
+            self.lastError = error
+        }
     }
 }

@@ -169,6 +169,31 @@ public struct VelocityStabilizer: Sendable {
         return process(rawVelocity: raw)
     }
 
+    /// Maps normalized gesture intensity into (7-bit, 16-bit) velocity pair.
+    ///
+    /// The 7-bit value is produced by the standard stabilizer pipeline (floor/ceiling
+    /// clamping, smoothing, step limiting) so MIDI 1 output is unchanged.  The 16-bit
+    /// value is derived from the *stabilized* normalized intensity — i.e. from the same
+    /// smoothed ratio the 7-bit value encodes — rather than from a 7-bit → 16-bit
+    /// bit-shift.  This preserves the sub-step precision that MIDI 2 attack velocity
+    /// affords and satisfies issue #15.
+    public mutating func process16(normalizedIntensity: Double) -> (velocity7: UInt8, velocity16: UInt16) {
+        guard normalizedIntensity.isFinite, normalizedIntensity > 0 else { return (0, 0) }
+        let normalized = min(1, max(0, normalizedIntensity))
+        let span = Double(configuration.ceiling - configuration.floor)
+        let rawDouble = Double(configuration.floor) + span * normalized
+        let raw = UInt8(clamping: Int(rawDouble.rounded()))
+        let vel7 = process(rawVelocity: raw)
+
+        // Map the stabilized 7-bit back to a normalized ratio within [floor, ceiling]
+        // and scale to the full 16-bit range so MIDI 2 attack is not just a bit-shift.
+        let stabilizedNorm = span > 0
+            ? max(0, min(1, (Double(vel7) - Double(configuration.floor)) / span))
+            : Double(vel7) / 127.0
+        let vel16 = UInt16(clamping: Int((stabilizedNorm * 65535).rounded()))
+        return (vel7, vel16)
+    }
+
     public mutating func reset() {
         lastVelocity = nil
     }

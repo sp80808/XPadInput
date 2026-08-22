@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "XPadInput",
+    defaultLocalization: "en",
     platforms: [
         .macOS(.v14)
     ],
@@ -90,7 +91,10 @@ let package = Package(
                 "XPadSequencer",
                 "XPadPractice"
             ],
-            path: "Sources/XPadUI"
+            path: "Sources/XPadUI",
+            resources: [
+                .process("Resources")
+            ]
         ),
         .target(
             name: "XPadPractice",

@@ -303,6 +303,25 @@ public final class ControllerManager: @unchecked Sendable {
                 state.accelX = motion.userAcceleration.x
                 state.accelY = motion.userAcceleration.y
                 state.accelZ = motion.userAcceleration.z
+
+                let gx = motion.gravity.x
+                let gy = motion.gravity.y
+                let gz = motion.gravity.z
+                state.gravityX = gx
+                state.gravityY = gy
+                state.gravityZ = gz
+
+                // Pitch tilt forward/backward (-1.0 ... +1.0)
+                state.pitchTilt = -gy.clamped(to: -1.0...1.0)
+                // Roll tilt left/right (-1.0 ... +1.0)
+                state.rollTilt = gx.clamped(to: -1.0...1.0)
+
+                // Dynamic shake energy from 3-axis user acceleration
+                let ax = motion.userAcceleration.x
+                let ay = motion.userAcceleration.y
+                let az = motion.userAcceleration.z
+                state.shakeMagnitude = sqrt(ax * ax + ay * ay + az * az)
+
                 state.hasMotion = true
                 self.currentState = Self.gamepadState(from: state)
                 self.refreshPerformanceSurface()
@@ -491,8 +510,28 @@ public final class ControllerManager: @unchecked Sendable {
     }
 
     private func prepareHaptics(for controller: GCController) {
-        guard capabilityProfile?.hasHaptics == true,
-              let engine = controller.haptics?.createEngine(withLocality: .default) else {
+        guard let controllerHaptics = controller.haptics else {
+            hapticEngine = nil
+            return
+        }
+
+        var candidateEngine: CHHapticEngine? = nil
+        for locality in controllerHaptics.supportedLocalities {
+            if let engine = controllerHaptics.createEngine(withLocality: locality) {
+                candidateEngine = engine
+                break
+            }
+        }
+        if candidateEngine == nil {
+            for locality in [GCHapticsLocality.default, .all, .handles, .leftHandle, .rightHandle] {
+                if let engine = controllerHaptics.createEngine(withLocality: locality) {
+                    candidateEngine = engine
+                    break
+                }
+            }
+        }
+
+        guard let engine = candidateEngine else {
             hapticEngine = nil
             return
         }

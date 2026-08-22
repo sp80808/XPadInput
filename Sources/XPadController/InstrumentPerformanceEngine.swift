@@ -73,19 +73,22 @@ public struct FaceButtonNoteEvent: Sendable, Equatable {
     public var isOn: Bool
     public var technique: MusicalTechnique
     public var velocity: UInt8
+    public var velocity16: UInt16?
 
     public init(
         role: ChordToneRole,
         note: Note,
         isOn: Bool,
         technique: MusicalTechnique,
-        velocity: UInt8
+        velocity: UInt8,
+        velocity16: UInt16? = nil
     ) {
         self.role = role
         self.note = note
         self.isOn = isOn
         self.technique = technique
         self.velocity = velocity
+        self.velocity16 = velocity16 ?? (UInt16(velocity) << 8 | UInt16(velocity) << 1)
     }
 }
 

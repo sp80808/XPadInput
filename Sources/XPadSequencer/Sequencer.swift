@@ -147,7 +147,7 @@ public final class Sequencer: ObservableObject {
 
         timer?.setEventHandler { [weak self] in
             guard let self = self else { return }
-            Task { @MainActor in
+            DispatchQueue.main.async {
                 self.tick()
             }
         }

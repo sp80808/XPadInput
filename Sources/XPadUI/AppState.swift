@@ -53,6 +53,7 @@ public final class AppState: @unchecked Sendable {
 
     public var currentKey: PitchClass = .d
     public var currentScale: Scale = .naturalMinor
+    public var currentTemperament: MicrotonalTemperament = .equalTemperament
     public var bpm: Double = 120
     public var isPlaying: Bool = false
     public var isRecording: Bool = false
@@ -64,13 +65,31 @@ public final class AppState: @unchecked Sendable {
     public var currentChord: Chord?
     public var previousVoicing: ChordVoicing?
 
+    /// Last 8 chords played, newest first. Used by ChordHistoryStrip in PlayView.
+    public private(set) var chordHistory: [Chord] = []
+    private static let chordHistoryCapacity = 8
+
     public var activeNotes: [Note] = []
     public var lastStrumDirection: StrumDirection = .none
     public var lastVelocity: UInt8 = 0
+    /// 16-bit companion to `lastVelocity` — preserved from the strum intensity
+    /// float so MIDI 2 NoteOn carries native resolution rather than a 7→16 upscale.
+    public var lastVelocity16: UInt16 = 0
     public var lastStrumTime: Date?
 
     public var selectedWorkspace: Workspace = .play
     public var showDiagnostics: Bool = false
+
+    /// Onboarding — set false once the user completes or dismisses the tutorial.
+    public var showOnboarding: Bool = !UserDefaults.standard.bool(forKey: "xpi_onboarding_complete")
+
+    public func completeOnboarding() {
+        UserDefaults.standard.set(true, forKey: "xpi_onboarding_complete")
+        showOnboarding = false
+    }
+
+    /// Help panel visibility
+    public var showHelpPanel: Bool = false
 
     /// Practice is opt-in: it is never the launch workspace and does not occupy
     /// persistent chrome until the user explicitly requests it.
@@ -125,7 +144,7 @@ public final class AppState: @unchecked Sendable {
     /// key combination is discovered. Nothing in the visible UI references it.
     public private(set) var isArcadeMenuUnlocked: Bool = false
     private var arcadeEngine = ArcadeFretEngine()
-    private nonisolated(unsafe) var arcadeStatusItemStorage: ArcadeStatusItemCoordinator?
+    private var arcadeStatusItemStorage: ArcadeStatusItemCoordinator?
     private var arcadeUnlockMonitor: Any?
 
     /// Lazily materialised so the coordinator can capture `self` after init.
@@ -155,7 +174,7 @@ public final class AppState: @unchecked Sendable {
     private var velocityStabilizer = VelocityStabilizer()
     private var duoControlEngine = DuoControlEngine()
     private var performanceRegisterMemory = PerformanceLaneRegisterMemory()
-    private var hostDetectionObserver: NSObjectProtocol?
+    @ObservationIgnored nonisolated(unsafe) private var hostDetectionObserver: (any NSObjectProtocol)?
 
     public init() {
         let midiEngine = MIDIEngine()
@@ -219,6 +238,12 @@ public final class AppState: @unchecked Sendable {
                 guard detected.kind != self.activeHostKind else { return }
                 self.applyHostRouting()
             }
+        }
+    }
+
+    deinit {
+        if let hostDetectionObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(hostDetectionObserver)
         }
     }
 
@@ -313,12 +338,30 @@ public final class AppState: @unchecked Sendable {
     public func setKey(_ key: PitchClass) {
         currentKey = key
         currentScale = Scale(root: key, type: currentScale.type)
+        audioEngine.scaleRoot = key
         updateDiatonicChords()
     }
 
     public func setScale(_ scale: Scale) {
         currentScale = Scale(root: currentKey, type: scale.type)
         updateDiatonicChords()
+    }
+
+    /// Transpose the current key up or down by `semitones` (typically ±1).
+    public func transpose(by semitones: Int) {
+        guard semitones != 0 else { return }
+        let all = PitchClass.allCases
+        guard let idx = all.firstIndex(of: currentKey) else { return }
+        let newIdx = ((idx + semitones) % all.count + all.count) % all.count
+        setKey(all[newIdx])
+        panic()
+    }
+
+    public func setTemperament(_ temperament: MicrotonalTemperament) {
+        currentTemperament = temperament
+        audioEngine.temperament = temperament
+        audioEngine.scaleRoot = currentKey
+        mpeManager.temperament = temperament
     }
 
     public func setInstrument(_ profile: InstrumentProfile) {
@@ -678,12 +721,35 @@ public final class AppState: @unchecked Sendable {
             controllerManager.playTechniqueHaptic(haptic)
         }
 
-        if state.hasMotion {
-            audioEngine.updateSpatialFromIMU(
-                gyroPitch: Float(state.gyroX),
-                gyroRoll: Float(state.gyroY),
-                gyroYaw: Float(state.gyroZ)
-            )
+        if state.hasMotion && controllerManager.activeScheme.isMotionEnabled {
+            // Update DSP binaural coordinates using stable gravity vector and gyro
+            let az = Float(state.rollTilt * 180.0 + state.gyroZ * 30.0)
+            let el = Float(state.pitchTilt * 60.0 + state.gyroX * 20.0)
+            let dist = Float(max(0.3, 1.0 - min(0.6, state.shakeMagnitude * 0.2)))
+            audioEngine.spatialEngine.setCoordinates(azimuth: az, elevation: el, distance: dist)
+
+            // Live polyphonic MPE modulation from DualSense tilt & shake
+            let normPan = (state.rollTilt.clamped(to: -1.0...1.0) + 1.0) * 0.5 // 0.0 (Left) ... 1.0 (Right)
+            let normTimbre = (state.pitchTilt.clamped(to: -1.0...1.0) + 1.0) * 0.5 // 0.0 (Down) ... 1.0 (Up)
+
+            for note in activeNotes {
+                audioEngine.setPan(for: note.midiNote, pan: normPan)
+                if abs(state.pitchTilt) > 0.05 {
+                    audioEngine.setTimbre(for: note.midiNote, timbre: normTimbre)
+                }
+
+                if midiEngine.virtualMIDIEnabled {
+                    let ch = mpeManager.activeVoice(for: note.midiNote)?.channel ?? 0
+                    // Continuous CC10 Pan & RPNC 10 (Pan)
+                    midiEngine.sendCC(port: .mpe, channel: ch, controller: 10, value: UInt8(normPan * 127.0))
+                    midiEngine.sendPerNoteRegisteredController(port: .mpe, channel: ch, note: note.midiNote, controller: .pan, normalizedValue: normPan)
+
+                    if state.shakeMagnitude > 0.35 {
+                        let shakeMod = min(1.0, (state.shakeMagnitude - 0.35) * 1.5)
+                        midiEngine.sendCC(port: .mpe, channel: ch, controller: 1, value: UInt8(shakeMod * 127.0))
+                    }
+                }
+            }
         }
 
         lastInputTime = now
@@ -835,6 +901,7 @@ public final class AppState: @unchecked Sendable {
             var new = diatonicChords[index]
             new.inversion = voicingInversion
             currentChord = new
+            recordChordHistory(new)
             retargetHeldChordTones()
             controllerManager.playTechniqueHaptic(.chordChange)
             multiJamManager.updateSharedHarmony(key: currentKey, scale: currentScale, chord: new)
@@ -842,6 +909,16 @@ public final class AppState: @unchecked Sendable {
             if selectedWorkspace == .practice && practiceEngine.isPracticeActive {
                 practiceEngine.evaluateChordInput(new)
             }
+        }
+    }
+
+    private func recordChordHistory(_ chord: Chord) {
+        // Avoid duplicate consecutive entries
+        if let last = chordHistory.first,
+           last.root == chord.root && last.quality == chord.quality { return }
+        chordHistory.insert(chord, at: 0)
+        if chordHistory.count > Self.chordHistoryCapacity {
+            chordHistory.removeLast()
         }
     }
 
@@ -889,14 +966,15 @@ public final class AppState: @unchecked Sendable {
         heldFaceNotes[event.role] = event.note
 
         if !wasSounding {
-            beginPhysicalVoice(event.note, velocity: event.velocity, technique: event.technique)
+            beginPhysicalVoice(event.note, velocity: event.velocity, velocity16: event.velocity16, technique: event.technique)
         }
         if !destinationProfile.supportsMPE, !alreadyOwnedByFace {
             midiEngine.sendNoteOn(
                 port: melodicMIDIPort,
                 channel: midiChannel(for: melodicMIDIPort),
                 note: event.note.midiNote,
-                velocity: event.velocity
+                velocity: event.velocity,
+                velocity16: event.velocity16
             )
         }
         addActiveNote(event.note)
@@ -1064,8 +1142,9 @@ public final class AppState: @unchecked Sendable {
                 let axisIntensity = min(1, Double(abs(state.rightStick.yVelocity)) / 8)
                 let motionIntensity = min(1, Double(state.rightStick.movementVelocity) / 10)
                 let intensity = max(travelIntensity, axisIntensity, motionIntensity)
-                let velocity = velocityStabilizer.process(normalizedIntensity: intensity)
+                let (velocity, velocity16) = velocityStabilizer.process16(normalizedIntensity: intensity)
                 lastVelocity = velocity
+                lastVelocity16 = velocity16
                 lastStrumTime = Date()
 
                 var chord = currentChord ?? diatonicChords.first ?? Chord(root: currentKey, quality: .major)
@@ -1076,7 +1155,7 @@ public final class AppState: @unchecked Sendable {
                     isGestureActive: true,
                     timestamp: timestamp
                 )
-                handleChordGateEvents(events, velocity: velocity, direction: direction)
+                handleChordGateEvents(events, velocity: velocity, velocity16: velocity16, direction: direction)
             }
         } else if travel < releaseThreshold {
             strumState.hasReset = true
@@ -1149,12 +1228,13 @@ public final class AppState: @unchecked Sendable {
     private func handleChordGateEvents(
         _ events: [ChordGateEvent],
         velocity: UInt8,
+        velocity16: UInt16? = nil,
         direction: StrumDirection
     ) {
         for event in events {
             switch event {
             case .began(let voice):
-                startChordVoice(voice, velocity: velocity, direction: direction)
+                startChordVoice(voice, velocity: velocity, velocity16: velocity16, direction: direction)
                 scheduleTimedChordReleaseIfNeeded()
             case .ended(let voice):
                 chordGateReleaseWorkItem?.cancel()
@@ -1177,6 +1257,7 @@ public final class AppState: @unchecked Sendable {
             self.handleChordGateEvents(
                 events,
                 velocity: self.lastVelocity,
+                velocity16: self.lastVelocity16,
                 direction: self.lastStrumDirection
             )
         }
@@ -1190,6 +1271,7 @@ public final class AppState: @unchecked Sendable {
     private func startChordVoice(
         _ voice: ChordGateVoice,
         velocity: UInt8,
+        velocity16: UInt16? = nil,
         direction: StrumDirection
     ) {
         cancelPendingStrumNotes()
@@ -1204,6 +1286,11 @@ public final class AppState: @unchecked Sendable {
         for (i, note) in notes.enumerated() {
             let delay = Double(i) * strumDelay
             let noteVel = max(30, Int(velocity) - i * 3)
+            // Scale the 16-bit value proportionally for per-string velocity taper.
+            let noteVel16: UInt16? = velocity16.map { base in
+                let ratio = Double(noteVel) / Double(max(1, velocity))
+                return UInt16(clamping: Int((Double(base) * ratio).rounded()))
+            }
             let workItem = DispatchWorkItem { [weak self] in
                 guard let self, self.strumGeneration == generation else { return }
                 let wasSounding = self.isNoteOwned(note.midiNote)
@@ -1214,6 +1301,7 @@ public final class AppState: @unchecked Sendable {
                     self.beginPhysicalVoice(
                         note,
                         velocity: UInt8(noteVel),
+                        velocity16: noteVel16,
                         technique: technique
                     )
                 }
@@ -1222,7 +1310,8 @@ public final class AppState: @unchecked Sendable {
                         port: .chords,
                         channel: self.midiChannel(.chords),
                         note: note.midiNote,
-                        velocity: UInt8(noteVel)
+                        velocity: UInt8(noteVel),
+                        velocity16: noteVel16
                     )
                 }
                 self.addActiveNote(note)
@@ -1248,9 +1337,9 @@ public final class AppState: @unchecked Sendable {
         }
     }
 
-    private func beginPhysicalVoice(_ note: Note, velocity: UInt8, technique: MusicalTechnique) {
+    private func beginPhysicalVoice(_ note: Note, velocity: UInt8, velocity16: UInt16? = nil, technique: MusicalTechnique) {
         if destinationProfile.supportsMPE {
-            mpeManager.noteOn(note: note.midiNote, velocity: velocity, technique: technique)
+            mpeManager.noteOn(note: note.midiNote, velocity: velocity, velocity16: velocity16, technique: technique)
         }
         if !audioEngine.isMuted {
             audioEngine.noteOn(note: note.midiNote, velocity: velocity, technique: technique)

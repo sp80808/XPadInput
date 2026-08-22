@@ -139,6 +139,15 @@ public struct ControllerCapabilityProfile: Codable, Sendable {
         buttonLabels: ["Cross (✕)", "Circle (○)", "Square (□)", "Triangle (△)"]
     )
 
+    public static let dualShock4 = ControllerCapabilityProfile(
+        hasTouchpad: true,
+        hasMotionIMU: true,
+        hasHaptics: true,
+        hasAnalogTriggers: true,
+        hasThumbstickClicks: true,
+        buttonLabels: ["Cross (✕)", "Circle (○)", "Square (□)", "Triangle (△)"]
+    )
+
     public static let xbox = ControllerCapabilityProfile(
         hasTouchpad: false,
         hasMotionIMU: false,
@@ -226,19 +235,29 @@ public struct ControllerCapabilityProfile: Codable, Sendable {
     )
 
     public static func from(_ controller: GCController) -> ControllerCapabilityProfile {
-        let name = controller.vendorName?.lowercased() ?? controller.productCategory.lowercased()
-        if name.contains("dualsense") || name.contains("ps5") {
-            return .dualSense
-        } else if name.contains("dualshock") || name.contains("ps4") {
-            return .dualSense
-        } else if name.contains("xbox") {
-            return .xbox
-        } else if name.contains("switch") || name.contains("pro controller") {
-            return .switchPro
-        } else if name.contains("steam") {
-            return .steamDeck
+        let kind = ControllerKind.identify(controller)
+        var profile: ControllerCapabilityProfile
+        switch kind {
+        case .dualSense:
+            profile = .dualSense
+        case .dualShock4:
+            profile = .dualShock4
+        case .xbox:
+            profile = .xbox
+        case .switchPro:
+            profile = .switchPro
+        case .steamDeck:
+            profile = .steamDeck
+        case .guitarHero:
+            profile = .guitarHero
+        default:
+            profile = .generic
         }
-        return .generic
+
+        if controller.haptics != nil {
+            profile.hasHaptics = true
+        }
+        return profile
     }
 }
 
@@ -474,6 +493,13 @@ public final class ControllerState: @unchecked Sendable {
     public var accelX: Double = 0
     public var accelY: Double = 0
     public var accelZ: Double = 0
+    public var gravityX: Double = 0
+    public var gravityY: Double = 0
+    public var gravityZ: Double = 0
+    public var pitchTilt: Double = 0
+    public var rollTilt: Double = 0
+    public var yawHeading: Double = 0
+    public var shakeMagnitude: Double = 0
     public var hasMotion: Bool = false
     
     public init() {}
