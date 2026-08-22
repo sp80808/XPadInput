@@ -170,8 +170,10 @@ struct ControllerPerformanceHUD: View {
 
             ViewThatFits(in: .horizontal) {
                 controllerRow(scale: .expanded, showsDPad: true, spacing: 10)
-                controllerRow(scale: .compact, showsDPad: true, spacing: 1)
-                controllerRow(scale: .compact, showsDPad: false, spacing: 6)
+                controllerRow(scale: .compact, showsDPad: true, spacing: 6)
+                controllerRow(scale: .compact, showsDPad: false, spacing: 4)
+                controllerRow(scale: .minimal, showsDPad: true, spacing: 3)
+                controllerRow(scale: .minimal, showsDPad: false, spacing: 2)
             }
             .frame(maxWidth: .infinity)
 
@@ -272,14 +274,57 @@ struct ControllerPerformanceHUD: View {
 private enum ControllerHUDScale: Equatable {
     case expanded
     case compact
+    case minimal
 
-    var stickDiameter: CGFloat { self == .expanded ? 108 : 74 }
-    var stickTravel: CGFloat { self == .expanded ? 37 : 25 }
-    var dPadKey: CGFloat { self == .expanded ? 28 : 20 }
-    var expressionDiameter: CGFloat { self == .expanded ? 76 : 54 }
-    var expressionWidth: CGFloat { self == .expanded ? 92 : 64 }
-    var glyphSize: GlyphSize { self == .expanded ? .large : .regular }
-    var roleWidth: CGFloat { self == .expanded ? 52 : 38 }
+    var stickDiameter: CGFloat {
+        switch self {
+        case .expanded: return 108
+        case .compact: return 74
+        case .minimal: return 56
+        }
+    }
+    var stickTravel: CGFloat {
+        switch self {
+        case .expanded: return 37
+        case .compact: return 25
+        case .minimal: return 18
+        }
+    }
+    var dPadKey: CGFloat {
+        switch self {
+        case .expanded: return 28
+        case .compact: return 20
+        case .minimal: return 15
+        }
+    }
+    var expressionDiameter: CGFloat {
+        switch self {
+        case .expanded: return 76
+        case .compact: return 54
+        case .minimal: return 42
+        }
+    }
+    var expressionWidth: CGFloat {
+        switch self {
+        case .expanded: return 92
+        case .compact: return 64
+        case .minimal: return 48
+        }
+    }
+    var glyphSize: GlyphSize {
+        switch self {
+        case .expanded: return .large
+        case .compact: return .regular
+        case .minimal: return .regular
+        }
+    }
+    var roleWidth: CGFloat {
+        switch self {
+        case .expanded: return 52
+        case .compact: return 38
+        case .minimal: return 30
+        }
+    }
 }
 
 struct PerformanceFeedbackStrip: View {

@@ -63,6 +63,7 @@ final class TestRunner {
     }
 
     func run() {
+        setbuf(stdout, nil)
         print("==================================================")
         print("🎮 XPI: Game Controller MIDI — Comprehensive Test Suite Runner")
         print("==================================================")
@@ -798,6 +799,126 @@ final class TestRunner {
                 assertTrue(midi.sentMessages.contains { $0.bytes == [0xB1, 123, 0] })
             }
 
+            test("MIDI2UMPDecoder decodes MIDI 1.0 channel voice UMP words") {
+                // Type 0x2: Note On Ch 0, Note 60, Vel 100 -> 0x20903C64
+                let noteOnWord: UInt32 = (0x2 << 28) | (0x90 << 16) | (60 << 8) | 100
+                let decodedOn = MIDI2UMPDecoder.decode(words: [noteOnWord])
+                assertEqual(decodedOn.count, 1)
+                if case .channelVoice(let event, let rawBytes) = decodedOn[0] {
+                    assertEqual(event, .noteOn(channel: 0, note: 60, velocity: 100))
+                    assertEqual(rawBytes, [0x90, 60, 100])
+                } else {
+                    assertTrue(false, "Expected channel voice Note On")
+                }
+
+                // Type 0x2: Pitch Bend Ch 1, 14-bit 8192 (Centre) -> 0x20E10040
+                let bendWord: UInt32 = (0x2 << 28) | (0xE1 << 16) | (0x00 << 8) | 0x40
+                let decodedBend = MIDI2UMPDecoder.decode(words: [bendWord])
+                assertEqual(decodedBend.count, 1)
+                if case .channelVoice(let event, let rawBytes) = decodedBend[0] {
+                    assertEqual(event, .pitchBend(channel: 1, value: 0))
+                    assertEqual(rawBytes, [0xE1, 0x00, 0x40])
+                } else {
+                    assertTrue(false, "Expected channel voice Pitch Bend")
+                }
+            }
+
+            test("MIDI2UMPDecoder decodes MIDI 2.0 high-resolution channel voice and per-note UMPs") {
+                // Type 0x4: MIDI 2.0 Note On Ch 2, Note 64, 16-bit Vel 0xFFFF (127) -> words: [0x40924000, 0xFFFF0000]
+                let noteOnUMP = MIDI2UMPEncoder.noteOnMessage(channel: 2, note: 64, velocity16: 0xFFFF)
+                let decodedNote = MIDI2UMPDecoder.decode(words: [noteOnUMP.word0, noteOnUMP.word1])
+                assertEqual(decodedNote.count, 1)
+                if case .channelVoice(let event, let rawBytes) = decodedNote[0] {
+                    assertEqual(event, .noteOn(channel: 2, note: 64, velocity: 127))
+                    assertEqual(rawBytes, [0x92, 64, 127])
+                } else {
+                    assertTrue(false, "Expected MIDI 2.0 Note On")
+                }
+
+                // Type 0x4: MIDI 2.0 Per-Note Pitch Bend Ch 0, Note 60, +2.0 semitones
+                let perNoteBendUMP = MIDI2UMPEncoder.perNotePitchBendMessage(
+                    channel: 0,
+                    note: 60,
+                    semitoneOffset: 2.0,
+                    bendRangeSemitones: 48.0
+                )
+                let decodedPerNoteBend = MIDI2UMPDecoder.decode(words: [perNoteBendUMP.word0, perNoteBendUMP.word1])
+                assertEqual(decodedPerNoteBend.count, 1)
+                if case .perNotePitchBend(let ch, let note, let semitones, _) = decodedPerNoteBend[0] {
+                    assertEqual(ch, 0)
+                    assertEqual(note, 60)
+                    assertTrue(abs(semitones - 2.0) < 0.01)
+                } else {
+                    assertTrue(false, "Expected Per-Note Pitch Bend")
+                }
+
+                // Type 0x4: MIDI 2.0 Per-Note Pressure Ch 0, Note 60, normalized 0.75
+                let perNotePressUMP = MIDI2UMPEncoder.perNotePressureMessage(
+                    channel: 0,
+                    note: 60,
+                    normalizedPressure: 0.75
+                )
+                let decodedPress = MIDI2UMPDecoder.decode(words: [perNotePressUMP.word0, perNotePressUMP.word1])
+                assertTrue(decodedPress.contains(where: {
+                    if case .perNotePressure(let ch, let note, let norm) = $0 {
+                        return ch == 0 && note == 60 && abs(norm - 0.75) < 0.01
+                    }
+                    return false
+                }))
+            }
+
+            test("MIDI2UMPDecoder multi-packet SysEx7 streaming reassembly") {
+                // Type 0x3 SysEx: Send Start packet with 6 bytes, then End packet with 3 bytes
+                var sysExBuffer: [UInt8] = []
+                let startPacketWord0: UInt32 = (0x3 << 28) | (0x1 << 20) | (6 << 16) | (0xF0 << 8) | 0x7E
+                let startPacketWord1: UInt32 = (0x01 << 24) | (0x06 << 16) | (0x01 << 8) | 0x02
+                let endPacketWord0: UInt32 = (0x3 << 28) | (0x3 << 20) | (2 << 16) | (0x03 << 8) | 0xF7
+                let endPacketWord1: UInt32 = 0
+
+                let messages = MIDI2UMPDecoder.decodeStream(
+                    words: [startPacketWord0, startPacketWord1, endPacketWord0, endPacketWord1],
+                    sysExBuffer: &sysExBuffer
+                )
+                assertEqual(messages.count, 1)
+                if case .sysEx(let bytes) = messages[0] {
+                    assertEqual(bytes, [0xF0, 0x7E, 0x01, 0x06, 0x01, 0x02, 0x03, 0xF7])
+                } else {
+                    assertTrue(false, "Expected reassembled SysEx payload")
+                }
+            }
+
+            test("MIDIEngine passthru routing and incoming representation") {
+                let midi = MIDIEngine()
+                var receivedEvents: [PerformanceEvent] = []
+                midi.onIncomingEvent = { event, _ in
+                    receivedEvents.append(event)
+                }
+
+                // Simulate incoming UMP Note On: 0x20903C64 (Note On Ch 0 Note 60 Vel 100)
+                let noteOnWord: UInt32 = (0x2 << 28) | (0x90 << 16) | (60 << 8) | 100
+                midi.clearMessageLog()
+
+                // Test Passthru Mode = .off
+                midi.passthruMode = .off
+                // Decode words directly through passthru decoder
+                let decoded = MIDI2UMPDecoder.decode(words: [noteOnWord])
+                if case .channelVoice(let event, let rawBytes) = decoded[0] {
+                    midi.onIncomingEvent?(event, rawBytes)
+                }
+                assertEqual(receivedEvents.count, 1)
+                assertEqual(receivedEvents[0], .noteOn(channel: 0, note: 60, velocity: 100))
+
+                // Test Passthru Mode properties
+                assertEqual(MIDIPassthruMode.off.routesToAudio, false)
+                assertEqual(MIDIPassthruMode.off.routesToOutputs, false)
+                assertEqual(MIDIPassthruMode.thruToAudio.routesToAudio, true)
+                assertEqual(MIDIPassthruMode.thruToAudio.routesToOutputs, false)
+                assertEqual(MIDIPassthruMode.thruToOutputs.routesToAudio, false)
+                assertEqual(MIDIPassthruMode.thruToOutputs.routesToOutputs, true)
+                assertEqual(MIDIPassthruMode.full.routesToAudio, true)
+                assertEqual(MIDIPassthruMode.full.routesToOutputs, true)
+            }
+
             test("SMFExporter MIDI File Binary Structure") {
                 let exporter = SMFExporter()
                 let events = [
@@ -822,6 +943,33 @@ final class TestRunner {
                 assertEqual(audio.trackedVoiceCount, 1, "A release tail must remain tracked until it detaches.")
                 audio.panic()
                 assertEqual(audio.trackedVoiceCount, 0, "Panic must hard-stop active and releasing voices.")
+                audio.stop()
+            }
+
+            test("Guitar FFT Sine Default Preset & Acoustic Harmonics") {
+                let audio = AudioEngine()
+                assertEqual(audio.currentPreset.id, "acousticSine", "Default preset must be acousticSine")
+                assertEqual(audio.currentPreset.osc1Type, .sine, "Default oscillator 1 must be sine-orientated")
+                assertEqual(audio.currentPreset.osc2Type, .triangle, "Default oscillator 2 must be triangle (1/n^2 rolloff)")
+                assertEqual(audio.currentPreset.osc2Level, 0.28, "Overtone balance must match guitar FFT overtone ratios")
+                assertEqual(audio.currentPreset.filterCutoffHz, 2600.0, "Filter cutoff must match guitar body acoustic response")
+                assertEqual(audio.currentPreset.filterType, .lowPass)
+                
+                assertEqual(SynthPreset.allPresets.count, 11)
+                assertEqual(SynthPreset.allPresets[0].id, "acousticSine")
+                assertEqual(SynthPreset.nylonSine.osc1Type, .sine)
+                assertEqual(SynthPreset.cleanElectricSine.osc1Type, .sine)
+
+                // Voice synthesis with guitar harmonics
+                audio.start()
+                audio.setPreset(.acousticSine)
+                audio.noteOn(note: 64, velocity: 110, technique: .harmonic)
+                audio.setHarmonicEmphasis(for: 64, amount: 0.8, pinch: false)
+                audio.setTimbre(for: 64, timbre: 0.7)
+                audio.setPitchBend(for: 64, semitones: 2.0)
+                assertEqual(audio.currentPitchBend(for: 64), 2.0)
+                audio.noteOff(note: 64)
+                audio.panic()
                 audio.stop()
             }
         }
@@ -1256,6 +1404,89 @@ final class TestRunner {
                 )
                 assertTrue(!targets.isEmpty)
                 assertTrue(targets.contains(where: { abs($0.semitones - 2) < 0.01 }))
+            }
+
+            test("Harmonic chord bender bends C Major triad in-key to D minor triad") {
+                let bender = HarmonicChordBender()
+                let cMajorTriad = [
+                    Note(pitchClass: .c, octave: 4), // 60
+                    Note(pitchClass: .e, octave: 4), // 64
+                    Note(pitchClass: .g, octave: 4)  // 67
+                ]
+                let context = MusicalContext(
+                    key: .c,
+                    scale: Scale(root: .c, type: .major),
+                    chord: Chord(root: .c, quality: .major),
+                    pitchAssist: .strong
+                )
+                // Lead note (C4=60) bends up +2 semitones (to D4)
+                let bends = bender.bends(for: cMajorTriad, leadBendSemitones: 2.0, context: context)
+                
+                // In C Major:
+                // C4 -> D4 (+2 semitones)
+                // E4 -> F4 (+1 semitone)
+                // G4 -> A4 (+2 semitones)
+                let cBend = bends[60] ?? 0
+                let eBend = bends[64] ?? 0
+                let gBend = bends[67] ?? 0
+
+                assertEqual(Int(cBend.rounded()), 2)
+                assertEqual(Int(eBend.rounded()), 1)
+                assertEqual(Int(gBend.rounded()), 2)
+
+                let resultingNotes = [
+                    Note.fromMIDI(UInt8(60 + Int(cBend.rounded()))),
+                    Note.fromMIDI(UInt8(64 + Int(eBend.rounded()))),
+                    Note.fromMIDI(UInt8(67 + Int(gBend.rounded())))
+                ]
+                let score = bender.consonanceScore(for: resultingNotes)
+                assertTrue(score > 0.75, "Resulting D minor chord must have high harmonic consonance")
+            }
+
+            test("Harmonic chord bender downward bend preserves in-key harmony") {
+                let bender = HarmonicChordBender()
+                let cMajorTriad = [
+                    Note(pitchClass: .c, octave: 4), // 60
+                    Note(pitchClass: .e, octave: 4), // 64
+                    Note(pitchClass: .g, octave: 4)  // 67
+                ]
+                let context = MusicalContext(
+                    key: .c,
+                    scale: Scale(root: .c, type: .major),
+                    chord: Chord(root: .c, quality: .major),
+                    pitchAssist: .strong
+                )
+                // Lead note bends down -2 semitones (1 diatonic step down: C->B is -1, E->D is -2, G->F is -2)
+                let bends = bender.bends(for: cMajorTriad, leadBendSemitones: -2.0, context: context)
+                
+                let cBend = bends[60] ?? 0
+                let eBend = bends[64] ?? 0
+                let gBend = bends[67] ?? 0
+
+                assertEqual(Int(cBend.rounded()), -1)
+                assertEqual(Int(eBend.rounded()), -2)
+                assertEqual(Int(gBend.rounded()), -2)
+            }
+
+            test("Harmonic chord bender chromatic mode applies parallel bend") {
+                let bender = HarmonicChordBender()
+                let chord = [
+                    Note(pitchClass: .c, octave: 4),
+                    Note(pitchClass: .e, octave: 4),
+                    Note(pitchClass: .g, octave: 4)
+                ]
+                var context = MusicalContext(
+                    key: .c,
+                    scale: Scale(root: .c, type: .major),
+                    chord: Chord(root: .c, quality: .major),
+                    pitchAssist: .light
+                )
+                context.chromaticMode = true
+
+                let bends = bender.bends(for: chord, leadBendSemitones: 2.5, context: context)
+                assertEqual(bends[60], 2.5)
+                assertEqual(bends[64], 2.5)
+                assertEqual(bends[67], 2.5)
             }
 
             test("Technique SMF export includes pitch bend") {

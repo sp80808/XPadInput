@@ -253,14 +253,16 @@ public struct ContextualPitchTargeter: Sendable {
         let dest = note.transposed(by: Int(semitones.rounded()))
         let chordTone = context.isChordTone(dest.pitchClass)
         let scaleTone = context.isScaleTone(dest.pitchClass)
+        let interval = Interval(semitones: abs(Int(semitones.rounded())))
         var score = stylisticBonus
         if context.chromaticMode {
-            score += 1
+            score += 1 + interval.consonance * 2.0
         } else {
             if chordTone { score += 20 }
             if scaleTone { score += 10 }
             if dest.pitchClass == context.chord?.pitchClass(for: .fifth) { score += 4 }
             if dest.pitchClass == context.chord?.pitchClass(for: .third) { score += 3 }
+            score += interval.consonance * 4.0
         }
         // Prefer the physical range of a typical guitar bend (1–2 st).
         if abs(semitones) <= 2 { score += 3 }

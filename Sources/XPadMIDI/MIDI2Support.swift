@@ -342,4 +342,282 @@ public enum MIDI2UMPEncoder {
                 / UInt64(8_191)
         )
     }
+
+    /// Converts a 32-bit pitch-bend value to standard 14-bit pitch bend.
+    public static func scale32To14BitPitchBend(_ value32: UInt32) -> UInt16 {
+        if value32 == pitchBendCentre { return 8_192 }
+        if value32 < pitchBendCentre {
+            return UInt16((UInt64(value32) * 8_192) / UInt64(pitchBendCentre))
+        }
+        let positiveRange = UInt64(UInt32.max) - UInt64(pitchBendCentre)
+        return 8_192 + UInt16(((UInt64(value32) - UInt64(pitchBendCentre)) * 8_191) / positiveRange)
+    }
+
+    /// Converts a 32-bit pitch bend directly to musical semitones given a bend range.
+    public static func pitchBend32ToSemitones(_ value32: UInt32, bendRangeSemitones: Double) -> Double {
+        guard bendRangeSemitones.isFinite, bendRangeSemitones > 0 else { return 0.0 }
+        if value32 == pitchBendCentre { return 0.0 }
+        if value32 < pitchBendCentre {
+            let norm = -Double(UInt64(pitchBendCentre) - UInt64(value32)) / Double(pitchBendCentre)
+            return norm * bendRangeSemitones
+        }
+        let positiveRange = UInt64(UInt32.max) - UInt64(pitchBendCentre)
+        let norm = Double(UInt64(value32) - UInt64(pitchBendCentre)) / Double(positiveRange)
+        return norm * bendRangeSemitones
+    }
+
+    /// Converts a 32-bit unsigned controller/pressure value to 7-bit MIDI value.
+    public static func scale32To7(_ value: UInt32) -> UInt8 {
+        UInt8((UInt64(value) * 127 + 0x7FFF_FFFF) / UInt64(UInt32.max))
+    }
+
+    /// Converts a 32-bit unsigned controller/pressure value to normalized 0.0...1.0.
+    public static func scale32ToNormalized(_ value: UInt32) -> Double {
+        Double(value) / Double(UInt32.max)
+    }
+}
+
+/// Routing policy for incoming MIDI received at the virtual destination (e.g. "XPI Input / CI").
+public enum MIDIPassthruMode: String, CaseIterable, Identifiable, Codable, Sendable {
+    case off = "Off"
+    case thruToAudio = "Synth Only"
+    case thruToOutputs = "DAW Thru Only"
+    case full = "Full Passthru"
+
+    public var id: String { rawValue }
+
+    public var routesToAudio: Bool {
+        self == .thruToAudio || self == .full
+    }
+
+    public var routesToOutputs: Bool {
+        self == .thruToOutputs || self == .full
+    }
+
+    public var description: String {
+        switch self {
+        case .off:
+            "Incoming MIDI ignored (MIDI-CI discovery active)"
+        case .thruToAudio:
+            "Incoming MIDI triggers internal Synth Engine"
+        case .thruToOutputs:
+            "Incoming MIDI forwarded to DAW virtual output ports"
+        case .full:
+            "Incoming MIDI routed to internal Synth Engine and DAW ports"
+        }
+    }
+}
+
+/// Structured representation of a decoded Universal MIDI Packet (UMP).
+public enum DecodedMIDIMessage: Equatable, Sendable {
+    case channelVoice(event: PerformanceEvent, rawBytes: [UInt8])
+    case perNotePitchBend(channel: UInt8, note: UInt8, semitoneOffset: Double, pitch32: UInt32)
+    case perNotePressure(channel: UInt8, note: UInt8, normalizedPressure: Double)
+    case perNoteController(channel: UInt8, note: UInt8, controller: UInt8, normalizedValue: Double)
+    case perNoteManagement(channel: UInt8, note: UInt8, detach: Bool, reset: Bool)
+    case sysEx(bytes: [UInt8])
+    case systemRealtime(status: UInt8)
+}
+
+/// Decodes Universal MIDI Packets (UMP) into structured musical events and raw MIDI bytes.
+public enum MIDI2UMPDecoder {
+    public static func decode(words: [UInt32]) -> [DecodedMIDIMessage] {
+        var dummyBuffer: [UInt8] = []
+        return decodeStream(words: words, sysExBuffer: &dummyBuffer)
+    }
+
+    public static func decodeStream(
+        words: [UInt32],
+        sysExBuffer: inout [UInt8]
+    ) -> [DecodedMIDIMessage] {
+        var results: [DecodedMIDIMessage] = []
+        var index = 0
+
+        while index < words.count {
+            let word0 = words[index]
+            let messageType = (word0 >> 28) & 0x0F
+
+            switch messageType {
+            case 0x1: // System Real-Time and Common (32-bit / 1 word)
+                let status = UInt8((word0 >> 16) & 0xFF)
+                results.append(.systemRealtime(status: status))
+                index += 1
+
+            case 0x2: // MIDI 1.0 Channel Voice (32-bit / 1 word)
+                let statusByte = UInt8((word0 >> 16) & 0xFF)
+                let status = statusByte & 0xF0
+                let channel = statusByte & 0x0F
+                let data1 = UInt8((word0 >> 8) & 0x7F)
+                let data2 = UInt8(word0 & 0x7F)
+
+                switch status {
+                case 0x80:
+                    let event = PerformanceEvent.noteOff(channel: channel, note: data1)
+                    results.append(.channelVoice(event: event, rawBytes: [statusByte, data1, data2]))
+                case 0x90:
+                    if data2 == 0 {
+                        let event = PerformanceEvent.noteOff(channel: channel, note: data1)
+                        results.append(.channelVoice(event: event, rawBytes: [0x80 | channel, data1, 0]))
+                    } else {
+                        let event = PerformanceEvent.noteOn(channel: channel, note: data1, velocity: data2)
+                        results.append(.channelVoice(event: event, rawBytes: [statusByte, data1, data2]))
+                    }
+                case 0xA0:
+                    let event = PerformanceEvent.polyPressure(channel: channel, note: data1, pressure: data2)
+                    results.append(.channelVoice(event: event, rawBytes: [statusByte, data1, data2]))
+                case 0xB0:
+                    if data1 == 74 {
+                        let event = PerformanceEvent.timbreCC74(channel: channel, value: data2)
+                        results.append(.channelVoice(event: event, rawBytes: [statusByte, data1, data2]))
+                    } else if data1 == 123 || data1 == 120 {
+                        let event = PerformanceEvent.allNotesOff(channel: channel)
+                        results.append(.channelVoice(event: event, rawBytes: [statusByte, data1, data2]))
+                    } else {
+                        let event = PerformanceEvent.controlChange(channel: channel, controller: data1, value: data2)
+                        results.append(.channelVoice(event: event, rawBytes: [statusByte, data1, data2]))
+                    }
+                case 0xD0:
+                    let event = PerformanceEvent.channelPressure(channel: channel, pressure: data1)
+                    results.append(.channelVoice(event: event, rawBytes: [statusByte, data1]))
+                case 0xE0:
+                    let value14 = UInt16(data1) | (UInt16(data2) << 7)
+                    let signedVal = Int16(Int(value14) - 8192)
+                    let event = PerformanceEvent.pitchBend(channel: channel, value: signedVal)
+                    results.append(.channelVoice(event: event, rawBytes: [statusByte, data1, data2]))
+                default:
+                    break
+                }
+                index += 1
+
+            case 0x3: // 7-bit Data / SysEx (64-bit / 2 words)
+                guard index + 1 < words.count else {
+                    index += 1
+                    break
+                }
+                let word1 = words[index + 1]
+                let status = UInt8((word0 >> 20) & 0x0F)
+                let byteCount = min(6, Int((word0 >> 16) & 0x0F))
+
+                let rawBytesInPacket = [
+                    UInt8((word0 >> 8) & 0xFF),
+                    UInt8(word0 & 0xFF),
+                    UInt8((word1 >> 24) & 0xFF),
+                    UInt8((word1 >> 16) & 0xFF),
+                    UInt8((word1 >> 8) & 0xFF),
+                    UInt8(word1 & 0xFF)
+                ]
+                let validBytes = Array(rawBytesInPacket.prefix(byteCount))
+
+                switch status {
+                case 0: // Complete in single packet
+                    results.append(.sysEx(bytes: validBytes))
+                case 1: // Start
+                    sysExBuffer = validBytes
+                case 2: // Continue
+                    sysExBuffer.append(contentsOf: validBytes)
+                case 3: // End
+                    sysExBuffer.append(contentsOf: validBytes)
+                    results.append(.sysEx(bytes: sysExBuffer))
+                    sysExBuffer.removeAll(keepingCapacity: true)
+                default:
+                    break
+                }
+                index += 2
+
+            case 0x4: // MIDI 2.0 Channel Voice (64-bit / 2 words)
+                guard index + 1 < words.count else {
+                    index += 1
+                    break
+                }
+                let word1 = words[index + 1]
+                let channel = UInt8((word0 >> 16) & 0x0F)
+                let opcode = UInt8((word0 >> 20) & 0x0F)
+                let data1 = UInt8((word0 >> 8) & 0x7F)
+                let data2 = UInt8(word0 & 0xFF)
+
+                switch opcode {
+                case 0x8: // Note Off
+                    let note = data1
+                    let event = PerformanceEvent.noteOff(channel: channel, note: note)
+                    results.append(.channelVoice(event: event, rawBytes: [0x80 | channel, note, 0]))
+
+                case 0x9: // Note On
+                    let note = data1
+                    let vel16 = UInt16(word1 & 0xFFFF)
+                    let vel7 = MIDI2UMPEncoder.scale16To7(vel16)
+                    if vel16 == 0 {
+                        let event = PerformanceEvent.noteOff(channel: channel, note: note)
+                        results.append(.channelVoice(event: event, rawBytes: [0x80 | channel, note, 0]))
+                    } else {
+                        let event = PerformanceEvent.noteOn(channel: channel, note: note, velocity: vel7)
+                        results.append(.channelVoice(event: event, rawBytes: [0x90 | channel, note, vel7]))
+                    }
+
+                case 0xA: // Poly Pressure
+                    let note = data1
+                    let press7 = MIDI2UMPEncoder.scale32To7(word1)
+                    let event = PerformanceEvent.polyPressure(channel: channel, note: note, pressure: press7)
+                    let normPress = MIDI2UMPEncoder.scale32ToNormalized(word1)
+                    results.append(.perNotePressure(channel: channel, note: note, normalizedPressure: normPress))
+                    results.append(.channelVoice(event: event, rawBytes: [0xA0 | channel, note, press7]))
+
+                case 0xB: // Control Change
+                    let controller = data1
+                    let val7 = MIDI2UMPEncoder.scale32To7(word1)
+                    if controller == 74 {
+                        let event = PerformanceEvent.timbreCC74(channel: channel, value: val7)
+                        results.append(.channelVoice(event: event, rawBytes: [0xB0 | channel, controller, val7]))
+                    } else if controller == 123 || controller == 120 {
+                        let event = PerformanceEvent.allNotesOff(channel: channel)
+                        results.append(.channelVoice(event: event, rawBytes: [0xB0 | channel, controller, 0]))
+                    } else {
+                        let event = PerformanceEvent.controlChange(channel: channel, controller: controller, value: val7)
+                        results.append(.channelVoice(event: event, rawBytes: [0xB0 | channel, controller, val7]))
+                    }
+
+                case 0xD: // Channel Pressure
+                    let press7 = MIDI2UMPEncoder.scale32To7(word1)
+                    let event = PerformanceEvent.channelPressure(channel: channel, pressure: press7)
+                    results.append(.channelVoice(event: event, rawBytes: [0xD0 | channel, press7]))
+
+                case 0xE: // Pitch Bend
+                    let pitch14 = MIDI2UMPEncoder.scale32To14BitPitchBend(word1)
+                    let signedVal = Int16(Int(pitch14) - 8192)
+                    let event = PerformanceEvent.pitchBend(channel: channel, value: signedVal)
+                    results.append(.channelVoice(event: event, rawBytes: [
+                        0xE0 | channel,
+                        UInt8(pitch14 & 0x7F),
+                        UInt8((pitch14 >> 7) & 0x7F)
+                    ]))
+
+                case 0x0: // Registered Per-Note Controller
+                    let note = data1
+                    let controller = data2
+                    let normVal = MIDI2UMPEncoder.scale32ToNormalized(word1)
+                    results.append(.perNoteController(channel: channel, note: note, controller: controller, normalizedValue: normVal))
+
+                case 0x6: // Per-Note Pitch Bend
+                    let note = data1
+                    let semitones = MIDI2UMPEncoder.pitchBend32ToSemitones(word1, bendRangeSemitones: 48.0)
+                    results.append(.perNotePitchBend(channel: channel, note: note, semitoneOffset: semitones, pitch32: word1))
+
+                case 0xF: // Per-Note Management
+                    let note = data1
+                    let detach = (data2 & 0x02) != 0
+                    let reset = (data2 & 0x01) != 0
+                    results.append(.perNoteManagement(channel: channel, note: note, detach: detach, reset: reset))
+
+                default:
+                    break
+                }
+                index += 2
+
+            default:
+                // Skip unknown 32-bit word
+                index += 1
+            }
+        }
+
+        return results
+    }
 }

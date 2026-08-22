@@ -54,8 +54,8 @@ struct ScaleSelectorView: View {
         } label: {
             CompactTransportMenuLabel(
                 prefix: nil,
-                value: appState.currentScale.displayName,
-                minWidth: 116
+                value: appState.currentScale.shortDisplayName,
+                minWidth: 84
             )
         }
         .menuStyle(.borderlessButton)

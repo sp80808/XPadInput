@@ -7,7 +7,27 @@ final class AudioTests: XCTestCase {
 
     // MARK: - SynthPreset Tests
     func testSynthPresets() {
-        XCTAssertEqual(SynthPreset.allPresets.count, 8)
+        XCTAssertEqual(SynthPreset.allPresets.count, 11)
+
+        let acoustic = SynthPreset.acousticSine
+        XCTAssertEqual(acoustic.osc1Type, .sine)
+        XCTAssertEqual(acoustic.osc2Type, .triangle)
+        XCTAssertEqual(acoustic.filterCutoffHz, 2600.0)
+        XCTAssertEqual(acoustic.filterType, .lowPass)
+        XCTAssertEqual(acoustic.osc2Level, 0.28)
+        XCTAssertEqual(acoustic.osc2DetuneCents, 2.0)
+        XCTAssertGreaterThan(acoustic.filterResonance, 0)
+        XCTAssertGreaterThan(acoustic.saturationAmount, 0)
+
+        let nylon = SynthPreset.nylonSine
+        XCTAssertEqual(nylon.osc1Type, .sine)
+        XCTAssertEqual(nylon.osc2Type, .sine)
+        XCTAssertEqual(nylon.filterCutoffHz, 2100.0)
+
+        let electric = SynthPreset.cleanElectricSine
+        XCTAssertEqual(electric.osc1Type, .sine)
+        XCTAssertEqual(electric.osc2Type, .triangle)
+        XCTAssertEqual(electric.filterCutoffHz, 3100.0)
 
         let lead = SynthPreset.polyLead
         XCTAssertEqual(lead.osc1Type, .saw)

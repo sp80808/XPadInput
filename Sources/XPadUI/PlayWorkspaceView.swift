@@ -67,43 +67,50 @@ public struct PlayView: View {
     
     public var body: some View {
         GeometryReader { geo in
-            let isWide = geo.size.width >= 1380
-            let leftWidth = isWide ? geo.size.width * 0.40 : geo.size.width * 0.38
+            let metrics = ViewportMetrics(size: geo.size)
+            let leftWidth = geo.size.width * metrics.leftColumnRatio
             let rightWidth = geo.size.width - leftWidth
             
+            let isCompactH = metrics.isCompactHeight
+            let isExpandedH = metrics.heightClass == .expanded
+            
+            let chordDisplayHeight: CGFloat = isCompactH ? 58 : (isExpandedH ? 80 : 72)
+            let wheelMinH: CGFloat = isCompactH ? 180 : (isExpandedH ? 280 : 230)
+            let tabMinH: CGFloat = isCompactH ? 130 : 170
+            let controllerH: CGFloat = isCompactH ? 215 : (isExpandedH ? 295 : 255)
+            let quickControlsH: CGFloat = isCompactH ? 44 : 50
+            let perfMonitorH: CGFloat = isCompactH ? 76 : (isExpandedH ? 96 : 88)
+            let dspTabMinH: CGFloat = isCompactH ? 120 : 145
+            let strumMidiH: CGFloat = isCompactH ? 50 : (isExpandedH ? 64 : 58)
+            let colPadding: CGFloat = isCompactH ? 8 : (metrics.isCompactWidth ? 10 : 12)
+            let colSpacing: CGFloat = isCompactH ? 6 : 8
+            
             HStack(spacing: 0) {
-                // LEFT COLUMN: Harmonic Workspace - Compact, supporting role
-                VStack(spacing: 10) {
-                    // Multi-Jam Bar or reserved space
+                // LEFT COLUMN: Harmonic Workspace
+                VStack(spacing: colSpacing) {
+                    // Multi-Jam Bar (when active)
                     if appState.multiJamManager.isSessionActive {
                         MultiControllerJammingBarView(jammingManager: appState.multiJamManager)
                             .transition(.opacity)
                     }
-                    if !appState.multiJamManager.isSessionActive {
-                        Spacer().frame(height: 50)
-                    }
 
                     // Current Chord Display
                     EnhancedChordDisplayView()
-                        .frame(height: 80)
+                        .frame(height: chordDisplayHeight)
 
-                    // Solo HUD or reserved space
+                    // Solo HUD (when active)
                     if appState.instrumentProfile.family == .synthLead || appState.isSoloModeActive {
                         SmartSoloHUDView(telemetry: appState.smartSoloEngine.telemetry, chord: appState.currentChord)
                             .transition(.opacity)
                     }
-                    if !(appState.instrumentProfile.family == .synthLead || appState.isSoloModeActive) {
-                        Spacer().frame(height: 60)
-                    }
 
-                    // Contextual Hint
+                    // Contextual Hint (when active)
                     ContextualHintSlot()
-                        .frame(height: 36)
 
                     // Harmonic Wheel - chord selection via stick
                     HarmonicWheelView()
-                        .frame(minHeight: 280, maxHeight: .infinity)
-                        .padding(.vertical, 2)
+                        .frame(minHeight: wheelMinH, maxHeight: .infinity)
+                        .padding(.vertical, isCompactH ? 2 : 4)
 
                     // Tabbed: Chords | Progression | Suggestions
                     HarmonicTabbedWorkspace(
@@ -117,12 +124,12 @@ public struct PlayView: View {
                         onAuditionChord: auditionChord,
                         onSendToSequencer: sendProgressionToSequencer
                     )
-                    .frame(minHeight: 180, maxHeight: .infinity)
+                    .frame(minHeight: tabMinH, maxHeight: .infinity)
 
                     // Active Notes
                     ActiveNotesView()
                 }
-                .padding(12)
+                .padding(colPadding)
                 .frame(width: leftWidth)
                 .animation(.easeInOut(duration: 0.25), value: appState.multiJamManager.isSessionActive)
                 .animation(.easeInOut(duration: 0.25), value: appState.isSoloModeActive)
@@ -130,18 +137,18 @@ public struct PlayView: View {
                 Divider().background(XTheme.border)
                 
                 // RIGHT COLUMN: Controller & Performance Workspace - Primary focus
-                VStack(spacing: 10) {
+                VStack(spacing: colSpacing) {
                     // Controller Visualizer - Prominent
                     ControllerVisualizerView()
-                        .frame(height: 270)
+                        .frame(height: controllerH)
 
                     // Performance Quick Controls
                     PerformanceQuickControlsView()
-                        .frame(height: 52)
+                        .frame(height: quickControlsH)
 
                     // Real-time Performance Monitor
                     PerformanceMonitorView()
-                        .frame(height: 96)
+                        .frame(height: perfMonitorH)
 
                     // Tabbed: Performance | Synth | FX
                     DSPTabbedWorkspace(
@@ -151,18 +158,19 @@ public struct PlayView: View {
                         drive: $saturation,
                         reverb: $reverbMix
                     )
-                    .frame(minHeight: 150, maxHeight: .infinity)
+                    .frame(minHeight: dspTabMinH, maxHeight: .infinity)
 
                     // Strum Indicator & MIDI Activity
-                    HStack(spacing: 10) {
+                    HStack(spacing: 8) {
                         StrumIndicatorView()
                         MIDIActivityView()
                     }
-                    .frame(height: 64)
+                    .frame(height: strumMidiH)
                 }
-                .padding(12)
+                .padding(colPadding)
                 .frame(width: rightWidth)
             }
+            .environment(\.viewportMetrics, metrics)
         }
         .onAppear {
             if activeProgression.blocks.isEmpty {
@@ -211,13 +219,14 @@ public struct PlayView: View {
 private struct ContextualHintSlot: View {
     @Environment(AppState.self) private var appState
     var body: some View {
-        HStack {
-            if let hint = appState.contextualHint, !appState.activeNotes.isEmpty {
+        if let hint = appState.contextualHint, !appState.activeNotes.isEmpty {
+            HStack {
                 TechniqueHintBanner(text: hint)
+                Spacer()
             }
-            Spacer()
+            .frame(height: 32)
+            .transition(.opacity)
         }
-        .frame(height: 36)
     }
 }
 
@@ -226,55 +235,56 @@ private struct ContextualHintSlot: View {
 struct EnhancedChordDisplayView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.viewportMetrics) private var viewport
     @State private var previousChordName: String?
     
     var body: some View {
         let currentName = appState.currentChord?.displayName ?? "-"
         let chordChanged = previousChordName != currentName && previousChordName != nil
         let displayName = chordChanged && !reduceMotion ? (previousChordName ?? "-") : currentName
+        let isCompact = viewport.isCompactHeight
         
-        HStack(spacing: 16) {
+        HStack(spacing: isCompact ? 10 : 16) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(displayName)
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .font(.system(size: isCompact ? 26 : 34, weight: .bold, design: .rounded))
                     .foregroundColor(XTheme.textPrimary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .frame(height: 40)
+                    .minimumScaleFactor(0.7)
+                    .frame(height: isCompact ? 30 : 38)
                     .animation(reduceMotion ? nil : .spring(response: 0.2, dampingFraction: 0.75), value: currentName)
                 if let chord = appState.currentChord {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         if let roman = chord.romanNumeral(in: appState.currentKey, scale: appState.currentScale) {
-                            Text(roman).font(.system(size: 15, weight: .semibold, design: .monospaced)).foregroundColor(XTheme.primary)
+                            Text(roman).font(.system(size: isCompact ? 13 : 15, weight: .semibold, design: .monospaced)).foregroundColor(XTheme.primary)
                         }
                         TensionBadge(tension: chord.tension(in: appState.currentKey, scale: appState.currentScale))
                     }
-                    .frame(height: 22)
+                    .frame(height: isCompact ? 18 : 22)
                 } else {
-                    Spacer().frame(height: 22)
+                    Spacer().frame(height: isCompact ? 18 : 22)
                 }
             }
             Spacer()
-            VStack(alignment: .trailing, spacing: 4) {
-                ActiveTechniqueStatusView()
-                    .frame(height: 24)
+            VStack(alignment: .trailing, spacing: isCompact ? 2 : 4) {
+                ActiveTechniqueStatusView(compact: isCompact)
+                    .frame(height: isCompact ? 20 : 24)
                 HStack(spacing: 4) {
                     Text(appState.currentKey.displayName)
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .font(.system(size: isCompact ? 15 : 18, weight: .bold, design: .rounded))
                         .foregroundColor(XTheme.primary)
                     Text("•")
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.system(size: isCompact ? 14 : 18, weight: .bold))
                         .foregroundColor(XTheme.textTertiary)
                     Text(appState.currentScale.displayName)
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: isCompact ? 12 : 14, weight: .medium))
                         .foregroundColor(XTheme.textSecondary)
                         .lineLimit(1)
                 }
-                .frame(height: 28)
+                .frame(height: isCompact ? 22 : 28)
             }
         }
-        .frame(height: 80)
-        .padding(.horizontal, 14)
+        .padding(.horizontal, isCompact ? 10 : 14)
         .xCard(isActive: appState.currentChord != nil)
         .onChange(of: currentName) { _, newName in
             previousChordName = newName

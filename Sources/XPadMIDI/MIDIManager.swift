@@ -73,6 +73,20 @@ public final class MIDIEngine: @unchecked Sendable {
 
     public var onVirtualMIDIChanged: ((Bool) -> Void)?
 
+    /// MIDI Passthru routing policy for messages received at "XPI Input / CI".
+    public var passthruMode: MIDIPassthruMode = .full
+
+    /// Invoked when incoming channel voice events are decoded from the input port.
+    public var onIncomingEvent: ((PerformanceEvent, [UInt8]) -> Void)?
+    /// Invoked when incoming per-note pitch bend events are decoded.
+    public var onIncomingPerNotePitchBend: ((UInt8, UInt8, Double) -> Void)?
+    /// Invoked when incoming per-note pressure events are decoded.
+    public var onIncomingPerNotePressure: ((UInt8, UInt8, Double) -> Void)?
+    /// Invoked when incoming per-note registered controllers are decoded.
+    public var onIncomingPerNoteController: ((UInt8, UInt8, UInt8, Double) -> Void)?
+    /// Invoked when incoming SysEx / MIDI-CI payloads are assembled.
+    public var onIncomingSysEx: (([UInt8]) -> Void)?
+
     /// Human-readable description of the most recent CoreMIDI setup failure.
     /// `nil` when the last enable attempt created every endpoint successfully.
     public private(set) var setupErrorDescription: String?
@@ -123,6 +137,7 @@ public final class MIDIEngine: @unchecked Sendable {
     private var messageLog: [MIDIMessageRecord] = []
     private var messageLogWriteIndex = 0
     private var inputDestination: MIDIEndpointRef = 0
+    private var incomingSysExBuffer: [UInt8] = []
     private let lock = NSLock()
 
     public let ciSession = MIDICISession.shared
@@ -219,7 +234,7 @@ public final class MIDIEngine: @unchecked Sendable {
             }
         }
 
-        // Create bidirectional virtual destination for MIDI-CI Profile & Discovery
+        // Create bidirectional virtual destination for MIDI-CI Profile & Discovery and Passthru
         if inputDestination == 0 {
             var destEndpoint: MIDIEndpointRef = 0
             let destName = "XPI Input / CI" as CFString
@@ -261,7 +276,6 @@ public final class MIDIEngine: @unchecked Sendable {
     }
 
     private func handleIncomingMIDIEventList(_ eventList: UnsafePointer<MIDIEventList>) {
-        // Parse incoming events for MIDI-CI SysEx queries
         let numPackets = Int(eventList.pointee.numPackets)
         guard numPackets > 0 else { return }
 
@@ -272,9 +286,6 @@ public final class MIDIEngine: @unchecked Sendable {
             .pointer(to: \.packet)!
         for _ in 0..<numPackets {
             let count = Int(packetPtr.pointee.wordCount)
-            // MIDIEventPacketNext advances using the packet's stored wordCount,
-            // so a list whose count exceeds the fixed word storage cannot be
-            // traversed safely.
             guard count <= wordCapacity else { return }
             if count > 0 {
                 let words = packetPtr.pointer(to: \.words)!.withMemoryRebound(
@@ -290,20 +301,63 @@ public final class MIDIEngine: @unchecked Sendable {
     }
 
     private func processIncomingUMPWords(_ words: [UInt32]) {
-        // Process SysEx 7 UMP messages (Type 0x3) or direct MIDI-CI inquiries
-        var sysExBytes: [UInt8] = []
-        for word in words {
-            let messageType = (word >> 28) & 0x0F
-            if messageType == 0x3 { // 64-bit Data / SysEx
-                let b0 = UInt8((word >> 16) & 0xFF)
-                let b1 = UInt8((word >> 8) & 0xFF)
-                let b2 = UInt8(word & 0xFF)
-                sysExBytes.append(contentsOf: [b0, b1, b2])
-            }
-        }
-        if !sysExBytes.isEmpty, sysExBytes.first == 0xF0 {
-            if let response = ciSession.processIncomingSysEx(sysExBytes) {
-                sendSysEx(response, to: .main)
+        let messages = MIDI2UMPDecoder.decodeStream(words: words, sysExBuffer: &incomingSysExBuffer)
+        for message in messages {
+            switch message {
+            case .sysEx(let bytes):
+                lock.lock()
+                midiActivityTimestamp = Date()
+                lock.unlock()
+                if !bytes.isEmpty, bytes.first == 0xF0 {
+                    if let response = ciSession.processIncomingSysEx(bytes) {
+                        sendSysEx(response, to: .main)
+                    }
+                }
+                onIncomingSysEx?(bytes)
+
+            case .channelVoice(let event, let rawBytes):
+                lock.lock()
+                midiActivityTimestamp = Date()
+                let record = MIDIMessageRecord(port: .main, bytes: rawBytes)
+                if messageLog.count < Self.messageLogCapacity {
+                    messageLog.append(record)
+                } else {
+                    messageLog[messageLogWriteIndex] = record
+                    messageLogWriteIndex = (messageLogWriteIndex + 1) % Self.messageLogCapacity
+                }
+                lock.unlock()
+
+                onIncomingEvent?(event, rawBytes)
+
+                if passthruMode.routesToOutputs {
+                    emit(rawBytes, to: .main)
+                }
+
+            case .perNotePitchBend(let channel, let note, let semitones, _):
+                lock.lock()
+                midiActivityTimestamp = Date()
+                lock.unlock()
+                onIncomingPerNotePitchBend?(channel, note, semitones)
+
+            case .perNotePressure(let channel, let note, let pressure):
+                lock.lock()
+                midiActivityTimestamp = Date()
+                lock.unlock()
+                onIncomingPerNotePressure?(channel, note, pressure)
+
+            case .perNoteController(let channel, let note, let controller, let value):
+                lock.lock()
+                midiActivityTimestamp = Date()
+                lock.unlock()
+                onIncomingPerNoteController?(channel, note, controller, value)
+
+            case .perNoteManagement:
+                break
+
+            case .systemRealtime:
+                lock.lock()
+                midiActivityTimestamp = Date()
+                lock.unlock()
             }
         }
     }

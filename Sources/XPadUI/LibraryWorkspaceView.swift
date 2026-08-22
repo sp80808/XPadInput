@@ -5,7 +5,7 @@ import XPadAudio
 import XPadMIDI
 
 public struct LibraryWorkspaceView: View {
-    @State private var selectedPreset: SynthPreset = .polyLead
+    @State private var selectedPreset: SynthPreset = .acousticSine
 
     public init() {}
 

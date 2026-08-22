@@ -5,250 +5,311 @@ import XPadMIDI
 import XPadAudio
 
 /// Persistent transport bar with playback, key/scale, BPM, and status indicators.
+/// Persistent transport bar with playback, key/scale, BPM, and status indicators.
 struct TransportBar: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.viewportMetrics) private var viewport
     @State private var tapTimes: [Date] = []
     @State private var previousBPM: Double = 120.0
     @State private var bpmPulse: Bool = false
     @State private var recordPulse: Bool = false
     
     var body: some View {
-        @Bindable var state = appState
-        
-        HStack(spacing: 16) {
-            // Transport controls
-            HStack(spacing: 6) {
-                TransportButton(icon: "stop.fill", label: "Stop", isActive: false) {
-                    appState.stopActiveNotes()
-                    appState.isPlaying = false
-                }
-                
-                TransportButton(icon: "play.fill", label: "Play", isActive: appState.isPlaying) {
-                    state.isPlaying.toggle()
-                }
-                
-                TransportButton(
-                    icon: "record.circle",
-                    label: "Record",
-                    isActive: appState.isRecording,
-                    activeColor: XTheme.recording
-                ) {
-                    state.isRecording.toggle()
-                }
-                .overlay(
-                    Group {
-                        if appState.isRecording {
-                            Circle()
-                                .fill(XTheme.recording.opacity(0.35))
-                                .frame(width: 40, height: 40)
-                                .scaleEffect(recordPulse ? 1.4 : 1.0)
-                                .opacity(recordPulse ? 0 : 0.6)
-                                .blur(radius: recordPulse ? 4 : 0)
-                        }
-                    }
-                )
-                .onChange(of: appState.isRecording) { _, isRecording in
-                    if isRecording {
-                        recordPulse = true
-                        withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: false)) {
-                            recordPulse = false
-                        }
-                    } else {
-                        recordPulse = false
-                    }
-                }
-                
-                TransportButton(icon: "repeat", label: "Loop", isActive: appState.isLooping) {
-                    state.isLooping.toggle()
-                }
-            }
-            
-            Divider()
-                .frame(height: 20)
-            
-            // BPM & Tap Tempo
-            HStack(spacing: 6) {
-                Button {
-                    state.metronomeEnabled.toggle()
-                } label: {
-                    Image(systemName: "metronome")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(appState.metronomeEnabled ? XTheme.primary : XTheme.textTertiary)
-                        .frame(width: 25, height: 25)
-                }
-                .buttonStyle(XTactileButtonStyle(isActive: appState.metronomeEnabled))
-                .help(appState.metronomeEnabled ? "Disable metronome" : "Enable metronome")
-                .accessibilityLabel("Metronome")
-                .accessibilityValue(appState.metronomeEnabled ? "On" : "Off")
-                .keyboardShortcut("k", modifiers: [])
-                
-                HStack(spacing: 2) {
-                    Text("\(Int(appState.bpm))")
-                        .font(.system(size: 12, weight: .bold, design: .monospaced))
-                        .foregroundColor(XTheme.textPrimary)
-                        .frame(width: 32)
-                        .scaleEffect(bpmPulse ? 1.2 : 1.0)
-                    
-                    Text("BPM")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundColor(XTheme.textTertiary)
-                }
-                .onChange(of: appState.bpm) { _, newBPM in
-                    guard abs(newBPM - previousBPM) > 0.5 else { return }
-                    previousBPM = newBPM
-                    bpmPulse = true
-                    withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
-                        bpmPulse = false
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                        bpmPulse = false
-                    }
-                }
-
-                // Tap Tempo Button
-                Button {
-                    registerTapTempo()
-                } label: {
-                    Text("TAP")
-                        .font(.system(size: 8, weight: .heavy, design: .rounded))
-                        .foregroundStyle(XTheme.primary)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 3)
-                        .background(XTheme.primary.opacity(0.15))
-                        .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-                .help("Tap tempo beat calculator")
-            }
-            
-            Divider()
-                .frame(height: 20)
-
-            HStack(spacing: 8) {
-                KeySelectorView()
-                ScaleSelectorView()
-            }
-            
-            Divider()
-                .frame(height: 20)
-
-            HStack(spacing: 8) {
-                InstrumentSelectorView(minWidth: 92)
-                ActiveTechniqueStatusView(compact: true)
-            }
-
-            Divider()
-                .frame(height: 20)
-            
-            // MIDI activity and wire protocol.
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(appState.midiEngine.isMIDIActive ? XTheme.midiActivity : XTheme.textTertiary.opacity(0.3))
-                    .frame(width: 6, height: 6)
-                    .xGlow(isActive: appState.midiEngine.isMIDIActive, color: XTheme.midiActivity)
-                    .scaleEffect(appState.midiEngine.isMIDIActive ? 1.4 : 1.0)
-                    .animation(.easeInOut(duration: 0.15), value: appState.midiEngine.isMIDIActive)
-
-                Menu {
-                    ForEach(MIDITransportProtocol.allCases) { transport in
-                        Button {
-                            state.midiEngine.transportProtocol = transport
-                        } label: {
-                            HStack {
-                                Text(transport.rawValue)
-                                if appState.midiEngine.transportProtocol == transport {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 3) {
-                        Text(appState.midiEngine.transportProtocol.shortLabel)
-                            .font(.system(size: 10, weight: .medium))
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 7, weight: .semibold))
-                    }
-                    .foregroundColor(appState.midiEngine.virtualMIDIEnabled ? XTheme.textPrimary : XTheme.textTertiary)
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .help("CoreMIDI virtual-source protocol")
-                
-                Toggle("", isOn: $state.midiEngine.virtualMIDIEnabled)
-                    .toggleStyle(.switch)
-                    .scaleEffect(0.6)
-                    .frame(width: 30)
-                    .labelsHidden()
-            }
-            
-            Divider()
-                .frame(height: 20)
-            
-            // Controller status
-            HStack(spacing: 6) {
-                Image(systemName: appState.controllerManager.isConnected ? "gamecontroller.fill" : "gamecontroller")
-                    .font(.system(size: 11))
-                    .foregroundColor(appState.controllerManager.isConnected ? XTheme.controllerConnected : XTheme.controllerDisconnected)
-                
-                Text(appState.controllerManager.controllerName)
-                    .font(.system(size: 10))
-                    .foregroundColor(XTheme.textSecondary)
-                    .lineLimit(1)
-                    .frame(maxWidth: 110)
-            }
-
-            Spacer()
-
-            // Master Volume & Mini Stereo VU Meter
-            HStack(spacing: 6) {
-                Image(systemName: "speaker.wave.2.fill")
-                    .font(.system(size: 10))
-                    .foregroundStyle(XTheme.textTertiary)
-
-                // Stereo Level Bars
-                VStack(spacing: 2) {
-                    levelBar(level: appState.virtualAudioDriver.levelMeter.linearLevelLeft)
-                    levelBar(level: appState.virtualAudioDriver.levelMeter.linearLevelRight)
-                }
-
-                // Volume Slider
-                Slider(
-                    value: Binding(
-                        get: { Double(appState.audioEngine.volume) },
-                        set: { appState.audioEngine.setVolume(Float($0)) }
-                    ),
-                    in: 0.0...1.0
-                )
-                .tint(XTheme.primary)
-                .frame(width: 65)
-                .help("Master Synthesizer Output Volume")
-            }
-
-            Divider()
-                .frame(height: 20)
-            
-            // Panic button
-            Button {
-                appState.panic()
-            } label: {
-                Image(systemName: "exclamationmark.octagon")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(XTheme.tense)
-                    .frame(width: 28, height: 28)
-            }
-            .buttonStyle(XTactileButtonStyle(activeColor: XTheme.tense))
-            .help("MIDI Panic — All Notes Off")
+        ViewThatFits(in: .horizontal) {
+            content(density: .expanded)
+            content(density: .regular)
+            content(density: .compact)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .frame(height: 48)
+        .padding(.horizontal, viewport.isCompactWidth ? 10 : 16)
+        .padding(.vertical, 6)
+        .frame(height: viewport.isCompactHeight ? 42 : 48)
         .background(XTheme.cardGradient)
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(Color.white.opacity(0.055))
                 .frame(height: 1)
         }
+    }
+    
+    private enum BarDensity {
+        case expanded, regular, compact
+    }
+    
+    @ViewBuilder
+    private func content(density: BarDensity) -> some View {
+        @Bindable var state = appState
+        let spacing: CGFloat = density == .compact ? 8 : (density == .regular ? 12 : 16)
+        
+        HStack(spacing: spacing) {
+            // 1. Playback / Transport controls
+            transportButtons(compact: density == .compact)
+            
+            divider()
+            
+            // 2. BPM & Tap Tempo
+            bpmSection(compact: density == .compact)
+            
+            // 3. Middle selectors: Contextually show Key/Scale & Instrument on wider viewports
+            if density == .expanded {
+                divider()
+                HStack(spacing: 8) {
+                    KeySelectorView()
+                    ScaleSelectorView()
+                }
+                
+                divider()
+                HStack(spacing: 8) {
+                    InstrumentSelectorView(minWidth: 92)
+                    ActiveTechniqueStatusView(compact: true)
+                }
+            } else if density == .regular {
+                divider()
+                HStack(spacing: 6) {
+                    InstrumentSelectorView(minWidth: 80)
+                    ActiveTechniqueStatusView(compact: true)
+                }
+            }
+            
+            divider()
+            
+            // 4. MIDI Activity & Wire Protocol
+            midiSection(compact: density == .compact)
+            
+            // 5. Controller Status
+            if density != .compact {
+                divider()
+                controllerStatusSection()
+            }
+            
+            Spacer(minLength: 4)
+            
+            // 6. Master Volume & Mini Stereo VU Meter
+            masterVolumeSection(sliderWidth: density == .compact ? 46 : (density == .regular ? 60 : 75))
+            
+            divider()
+            
+            // 7. Panic button
+            panicButton()
+        }
+    }
+    
+    @ViewBuilder
+    private func transportButtons(compact: Bool) -> some View {
+        @Bindable var state = appState
+        HStack(spacing: compact ? 4 : 6) {
+            TransportButton(icon: "stop.fill", label: "Stop", isActive: false) {
+                appState.stopActiveNotes()
+                appState.isPlaying = false
+            }
+            
+            TransportButton(icon: "play.fill", label: "Play", isActive: appState.isPlaying) {
+                state.isPlaying.toggle()
+            }
+            
+            TransportButton(
+                icon: "record.circle",
+                label: "Record",
+                isActive: appState.isRecording,
+                activeColor: XTheme.recording
+            ) {
+                state.isRecording.toggle()
+            }
+            .overlay(
+                Group {
+                    if appState.isRecording {
+                        Circle()
+                            .fill(XTheme.recording.opacity(0.35))
+                            .frame(width: 36, height: 36)
+                            .scaleEffect(recordPulse ? 1.4 : 1.0)
+                            .opacity(recordPulse ? 0 : 0.6)
+                            .blur(radius: recordPulse ? 4 : 0)
+                    }
+                }
+            )
+            .onChange(of: appState.isRecording) { _, isRecording in
+                if isRecording {
+                    recordPulse = true
+                    withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: false)) {
+                        recordPulse = false
+                    }
+                } else {
+                    recordPulse = false
+                }
+            }
+            
+            TransportButton(icon: "repeat", label: "Loop", isActive: appState.isLooping) {
+                state.isLooping.toggle()
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func bpmSection(compact: Bool) -> some View {
+        @Bindable var state = appState
+        HStack(spacing: compact ? 4 : 6) {
+            Button {
+                state.metronomeEnabled.toggle()
+            } label: {
+                Image(systemName: "metronome")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(appState.metronomeEnabled ? XTheme.primary : XTheme.textTertiary)
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(XTactileButtonStyle(isActive: appState.metronomeEnabled))
+            .help(appState.metronomeEnabled ? "Disable metronome" : "Enable metronome")
+            .accessibilityLabel("Metronome")
+            .accessibilityValue(appState.metronomeEnabled ? "On" : "Off")
+            .keyboardShortcut("k", modifiers: [])
+            
+            HStack(spacing: 2) {
+                Text("\(Int(appState.bpm))")
+                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .foregroundColor(XTheme.textPrimary)
+                    .frame(width: 28)
+                    .scaleEffect(bpmPulse ? 1.2 : 1.0)
+                
+                if !compact {
+                    Text("BPM")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundColor(XTheme.textTertiary)
+                }
+            }
+            .onChange(of: appState.bpm) { _, newBPM in
+                guard abs(newBPM - previousBPM) > 0.5 else { return }
+                previousBPM = newBPM
+                bpmPulse = true
+                withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
+                    bpmPulse = false
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    bpmPulse = false
+                }
+            }
+
+            // Tap Tempo Button
+            Button {
+                registerTapTempo()
+            } label: {
+                Text("TAP")
+                    .font(.system(size: 8, weight: .heavy, design: .rounded))
+                    .foregroundStyle(XTheme.primary)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .background(XTheme.primary.opacity(0.15))
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .help("Tap tempo beat calculator")
+        }
+    }
+    
+    @ViewBuilder
+    private func midiSection(compact: Bool) -> some View {
+        @Bindable var state = appState
+        HStack(spacing: 5) {
+            Circle()
+                .fill(appState.midiEngine.isMIDIActive ? XTheme.midiActivity : XTheme.textTertiary.opacity(0.3))
+                .frame(width: 6, height: 6)
+                .xGlow(isActive: appState.midiEngine.isMIDIActive, color: XTheme.midiActivity)
+                .scaleEffect(appState.midiEngine.isMIDIActive ? 1.4 : 1.0)
+                .animation(.easeInOut(duration: 0.15), value: appState.midiEngine.isMIDIActive)
+
+            Menu {
+                ForEach(MIDITransportProtocol.allCases) { transport in
+                    Button {
+                        state.midiEngine.transportProtocol = transport
+                    } label: {
+                        HStack {
+                            Text(transport.rawValue)
+                            if appState.midiEngine.transportProtocol == transport {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 3) {
+                    Text(appState.midiEngine.transportProtocol.shortLabel)
+                        .font(.system(size: 10, weight: .medium))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 7, weight: .semibold))
+                }
+                .foregroundColor(appState.midiEngine.virtualMIDIEnabled ? XTheme.textPrimary : XTheme.textTertiary)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("CoreMIDI virtual-source protocol")
+            
+            if !compact {
+                Toggle("", isOn: $state.midiEngine.virtualMIDIEnabled)
+                    .toggleStyle(.switch)
+                    .scaleEffect(0.55)
+                    .frame(width: 26)
+                    .labelsHidden()
+            }
+        }
+    }
+    
+    @ViewBuilder
+    private func controllerStatusSection() -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: appState.controllerManager.isConnected ? "gamecontroller.fill" : "gamecontroller")
+                .font(.system(size: 11))
+                .foregroundColor(appState.controllerManager.isConnected ? XTheme.controllerConnected : XTheme.controllerDisconnected)
+            
+            Text(appState.controllerManager.isConnected ? appState.controllerManager.controllerName : "Preview")
+                .font(.system(size: 10))
+                .foregroundColor(XTheme.textSecondary)
+                .lineLimit(1)
+                .frame(maxWidth: 95)
+        }
+    }
+    
+    @ViewBuilder
+    private func masterVolumeSection(sliderWidth: CGFloat) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "speaker.wave.2.fill")
+                .font(.system(size: 9))
+                .foregroundStyle(XTheme.textTertiary)
+
+            // Stereo Level Bars
+            VStack(spacing: 2) {
+                levelBar(level: appState.virtualAudioDriver.levelMeter.linearLevelLeft)
+                levelBar(level: appState.virtualAudioDriver.levelMeter.linearLevelRight)
+            }
+
+            // Volume Slider
+            Slider(
+                value: Binding(
+                    get: { Double(appState.audioEngine.volume) },
+                    set: { appState.audioEngine.setVolume(Float($0)) }
+                ),
+                in: 0.0...1.0
+            )
+            .tint(XTheme.primary)
+            .frame(width: sliderWidth)
+            .help("Master Synthesizer Output Volume")
+        }
+    }
+    
+    @ViewBuilder
+    private func panicButton() -> some View {
+        Button {
+            appState.panic()
+        } label: {
+            Image(systemName: "exclamationmark.octagon")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(XTheme.tense)
+                .frame(width: 26, height: 26)
+        }
+        .buttonStyle(XTactileButtonStyle(activeColor: XTheme.tense))
+        .help("MIDI Panic — All Notes Off")
+    }
+    
+    @ViewBuilder
+    private func divider() -> some View {
+        Divider()
+            .frame(height: 18)
     }
 
     private func levelBar(level: Float) -> some View {

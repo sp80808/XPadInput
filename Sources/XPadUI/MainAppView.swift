@@ -3,6 +3,7 @@ import XPadCore
 import XPadController
 
 /// Main content view for the unified XPI performance workstation.
+/// Main content view for the unified XPI performance workstation.
 public struct ContentView: View {
     @Environment(AppState.self) private var appState
     @State private var isShowingSettings = false
@@ -10,31 +11,36 @@ public struct ContentView: View {
     public init() {}
     
     public var body: some View {
-        VStack(spacing: 0) {
-            // Top Pro Performance Header Bar
-            TopPerformanceHeaderView(onOpenSettings: { isShowingSettings = true })
+        GeometryReader { geo in
+            let metrics = ViewportMetrics(size: geo.size)
             
-            Divider()
-                .background(XTheme.border)
-            
-            // Play is the launch workspace. Practice is swapped in only after
-            // an explicit request (View > Show Practice) so it never occupies
-            // first-launch screenspace.
-            if appState.isPracticeRequested {
-                PracticeWorkspaceView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .transition(.opacity.combined(with: .scale(scale: 0.995)))
-            } else {
-                PlayView(onOpenSettings: { isShowingSettings = true })
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .transition(.opacity.combined(with: .scale(scale: 0.995)))
+            VStack(spacing: 0) {
+                // Top Pro Performance Header Bar
+                TopPerformanceHeaderView(onOpenSettings: { isShowingSettings = true })
+                
+                Divider()
+                    .background(XTheme.border)
+                
+                // Play is the launch workspace. Practice is swapped in only after
+                // an explicit request (View > Show Practice) so it never occupies
+                // first-launch screenspace.
+                if appState.isPracticeRequested {
+                    PracticeWorkspaceView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .transition(.opacity.combined(with: .scale(scale: 0.995)))
+                } else {
+                    PlayView(onOpenSettings: { isShowingSettings = true })
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .transition(.opacity.combined(with: .scale(scale: 0.995)))
+                }
+                
+                Divider()
+                    .background(XTheme.border)
+                
+                // Transport Bar (Always docked at bottom)
+                TransportBar()
             }
-            
-            Divider()
-                .background(XTheme.border)
-            
-            // Transport Bar (Always docked at bottom)
-            TransportBar()
+            .environment(\.viewportMetrics, metrics)
         }
         .animation(.easeInOut(duration: 0.25), value: appState.isPracticeRequested)
         .sheet(isPresented: $isShowingSettings) {
@@ -87,67 +93,72 @@ public struct ContentView: View {
 
 struct TopPerformanceHeaderView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.viewportMetrics) private var viewport
     var onOpenSettings: () -> Void = {}
     
     var body: some View {
         @Bindable var state = appState
+        let isCompact = viewport.isCompactWidth
         
-        HStack(spacing: 16) {
+        HStack(spacing: isCompact ? 10 : 16) {
             // App Branding
-            HStack(spacing: 8) {
+            HStack(spacing: isCompact ? 6 : 8) {
                 Image(systemName: "gamecontroller.fill")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.system(size: isCompact ? 14 : 16, weight: .bold))
                     .foregroundColor(XTheme.primary)
                     .xGlow(isActive: appState.controllerManager.isConnected)
                 
                 VStack(alignment: .leading, spacing: 0) {
                     Text("XPI")
-                        .font(.system(size: 14, weight: .black, design: .rounded))
+                        .font(.system(size: isCompact ? 13 : 14, weight: .black, design: .rounded))
                         .foregroundColor(XTheme.textPrimary)
-                    Text("MPE INSTRUMENT")
-                        .font(.system(size: 8, weight: .bold, design: .monospaced))
-                        .foregroundColor(XTheme.primary)
+                    if !isCompact {
+                        Text("MPE INSTRUMENT")
+                            .font(.system(size: 8, weight: .bold, design: .monospaced))
+                            .foregroundColor(XTheme.primary)
+                    }
                 }
             }
             
             Divider()
-                .frame(height: 24)
+                .frame(height: 20)
                 .background(XTheme.border)
             
             // Instrument Profile Switcher
-            InstrumentSelectorView(minWidth: 120)
+            InstrumentSelectorView(minWidth: isCompact ? 86 : 116)
             
             Divider()
-                .frame(height: 24)
+                .frame(height: 20)
                 .background(XTheme.border)
             
             // Key & Scale Selectors
-            HStack(spacing: 8) {
+            HStack(spacing: isCompact ? 4 : 8) {
                 KeySelectorView()
                 ScaleSelectorView()
             }
             
-            Spacer()
+            Spacer(minLength: 8)
             
             // Controller Hardware Status Badge
             Button {
                 onOpenSettings()
             } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: 5) {
                     Circle()
                         .fill(appState.controllerManager.isConnected ? XTheme.controllerConnected : XTheme.primaryLight.opacity(0.6))
-                        .frame(width: 8, height: 8)
+                        .frame(width: 7, height: 7)
                         .xGlow(isActive: appState.controllerManager.isConnected)
                     
-                    Text(appState.controllerManager.isConnected ? appState.controllerManager.controllerKind.rawValue : "Simulated Gamepad")
-                        .font(.system(size: 11, weight: .semibold))
+                    Text(controllerBadgeText(isCompact: isCompact))
+                        .font(.system(size: isCompact ? 10 : 11, weight: .semibold))
                         .foregroundColor(XTheme.textPrimary)
+                        .lineLimit(1)
                     
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 8, weight: .bold))
                         .foregroundColor(XTheme.textTertiary)
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, isCompact ? 7 : 10)
                 .padding(.vertical, 5)
                 .background(XTheme.surface)
                 .overlay(
@@ -164,17 +175,38 @@ struct TopPerformanceHeaderView: View {
                 onOpenSettings()
             } label: {
                 Image(systemName: "gearshape.fill")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundColor(XTheme.textSecondary)
-                    .padding(7)
+                    .padding(6)
                     .background(XTheme.surface)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
             }
             .buttonStyle(.plain)
             .help("Open Settings")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, isCompact ? 10 : 16)
+        .padding(.vertical, isCompact ? 6 : 8)
         .background(XTheme.surface.opacity(0.4))
+    }
+    
+    private func controllerBadgeText(isCompact: Bool) -> String {
+        guard appState.controllerManager.isConnected else {
+            return isCompact ? "Sim Pad" : "Simulated Gamepad"
+        }
+        if isCompact {
+            switch appState.controllerManager.controllerKind {
+            case .dualSense: return "DualSense"
+            case .dualShock4: return "DS4"
+            case .xbox: return "Xbox"
+            case .switchPro: return "Switch"
+            case .steamDeck: return "Deck"
+            case .guitarHero: return "Guitar"
+            case .fightStick: return "FightStick"
+            case .racingWheel: return "Wheel"
+            case .flightStick: return "HOTAS"
+            default: return "Gamepad"
+            }
+        }
+        return appState.controllerManager.controllerKind.rawValue
     }
 }

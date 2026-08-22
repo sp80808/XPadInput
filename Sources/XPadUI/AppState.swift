@@ -109,6 +109,7 @@ public final class AppState: @unchecked Sendable {
     public var chordGateConfiguration = ChordGateConfiguration(mode: .timed, timedDuration: 0.85)
     public var duoPerformanceMode: DuoPerformanceMode = .instrumentOnly
     public var lastDrumHit: DuoDrumHit?
+    public var midiPassthruMode: MIDIPassthruMode = .full
 
     private var strumState = StrumState()
     private var heldFaceNotes: [ChordToneRole: Note] = [:]
@@ -139,6 +140,7 @@ public final class AppState: @unchecked Sendable {
         updateDiatonicChords()
         audioEngine.start()
         XPadPluginRegistrar.registerPluginComponents()
+        setupIncomingMIDIPassthru()
         midiEngine.onVirtualMIDIChanged = { [weak self] enabled in
             guard let self else { return }
             if enabled {
@@ -179,6 +181,74 @@ public final class AppState: @unchecked Sendable {
                 )
                 guard detected.kind != self.activeHostKind else { return }
                 self.applyHostRouting()
+            }
+        }
+    }
+
+    public func setMIDIPassthruMode(_ mode: MIDIPassthruMode) {
+        midiPassthruMode = mode
+        midiEngine.passthruMode = mode
+    }
+
+    private func setupIncomingMIDIPassthru() {
+        midiEngine.passthruMode = midiPassthruMode
+        midiEngine.onIncomingEvent = { [weak self] event, _ in
+            guard let self else { return }
+            guard self.midiPassthruMode.routesToAudio else { return }
+            Task { @MainActor in
+                switch event {
+                case .noteOn(_, let note, let velocity):
+                    self.audioEngine.noteOn(note: note, velocity: velocity)
+                case .noteOff(_, let note):
+                    self.audioEngine.noteOff(note: note)
+                case .pitchBend(_, let value):
+                    let semitones = MIDIValueCodec.semitones(
+                        fromPitchBend14: MIDIValueCodec.unsignedPitchBend14(signed: value),
+                        range: self.destinationProfile.bendRangeSemitones
+                    )
+                    for activeNote in self.activeNotes {
+                        self.audioEngine.setPitchBend(for: activeNote.midiNote, semitones: semitones)
+                    }
+                case .channelPressure(_, let pressure):
+                    let norm = Double(pressure) / 127.0
+                    for activeNote in self.activeNotes {
+                        self.audioEngine.setPressure(for: activeNote.midiNote, pressure: norm)
+                    }
+                case .polyPressure(_, let note, let pressure):
+                    let norm = Double(pressure) / 127.0
+                    self.audioEngine.setPressure(for: note, pressure: norm)
+                case .timbreCC74(_, let value):
+                    let norm = Double(value) / 127.0
+                    for activeNote in self.activeNotes {
+                        self.audioEngine.setTimbre(for: activeNote.midiNote, timbre: norm)
+                    }
+                case .controlChange(_, let controller, _):
+                    if controller == 123 || controller == 120 {
+                        self.audioEngine.panic()
+                    }
+                case .allNotesOff:
+                    self.audioEngine.panic()
+                }
+            }
+        }
+        midiEngine.onIncomingPerNotePitchBend = { [weak self] _, note, semitones in
+            guard let self, self.midiPassthruMode.routesToAudio else { return }
+            Task { @MainActor in
+                self.audioEngine.setPitchBend(for: note, semitones: semitones)
+            }
+        }
+        midiEngine.onIncomingPerNotePressure = { [weak self] _, note, pressure in
+            guard let self, self.midiPassthruMode.routesToAudio else { return }
+            Task { @MainActor in
+                self.audioEngine.setPressure(for: note, pressure: pressure)
+            }
+        }
+        midiEngine.onIncomingPerNoteController = { [weak self] _, note, controller, value in
+            guard let self, self.midiPassthruMode.routesToAudio else { return }
+            if controller == 74 {
+                Task { @MainActor in
+                    self.audioEngine.setTimbre(for: note, timbre: value)
+                }
             }
         }
     }
@@ -686,16 +756,31 @@ public final class AppState: @unchecked Sendable {
         let conventionalPorts = midiPorts(for: lead.midiNote)
 
         let bend = frame.bend.totalSemitones + (frame.slide.isSliding ? frame.slide.pitchOffset : 0)
+        let context = musicalContext(currentNote: lead)
+        let chordBender = HarmonicChordBender()
+        let noteBends = chordBender.bends(
+            for: activeNotes,
+            leadBendSemitones: bend,
+            context: context,
+            bendRangeSemitones: destinationProfile.bendRangeSemitones
+        )
+
         if destinationProfile.supportsMPE {
-            audioEngine.setPitchBend(for: lead.midiNote, semitones: bend)
-            mpeManager.setPitchBend(for: lead.midiNote, semitones: bend)
+            for note in activeNotes {
+                let noteBend = noteBends[note.midiNote] ?? bend
+                audioEngine.setPitchBend(for: note.midiNote, semitones: noteBend)
+                mpeManager.setPitchBend(for: note.midiNote, semitones: noteBend)
+            }
             lastMIDITranslation = midiTranslator.translateBend(
                 semitones: bend,
                 channel: mpeManager.voice(for: lead.midiNote)?.channel ?? 0,
                 activeVoiceCount: activeNotes.count
             )
-        } else if activeNotes.count <= 1 {
-            audioEngine.setPitchBend(for: lead.midiNote, semitones: bend)
+        } else {
+            for note in activeNotes {
+                let noteBend = noteBends[note.midiNote] ?? bend
+                audioEngine.setPitchBend(for: note.midiNote, semitones: noteBend)
+            }
             for port in conventionalPorts {
                 midiEngine.sendPitchBend(
                     port: port,
@@ -704,12 +789,6 @@ public final class AppState: @unchecked Sendable {
                     bendRangeSemitones: destinationProfile.bendRangeSemitones
                 )
             }
-            lastMIDITranslation = midiTranslator.translateBend(
-                semitones: bend,
-                channel: midiChannel(for: conventionalPorts.first ?? .main),
-                activeVoiceCount: activeNotes.count
-            )
-        } else {
             lastMIDITranslation = midiTranslator.translateBend(
                 semitones: bend,
                 channel: midiChannel(for: conventionalPorts.first ?? .main),
@@ -1003,7 +1082,9 @@ public final class AppState: @unchecked Sendable {
     private func finishPhysicalVoiceIfUnowned(_ note: Note) {
         guard !isNoteOwned(note.midiNote) else { return }
         audioEngine.noteOff(note: note.midiNote)
+        audioEngine.setPitchBend(for: note.midiNote, semitones: 0)
         if destinationProfile.supportsMPE {
+            mpeManager.setPitchBend(for: note.midiNote, semitones: 0)
             mpeManager.noteOff(note: note.midiNote)
         }
         activeNotes.removeAll { $0.midiNote == note.midiNote }

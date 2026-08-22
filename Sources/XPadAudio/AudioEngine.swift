@@ -66,6 +66,57 @@ public struct SynthPreset: Identifiable, Codable, Sendable {
         self.saturationAmount = saturationAmount
     }
 
+    public static let acousticSine = SynthPreset(
+        id: "acousticSine",
+        name: "Acoustic Sine (Default)",
+        osc1Type: .sine,
+        osc2Type: .triangle,
+        attack: 0.005,
+        decay: 0.38,
+        sustain: 0.58,
+        release: 0.35,
+        filterCutoffHz: 2600,
+        filterResonance: 0.18,
+        filterType: .lowPass,
+        osc2Level: 0.28,
+        osc2DetuneCents: 2.0,
+        saturationAmount: 0.06
+    )
+
+    public static let nylonSine = SynthPreset(
+        id: "nylonSine",
+        name: "Nylon Sine Guitar",
+        osc1Type: .sine,
+        osc2Type: .sine,
+        attack: 0.008,
+        decay: 0.42,
+        sustain: 0.52,
+        release: 0.40,
+        filterCutoffHz: 2100,
+        filterResonance: 0.12,
+        filterType: .lowPass,
+        osc2Level: 0.22,
+        osc2DetuneCents: 1.5,
+        saturationAmount: 0.04
+    )
+
+    public static let cleanElectricSine = SynthPreset(
+        id: "cleanElectricSine",
+        name: "Clean Electric Sine",
+        osc1Type: .sine,
+        osc2Type: .triangle,
+        attack: 0.004,
+        decay: 0.35,
+        sustain: 0.62,
+        release: 0.30,
+        filterCutoffHz: 3100,
+        filterResonance: 0.22,
+        filterType: .lowPass,
+        osc2Level: 0.32,
+        osc2DetuneCents: 3.0,
+        saturationAmount: 0.08
+    )
+
     public static let polyLead = SynthPreset(
         id: "polyLead",
         name: "Poly Lead",
@@ -203,6 +254,7 @@ public struct SynthPreset: Identifiable, Codable, Sendable {
     )
 
     public static let allPresets: [SynthPreset] = [
+        .acousticSine, .nylonSine, .cleanElectricSine,
         .polyLead, .rhodesEP, .ambientPad, .warmPad, .pluck, .subBass, 
         .analogBrass, .digitalBell
     ]
@@ -219,7 +271,7 @@ public final class AudioEngine: @unchecked Sendable {
     /// `nil` once the engine starts successfully.
     public private(set) var startErrorDescription: String?
     public var volume: Float = 0.7
-    public var currentPreset: SynthPreset = .polyLead
+    public var currentPreset: SynthPreset = .acousticSine
     public private(set) var velocityCurve: SynthVelocityCurve = .balanced
     public private(set) var effectsSettings: SynthEffectsSettings = .polished
 
@@ -808,7 +860,7 @@ public final class SynthVoice: @unchecked Sendable {
         velocity: UInt8,
         sampleRate: Double,
         technique: MusicalTechnique = .normal,
-        preset: SynthPreset = .polyLead,
+        preset: SynthPreset = .acousticSine,
         velocityCurve: SynthVelocityCurve = .balanced
     ) {
         self.note = note
@@ -853,7 +905,8 @@ public final class SynthVoice: @unchecked Sendable {
         let release = self.releaseTime
         let oscillator1 = preset.osc1Type
         let oscillator2 = preset.osc2Type
-        let baseFilterCutoff = max(80, min(sampleRate * 0.42, preset.filterCutoffHz))
+        let velocityBrightness = 0.82 + 0.36 * (Double(velocity) / 127.0)
+        let baseFilterCutoff = max(80, min(sampleRate * 0.42, preset.filterCutoffHz * velocityBrightness))
         let filterResonance = max(0.0, min(0.95, preset.filterResonance))
         let filterType = preset.filterType
         let osc2Level = max(0.0, min(1.0, preset.osc2Level))
@@ -982,12 +1035,15 @@ public final class SynthVoice: @unchecked Sendable {
                     sample += second * osc2Level
                 }
                 
-                // Add harmonic enhancement
-                sample += h * 0.18 * sin(oscillator1Phase * 2.0 * .pi * 3.0)
+                // Add guitar FFT harmonic enhancement (sine overtones: 2nd octave and 3rd compound fifth)
+                if h > 0 {
+                    sample += h * (0.22 * sin(oscillator1Phase * 2.0 * .pi * 2.0) + 0.14 * sin(oscillator1Phase * 2.0 * .pi * 3.0))
+                }
                 if controlSnapshot.pinch {
-                    sample = sample * 0.58
-                        + 0.28 * sin(oscillator1Phase * 2.0 * .pi * 8.0)
-                        + 0.14 * sin(oscillator1Phase * 2.0 * .pi * 12.0)
+                    sample = sample * 0.45
+                        + 0.30 * sin(oscillator1Phase * 2.0 * .pi * 3.0)
+                        + 0.20 * sin(oscillator1Phase * 2.0 * .pi * 4.0)
+                        + 0.12 * sin(oscillator1Phase * 2.0 * .pi * 5.0)
                 }
 
                 // Apply saturation (soft clipping) for warmth

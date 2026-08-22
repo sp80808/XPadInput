@@ -34,6 +34,24 @@ public enum ScaleType: String, CaseIterable, Identifiable, Codable, Sendable {
         case .chromatic: return Array(0...11)
         }
     }
+
+    public var shortName: String {
+        switch self {
+        case .major: return "Major"
+        case .naturalMinor: return "Minor"
+        case .harmonicMinor: return "Harm. Minor"
+        case .melodicMinor: return "Mel. Minor"
+        case .dorian: return "Dorian"
+        case .phrygian: return "Phrygian"
+        case .lydian: return "Lydian"
+        case .mixolydian: return "Mixolydian"
+        case .locrian: return "Locrian"
+        case .pentatonicMajor: return "Maj Pent"
+        case .pentatonicMinor: return "Min Pent"
+        case .blues: return "Blues"
+        case .chromatic: return "Chromatic"
+        }
+    }
 }
 
 /// Represents a musical scale/mode with its root and interval pattern.
@@ -66,6 +84,10 @@ public struct Scale: Hashable, Codable, Sendable, Identifiable {
 
     public var displayName: String {
         type.rawValue
+    }
+
+    public var shortDisplayName: String {
+        type.shortName
     }
 
     public func pitchClasses(root: PitchClass) -> [PitchClass] {

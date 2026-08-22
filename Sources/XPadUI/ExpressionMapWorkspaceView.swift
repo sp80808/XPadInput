@@ -190,6 +190,18 @@ struct ExpressionMapWorkspaceView: View {
                     .foregroundStyle(XTheme.tense)
             }
 
+            Picker("MIDI Passthru", selection: Binding(
+                get: { appState.midiPassthruMode },
+                set: { appState.setMIDIPassthruMode($0) }
+            )) {
+                ForEach(MIDIPassthruMode.allCases) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            labeled("Passthru Routing", appState.midiPassthruMode.description)
+
             Text("Auto-Detect uses the frontmost macOS DAW. A filtered track channel (1–16) collapses pitched roles onto that channel and disables MPE, because Live/Logic/Cubase MPE needs All / Any Channels.")
                 .font(.caption)
                 .foregroundStyle(XTheme.textTertiary)

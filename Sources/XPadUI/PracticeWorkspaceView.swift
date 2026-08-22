@@ -120,25 +120,31 @@ struct PracticeHeaderView: View {
         PracticeTab.allCases.filter { $0 != .practice || isSessionActive }
     }
     
+    @Environment(\.viewportMetrics) private var viewport
+    
     var body: some View {
-        HStack(spacing: 12) {
+        let isCompact = viewport.isCompactWidth
+        
+        HStack(spacing: isCompact ? 8 : 12) {
             // Logo and Title
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Image(systemName: "graduationcap.fill")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(.system(size: isCompact ? 14 : 16, weight: .bold))
                     .foregroundColor(XTheme.primary)
                 
                 VStack(alignment: .leading, spacing: 0) {
                     Text("PRACTICE")
-                        .font(.system(size: 14, weight: .black, design: .rounded))
+                        .font(.system(size: isCompact ? 13 : 14, weight: .black, design: .rounded))
                         .foregroundColor(XTheme.textPrimary)
-                    Text("Learning Workspace")
-                        .font(.system(size: 8, weight: .bold, design: .monospaced))
-                        .foregroundColor(XTheme.primary)
+                    if !isCompact {
+                        Text("Learning Workspace")
+                            .font(.system(size: 8, weight: .bold, design: .monospaced))
+                            .foregroundColor(XTheme.primary)
+                    }
                 }
             }
 
-            HStack(spacing: 4) {
+            HStack(spacing: 3) {
                 ForEach(visibleTabs) { tab in
                     Button {
                         selectedTab = tab
@@ -146,7 +152,7 @@ struct PracticeHeaderView: View {
                         Text(tab.rawValue)
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundColor(selectedTab == tab ? XTheme.textPrimary : XTheme.textTertiary)
-                            .padding(.horizontal, 8)
+                            .padding(.horizontal, isCompact ? 6 : 8)
                             .padding(.vertical, 4)
                             .background(selectedTab == tab ? XTheme.primary.opacity(0.2) : Color.clear)
                             .clipShape(Capsule())
@@ -157,25 +163,40 @@ struct PracticeHeaderView: View {
                 }
             }
             
-            Spacer()
+            Spacer(minLength: 4)
             
             // Progress Stats
-            HStack(spacing: 16) {
-                ProgressStatItem(
-                    icon: "flame.fill",
-                    value: "\(progressTracker.streakDays)",
-                    label: "Day Streak"
-                )
-                ProgressStatItem(
-                    icon: "clock.fill",
-                    value: formatTime(progressTracker.totalPracticeTime),
-                    label: "Total Time"
-                )
-                ProgressStatItem(
-                    icon: "checkmark.circle.fill",
-                    value: "\(progressTracker.getCompletedLessonsCount())",
-                    label: "Completed"
-                )
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    ProgressStatItem(
+                        icon: "flame.fill",
+                        value: "\(progressTracker.streakDays)",
+                        label: "Streak"
+                    )
+                    ProgressStatItem(
+                        icon: "clock.fill",
+                        value: formatTime(progressTracker.totalPracticeTime),
+                        label: "Total"
+                    )
+                    ProgressStatItem(
+                        icon: "checkmark.circle.fill",
+                        value: "\(progressTracker.getCompletedLessonsCount())",
+                        label: "Done"
+                    )
+                }
+                HStack(spacing: 8) {
+                    ProgressStatItem(
+                        icon: "flame.fill",
+                        value: "\(progressTracker.streakDays)",
+                        label: "Streak"
+                    )
+                    ProgressStatItem(
+                        icon: "checkmark.circle.fill",
+                        value: "\(progressTracker.getCompletedLessonsCount())",
+                        label: "Done"
+                    )
+                }
+                EmptyView()
             }
 
             Button("Done") {
@@ -191,8 +212,8 @@ struct PracticeHeaderView: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .help("Return to Play")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.horizontal, isCompact ? 10 : 16)
+        .padding(.vertical, isCompact ? 6 : 8)
         .background(XTheme.surface.opacity(0.4))
     }
     
