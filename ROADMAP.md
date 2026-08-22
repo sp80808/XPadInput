@@ -20,7 +20,8 @@ This document outlines the multi-phase vision, milestones, and technical traject
 - [x] Automatic DAW host MIDI channel maps (Logic, Live, Bitwig, Cubase, Studio One, REAPER, DP, Waveform, MainStage, FL Studio, Pro Tools, Reason, LUNA, Ardour, Gig Performer, and others) with track-channel fallback.
 - [x] Built-in low-latency polyphonic DSP synthesizer (PolyBLEP oscillators, ADSR, state-variable filters).
 - [x] 960 PPQN multi-track timeline sequencer with scene management and SMF (.mid) export.
-- [x] Native macOS liquid interface with 5 dedicated workspaces (`PLAY`, `HARMONY`, `SEQUENCE`, `MAP`, `LIBRARY`).
+- [x] Practice mode with interactive lessons, chord evaluation, and progress tracking.
+- [x] Native macOS liquid interface with 6 dedicated workspaces (`PLAY`, `HARMONY`, `SEQUENCE`, `MAP`, `LIBRARY`, `PRACTICE`).
 - [x] Compact XTheme-consistent transport context selectors (`Instrument`, `Key`, `Scale`) in transport bar and chord card.
 - [x] macOS automated CI build & test gate with release artifact packaging (`.github/workflows/macos-ci.yml`).
 - [x] Distributable macOS release packaging (`XPI.app`, `XPadInput-0.0.01.dmg`, `XPadInput-0.0.02.dmg`, `XPadInput-0.0.03.dmg`, and ZIPs with SHA-256 validation).
@@ -54,8 +55,6 @@ This document outlines the multi-phase vision, milestones, and technical traject
 | Native MIDI 2 Per-Note | Q2 2026 | ✅ Complete | 32-bit Per-Note Pitch/Pressure/Timbre UMPs |
 | SMF2 / MIDI Clip File | Q2 2026 | ✅ Complete | Binary encoder & parser (M2-116-U v1.0) |
 | Live high-res expression | Q2 2026 | 🔄 In progress | Live `AppState` caller wired; attack velocity remaining |
-| MIDI-CI MPE Profile | Q3 2026 | 📋 Planned | Bidirectional discovery & negotiation |
-| MIDI Clip File export | Q3 2026 | 📋 Planned | M2-116-U UMP clip timeline renderer |
 
 
 ---

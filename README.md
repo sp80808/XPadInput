@@ -101,6 +101,11 @@ Please test controller detection, analog sticks, triggers, chord selection, virt
 - Real-time gesture recording (`GestureRecorder`) capturing stick trajectories and gyro motion.
 - One-click Standard MIDI File (`.mid`) export with native drag-and-drop directly into Ableton Live, Logic Pro, Bitwig Studio, or Finder.
 
+### 7. 🎓 Practice Mode for Chord Progression Learning
+- Interactive lessons for mastering chord progressions and harmonic movement.
+- Real-time chord evaluation with timing accuracy feedback.
+- Progress tracking with session history and improvement metrics.
+
 ---
 
 ## 🕹️ Controller Support & Mapping
@@ -208,16 +213,18 @@ XPadInput/
 ├── Sources/
 │   ├── XPadCore/              # Pure 12-TET theory primitives (PitchClass, Note, Scale, Chord)
 │   ├── XPadTheory/            # Harmonic wheel, voice leading, suggestions & progressions
+│   ├── XPadPractice/          # Practice mode for chord progression learning
 │   ├── XPadController/        # GCController abstraction, virtual strummer & gesture DSP
 │   ├── XPadMIDI/              # CoreMIDI virtual ports, MPE zone manager & SMF exporter
-│   ├── XPadAudio/             # PolyBLEP DSP synthesizer & factory presets
+│   ├── XPadAudio/             # PolyBLEP DSP synthesizer, AUv3 plugin & virtual audio driver
 │   ├── XPadSequencer/         # 960 PPQN tick clock, clips, tracks & scenes
-│   ├── XPadUI/                # Native SwiftUI 5-workspace desktop interface
+│   ├── XPadUI/                # Native SwiftUI 6-workspace desktop interface
 │   ├── XPadInput/             # Application main entrypoint
 │   └── XPadTests/             # Universal exhaustive test runner (executable target)
 ├── Tests/
 │   ├── XPadCoreTests/         # Unit tests for theory primitives
 │   ├── XPadTheoryTests/       # Unit tests for harmony engine
+│   ├── XPadPracticeTests/     # Unit tests for practice mode
 │   ├── XPadControllerTests/   # Unit tests for controller abstraction
 │   ├── XPadMIDITests/         # Unit tests for CoreMIDI & MPE
 │   ├── XPadAudioTests/        # Unit tests for DSP synth

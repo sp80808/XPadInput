@@ -69,7 +69,7 @@ public struct HarmonicChordBender: Sendable {
         // Determine step index and fractional progress t based on reference note's semitone delta
         let (stepIndex, fraction) = findStepProgress(
             targetOffset: absBend,
-            refLadder: refSteps.map { Double($0.midiNote - referenceNote.midiNote).magnitude }
+            refLadder: refSteps.map { abs(Double($0.midiNote) - Double(referenceNote.midiNote)) }
         )
 
         var result: [UInt8: Double] = [:]

@@ -1507,8 +1507,8 @@ final class TestRunner {
                     chord: Chord(root: .c, quality: .major),
                     pitchAssist: .strong
                 )
-                // Lead note bends down -2 semitones (1 diatonic step down: C->B is -1, E->D is -2, G->F is -2)
-                let bends = bender.bends(for: cMajorTriad, leadBendSemitones: -2.0, context: context)
+                // Lead note bends down -1 semitone (1 diatonic step down: C->B is -1, E->D is -2, G->F is -2)
+                let bends = bender.bends(for: cMajorTriad, leadBendSemitones: -1.0, context: context)
                 
                 let cBend = bends[60] ?? 0
                 let eBend = bends[64] ?? 0
@@ -1538,6 +1538,30 @@ final class TestRunner {
                 assertEqual(bends[60], 2.5)
                 assertEqual(bends[64], 2.5)
                 assertEqual(bends[67], 2.5)
+            }
+
+            test("Harmonic chord bender handles downward diatonic pitch bends without arithmetic overflow") {
+                let bender = HarmonicChordBender()
+                let chord = [
+                    Note(pitchClass: .c, octave: 4),
+                    Note(pitchClass: .e, octave: 4),
+                    Note(pitchClass: .g, octave: 4)
+                ]
+                let context = MusicalContext(
+                    key: .c,
+                    scale: Scale(root: .c, type: .major),
+                    chord: Chord(root: .c, quality: .major),
+                    pitchAssist: .strong
+                )
+
+                // Downward bend of -2 semitones (C major triad bends down in C major to B diminished or nearest diatonic step)
+                let downwardBends = bender.bends(for: chord, leadBendSemitones: -2.0, context: context)
+                assertTrue(downwardBends[60] != nil)
+                assertTrue(downwardBends[64] != nil)
+                assertTrue(downwardBends[67] != nil)
+                assertTrue(downwardBends[60]! < 0)
+                assertTrue(downwardBends[64]! < 0)
+                assertTrue(downwardBends[67]! < 0)
             }
 
             test("Technique SMF export includes pitch bend") {

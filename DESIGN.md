@@ -35,7 +35,7 @@ That mental shift is the core design objective.
 
 The repository already establishes a strong product foundation:
 
-- a five-workspace model: **PLAY, HARMONY, SEQUENCE, MAP, LIBRARY**;
+- a six-workspace model: **PLAY, HARMONY, SEQUENCE, MAP, LIBRARY, PRACTICE**;
 - gamepad capability profiling and support for standard, rhythm, and niche controllers;
 - harmonic-wheel navigation and harmonic-risk radius;
 - physical right-stick strumming;
@@ -372,7 +372,7 @@ When enabled:
 
 ## 10. App Shell & Information Architecture
 
-The five-workspace model remains appropriate.
+The six-workspace model remains appropriate.
 
 ### Persistent elements
 
@@ -393,7 +393,7 @@ The compact icon sidebar is a good pattern.
 
 Requirements:
 
-- 5 primary destinations only;
+- 6 primary destinations (Play, Harmony, Sequence, Map, Library, Practice);
 - clear selection state;
 - text labels remain visible rather than icon-only ambiguity;
 - controller connection indicator at the bottom;
@@ -817,9 +817,36 @@ Useful previews include:
 
 ---
 
-## 16. Controller Visualisation Language
+## 16. PRACTICE Workspace
 
-### 16.1 Visualise a control as its physical type
+PRACTICE is a dedicated learning environment for mastering chord progressions and harmonic movement.
+
+### Layout
+
+- Current target progression with chord blocks
+- Active lesson prompt and evaluation feedback
+- Progress indicators and session history
+- Timing accuracy visualization
+
+### Interaction Model
+
+- Follow-the-lead: UI highlights the next chord to play
+- Real-time evaluation: chord recognition with timing feedback
+- Gentle correction: wrong chords are noted without harsh interruption
+- Session summary: accuracy, timing, and improvement metrics
+
+### Visual Language
+
+- Use the same chord block visual language as HARMONY
+- Clear "play now" indication without visual clutter
+- Progress ring or streak counter for motivation
+- Keep the focus on the instrument, not the UI
+
+---
+
+## 17. Controller Visualisation Language
+
+### 17.1 Visualise a control as its physical type
 
 - stick → circular XY field;
 - trigger → travel/compression control;
@@ -834,15 +861,15 @@ Useful previews include:
 
 Avoid reducing every controller type to a horizontal progress bar.
 
-### 16.2 Controller-specific glyphs
+### 17.2 Controller-specific glyphs
 
 Use the existing controller icon-pack architecture.
 
-When hardware identity is known, display that controller’s native labels/symbols.
+When hardware identity is known, display that controller's native labels/symbols.
 
 Do not show PlayStation `△ ○ ✕ □` glyphs for Xbox hardware.
 
-### 16.3 Press / travel states
+### 17.3 Press / travel states
 
 Every interactive controller element needs an obvious live state.
 
@@ -860,7 +887,7 @@ Apple guidance for controls reinforces the importance of visible/tactile interac
 
 ---
 
-## 17. Velocity & Dynamics Visual Language
+## 18. Velocity & Dynamics Visual Language
 
 Velocity is transient. Its UI should be transient too.
 

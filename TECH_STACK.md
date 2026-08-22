@@ -11,35 +11,37 @@ This document outlines the architectural patterns, native frameworks, performanc
 |                                 XPadInputApp                                      |
 |                               (SwiftUI / AppKit)                                  |
 +-----------------------------------------------------------------------------------+
-                                         |
-     +-------------------+---------------+-------------------+
-     |                   |                                   |
-     v                   v                                   v
+                                          |
+      +-------------------+---------------+-------------------+
+      |                   |                                   |
+      v                   v                                   v
 [ Workspace UI ]  [ Controller Manager ]              [ Transport & Clock ]
   - Play            - GCController Discovery            - 960 PPQN Timer Source
   - Harmony         - Polar Coordinate Normalizer       - Multi-Track Sequencer
   - Sequence        - Virtual Strummer DSP              - Clip Event Recorder
   - Map             - Rhythm Compass Engine             - SMF Exporter (.mid)
-  - Library         - Gesture Recorder
-     |                   |                                   |
-     +-------------------+-----------------------------------+
-                         |
-                         v
-            [ Music Theory & Harmony Engine ]
-              - 12-TET Pitch Classes & Intervals
-              - 5-Tier Polar Harmonic Wheel
-              - Voice Leading Optimizer (Cost Heuristics)
-              - "What Next?" Harmonic Suggestions
-              - Modulation Pathways & Chord Blocks
-                         |
-     +-------------------+-------------------+
-     |                                       |
-     v                                       v
+  - Library         - Gesture Recorder                  - SMF2 / MIDI Clip File
+  - Practice        - Controller Calibration
+      |                   |                                   |
+      +-------------------+-----------------------------------+
+                          |
+                          v
+             [ Music Theory & Harmony Engine ]
+               - 12-TET Pitch Classes & Intervals
+               - 5-Tier Polar Harmonic Wheel
+               - Voice Leading Optimizer (Cost Heuristics)
+               - "What Next?" Harmonic Suggestions
+               - Modulation Pathways & Chord Blocks
+                          |
+      +-------------------+-------------------+
+      |                                       |
+      v                                       v
 [ CoreMIDI / MPE Output ]             [ Native Audio Synth ]
   - 6 Virtual Endpoints                 - AVAudioEngine & AVAudioSourceNode
   - MPE Zone Manager (Ch 2-15)          - PolyBLEP Bandlimited Oscillators
   - Per-note Pitch Bend (±48 st)        - ADSR Envelope Generators
   - Poly Pressure & CC74 Timbre         - State-Variable Filters & Soft Limiter
+  - MIDI 2.0 UMP Transport              - AUv3 Plugin / Virtual Audio Driver
 ```
 
 ---
@@ -103,7 +105,7 @@ Pure theory models (`XPadCore`, `XPadTheory`) are `Sendable` value types with no
 
 Every commit to `main` and all pull requests are validated via GitHub Actions on a native macOS runner (`.github/workflows/macos-ci.yml`):
 - **Diagnostic Toolchain**: Verifies active Swift 6.0 toolchain and macOS environment.
-- **Automated Test Gate**: Runs full unit test suites across all 6 submodules via `swift test`.
+- **Automated Test Gate**: Runs full unit test suites across all 7 submodules via `swift test`.
 - **Release Packaging**: Compiles release binary, builds universal `XPI.app` bundle, ad-hoc signs with entitlements, and packages distributable `.dmg` and `.zip` archives.
 - **Checksum Verification**: Generates and validates cryptographic SHA-256 hashes against all distribution artifacts.
 
@@ -113,6 +115,7 @@ Every commit to `main` and all pull requests are validated via GitHub Actions on
 | :--- | :--- | :--- |
 | `XPadCoreTests` | Theory primitives | Pitch math, enharmonics, intervals, scales, chords, voicings |
 | `XPadTheoryTests` | Harmony engine | Polar wheels, voice leading, suggestions, modulations, progressions |
+| `XPadPracticeTests` | Practice mode | Lesson creation, chord evaluation, timing accuracy, progress tracking |
 | `XPadControllerTests` | Hardware abstraction | Deadzones, strum velocity, direction heuristics, rhythm compass, gesture capture |
 | `XPadMIDITests` | MIDI/MPE & CoreMIDI | Port lifecycle, MPE channel distribution, SMF encoding, UMP translation, **CoreMIDI virtual loopback** |
 | `XPadAudioTests` | DSP synth | Preset configurations, ADSR state transitions, filter responses |
