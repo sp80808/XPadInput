@@ -589,23 +589,29 @@ public final class AppState: @unchecked Sendable {
     private func applySurfaceActions(_ frame: ControlSurfaceFrame) {
         if frame.didRise(.octaveUp) {
             shiftPerformanceOctaves(by: 1)
+            controllerManager.playTechniqueHaptic(.octaveShift)
         }
         if frame.didRise(.octaveDown) {
             shiftPerformanceOctaves(by: -1)
+            controllerManager.playTechniqueHaptic(.octaveShift)
         }
         if frame.didRise(.voicingNext) {
             cycleVoicing(by: 1)
+            controllerManager.playTechniqueHaptic(.chordChange)
         }
         if frame.didRise(.voicingPrevious) {
             cycleVoicing(by: -1)
+            controllerManager.playTechniqueHaptic(.chordChange)
         }
         if frame.didRise(.soloModeToggle) {
             isSoloModeActive.toggle()
+            controllerManager.playTechniqueHaptic(.buttonConfirm)
         }
         if frame.didRise(.duoModeToggle) {
             setDuoPerformanceMode(
                 duoPerformanceMode == .instrumentOnly ? .drumsAndInstrument : .instrumentOnly
             )
+            controllerManager.playTechniqueHaptic(.buttonConfirm)
         }
         if frame.didRise(.panic) {
             panic()
@@ -656,6 +662,7 @@ public final class AppState: @unchecked Sendable {
             new.inversion = voicingInversion
             currentChord = new
             retargetHeldChordTones()
+            controllerManager.playTechniqueHaptic(.chordChange)
             multiJamManager.updateSharedHarmony(key: currentKey, scale: currentScale, chord: new)
             _ = smartSoloEngine.handleChordChange(oldChord: old, newChord: new, context: musicalContext())
             if selectedWorkspace == .practice && practiceEngine.isPracticeActive {
@@ -1155,6 +1162,7 @@ public final class AppState: @unchecked Sendable {
             }
 
             audioEngine.triggerDrum(sound, velocity: hit.velocity)
+            controllerManager.playTechniqueHaptic(.drumHit)
             midiEngine.sendNoteOn(
                 port: .drums,
                 channel: midiChannel(.drums),

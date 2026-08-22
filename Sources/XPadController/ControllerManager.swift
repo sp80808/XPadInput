@@ -470,26 +470,8 @@ public final class ControllerManager: @unchecked Sendable {
     
     public func playTechniqueHaptic(_ haptic: TechniqueHaptic) {
         guard activeScheme.haptics != .off else { return }
-        guard let engine = hapticEngine else { return }
-        
         let multiplier: Float = activeScheme.haptics == .subtle ? 0.45 : 1.0
-        let intensity = min(1.0, haptic.intensity * multiplier)
-        
-        do {
-            let event = CHHapticEvent(
-                eventType: .hapticTransient,
-                parameters: [
-                    CHHapticEventParameter(parameterID: .hapticIntensity, value: intensity),
-                    CHHapticEventParameter(parameterID: .hapticSharpness, value: haptic.sharpness)
-                ],
-                relativeTime: 0
-            )
-            let pattern = try CHHapticPattern(events: [event], parameters: [])
-            let player = try engine.makePlayer(with: pattern)
-            try player.start(atTime: CHHapticTimeImmediate)
-        } catch {
-            print("⚠️ Haptic playback failed: \(error)")
-        }
+        coreHapticsEngine.playTechniqueHaptic(haptic, intensityMultiplier: multiplier)
     }
 
     public func playBendTargetDetent() {

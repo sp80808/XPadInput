@@ -18,27 +18,25 @@
 
 Pre-built native macOS universal releases are packaged directly via GitHub Actions CI.
 
-### Alpha 0.0.02 (CI-Validated Latest)
-Validated automated release build incorporating compact themed context selectors and CoreMIDI 32-bit loopback proof:
-- **Recommended:** [Download XPadInput-0.0.02.dmg](https://github.com/sp80808/XPadInput/releases)
-- **Fallback ZIP:** [Download XPadInput-0.0.02.zip](https://github.com/sp80808/XPadInput/releases)
+### Alpha 0.0.03 (CI-Validated Latest)
+Validated release build incorporating diatonic consonant chord pitch bending, Universal MIDI Packet (UMP) decoding, accurate MIDI Passthru routing, enhanced DualSense/CoreHaptics feedback, and macOS Force Touch trackpad tactile support:
+- **Recommended:** [Download XPadInput-0.0.03.dmg](https://github.com/sp80808/XPadInput/releases)
+- **Fallback ZIP:** [Download XPadInput-0.0.03.zip](https://github.com/sp80808/XPadInput/releases)
 
 SHA-256:
 ```text
-31e83f8a9bf8350f218f97d26aa1011c4b98122b21ea0272f650560f70fb6033  XPadInput-0.0.02.dmg
-85d4fce61dcd91ab4bb587fe7aca3e1e67ed370060ce548266163ea10915b341  XPadInput-0.0.02.zip
+685747bb757b9fd29913174bf3c9e2e0de655126d7a147b6e4f79f6e565f86ae  XPadInput-0.0.03.dmg
+2e92ac2cfcd31e4657b99f2d89505e0d0b361ebdcf189b2e93b2a6ced1760f8f  XPadInput-0.0.03.zip
 ```
+
+### Alpha 0.0.02
+- [Download XPadInput-0.0.02.dmg](https://github.com/sp80808/XPadInput/releases)
+- [Download XPadInput-0.0.02.zip](https://github.com/sp80808/XPadInput/releases)
 
 ### Alpha 0.0.01 (Initial Prerelease)
 - [Download XPadInput-0.0.01.dmg](https://github.com/sp80808/XPadInput/releases/download/macos/XPadInput-0.0.01.dmg)
 - [Download XPadInput-0.0.01.zip](https://github.com/sp80808/XPadInput/releases/download/macos/XPadInput-0.0.01.zip)
 - [View GitHub Prerelease](https://github.com/sp80808/XPadInput/releases/tag/macos)
-
-SHA-256:
-```text
-466d717998b4da7a17aa9a3450f7c5c66cec22132ea998bef036f528939af2b2  XPadInput-0.0.01.dmg
-23994712698cb41af8be6bbd3b916b2db5bc6f3e58d896ce9d20ffa427316cf1  XPadInput-0.0.01.zip
-```
 
 ### Install & test
 

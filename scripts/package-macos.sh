@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="${1:-${XPI_VERSION:-0.0.02}}"
+VERSION="${1:-${XPI_VERSION:-0.0.03}}"
 DIST_DIR="${DIST_DIR:-dist}"
 APP_NAME="XPI"
 EXECUTABLE_NAME="XPI"
@@ -14,7 +14,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9]+)?$ ]]; then
-  echo "error: version must look like 0.0.02 or 0.0.02-alpha" >&2
+  echo "error: version must look like 0.0.03 or 0.0.03-alpha" >&2
   exit 1
 fi
 

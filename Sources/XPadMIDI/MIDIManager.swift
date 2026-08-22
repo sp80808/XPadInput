@@ -847,7 +847,7 @@ public final class MIDIEngine: @unchecked Sendable {
 
     private func sendMIDI1Message(_ bytes: [UInt8], endpoint: MIDIEndpointRef) {
         var eventList = MIDIEventList()
-        var packet = MIDIEventListInit(&eventList, ._1_0)
+        let packet = MIDIEventListInit(&eventList, ._1_0)
         let word: UInt32
 
         if bytes.count == 3 {

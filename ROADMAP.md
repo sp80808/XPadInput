@@ -23,7 +23,7 @@ This document outlines the multi-phase vision, milestones, and technical traject
 - [x] Native macOS liquid interface with 5 dedicated workspaces (`PLAY`, `HARMONY`, `SEQUENCE`, `MAP`, `LIBRARY`).
 - [x] Compact XTheme-consistent transport context selectors (`Instrument`, `Key`, `Scale`) in transport bar and chord card.
 - [x] macOS automated CI build & test gate with release artifact packaging (`.github/workflows/macos-ci.yml`).
-- [x] Distributable macOS release packaging (`XPI.app`, `XPadInput-0.0.01.dmg`, `XPadInput-0.0.02.dmg`, and ZIPs with SHA-256 validation).
+- [x] Distributable macOS release packaging (`XPI.app`, `XPadInput-0.0.01.dmg`, `XPadInput-0.0.02.dmg`, `XPadInput-0.0.03.dmg`, and ZIPs with SHA-256 validation).
 - [x] Selectable experimental MIDI 2.0 Channel Voice UMP transport (`MIDISourceCreateWithProtocol`).
 - [x] Native 32-bit semantic pitch bend encoding and protocol-resolution-aware de-duplication.
 - [x] Automated CoreMIDI virtual-source loopback test verifying native 32-bit UMP delivery over macOS transport.
@@ -45,7 +45,7 @@ This document outlines the multi-phase vision, milestones, and technical traject
 | Built-in synth & DSP | Q1 2026 | ✅ Complete | PolyBLEP, SVF filters, 5 presets |
 | 5-workspace UI shell | Q1 2026 | ✅ Complete | Play, Harmony, Sequence, Map, Library |
 | Automated test gate | Q1 2026 | ✅ Complete | macOS CI workflow on push & PR |
-| Release packaging | Q1 2026 | ✅ Complete | Alpha 0.0.01 & 0.0.02 DMG/ZIP + SHA-256 |
+| Release packaging | Q1 2026 | ✅ Complete | Alpha 0.0.01, 0.0.02 & 0.0.03 DMG/ZIP + SHA-256 |
 | Experimental MIDI 2 UMP | Q2 2026 | ✅ Complete | Selectable protocol, 32-bit pitch/pressure/timbre |
 | CoreMIDI loopback proof | Q2 2026 | ✅ Complete | Virtual source → Input port 32-bit verification |
 | DAW certification | Q2 2026 | 🔄 In progress | Live 12, Logic Pro, Bitwig Studio |

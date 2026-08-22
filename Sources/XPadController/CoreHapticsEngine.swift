@@ -1,6 +1,9 @@
 import Foundation
 import GameController
 import CoreHaptics
+#if canImport(AppKit)
+import AppKit
+#endif
 import XPadCore
 
 /// Haptic tactile feedback mode for game controller actuators.
@@ -210,6 +213,41 @@ public final class CoreHapticsEngine: @unchecked Sendable {
             try continuousPlayer?.stop(atTime: CHHapticTimeImmediate)
         } catch {}
         continuousPlayer = nil
+    }
+
+    /// Plays a standardized musical technique tactile cue on controller voice-coils or macOS trackpad.
+    public func playTechniqueHaptic(_ haptic: TechniqueHaptic, intensityMultiplier: Float = 1.0) {
+        guard mode != .off else { return }
+
+        let intensity = min(1.0, haptic.intensity * intensityMultiplier * masterIntensity)
+        let sharpness = haptic.sharpness
+
+        if isRunning, let engine = hapticEngine {
+            let event = CHHapticEvent(
+                eventType: .hapticTransient,
+                parameters: [
+                    CHHapticEventParameter(parameterID: .hapticIntensity, value: intensity),
+                    CHHapticEventParameter(parameterID: .hapticSharpness, value: sharpness)
+                ],
+                relativeTime: 0
+            )
+            playSinglePattern([event], on: engine)
+            return
+        }
+
+        #if canImport(AppKit)
+        // Fallback for macOS Force Touch trackpad when no gamepad actuator is connected
+        let pattern: NSHapticFeedbackManager.FeedbackPattern
+        switch haptic {
+        case .bendDetent, .chordChange, .octaveShift:
+            pattern = .alignment
+        case .hammerOn, .pullOff, .pinchHarmonic, .soloGuideTone:
+            pattern = .levelChange
+        default:
+            pattern = .generic
+        }
+        NSHapticFeedbackManager.defaultPerformer.perform(pattern, performanceTime: .default)
+        #endif
     }
 
     private func playSinglePattern(_ events: [CHHapticEvent], on engine: CHHapticEngine) {
