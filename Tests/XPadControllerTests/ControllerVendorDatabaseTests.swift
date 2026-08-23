@@ -167,24 +167,31 @@ final class ControllerVendorDatabaseTests: XCTestCase {
     // MARK: - Suggested Scheme IDs
 
     func testSuggestedSchemeIDCoversAllCases() {
+        let expectedByKind: [ControllerKind: String] = [
+            .dualSense: "xpi_performance",
+            .dualShock4: "xpi_performance",
+            .xbox: "xpi_performance",
+            .switchPro: "xpi_performance",
+            .steamDeck: "xpi_performance",
+            .generic: "xpi_performance",
+            .simulated: "xpi_performance",
+            .guitarHero: "xpi_rhythm_pad",
+            .soundVoltex: "xpi_rhythm_pad",
+            .beatmaniaIIDX: "xpi_rhythm_pad",
+            .popnMusic: "xpi_rhythm_pad",
+            .taikoDrum: "xpi_rhythm_pad",
+            .danceMat: "xpi_rhythm_pad",
+            .flightStick: "xpi_flight_deck",
+            .racingWheel: "xpi_racing_wheel",
+            .fightStick: "xpi_arcade_stick",
+        ]
         for kind in ControllerKind.allCases {
-            switch kind.category {
-            case .standard:
-                XCTAssertEqual(kind.suggestedSchemeID, "xpi_performance",
-                               "\(kind) should map to xpi_performance")
-            case .rhythm:
-                XCTAssertEqual(kind.suggestedSchemeID, "xpi_rhythm_pad",
-                               "\(kind) should map to xpi_rhythm_pad")
-            case .niche:
-                let expected: String
-                switch kind {
-                case .fightStick: expected = "xpi_arcade_stick"
-                case .racingWheel: expected = "xpi_racing_wheel"
-                case .flightStick: expected = "xpi_flight_deck"
-                }
-                XCTAssertEqual(kind.suggestedSchemeID, expected,
-                               "\(kind) should map to \(expected)")
+            guard let expected = expectedByKind[kind] else {
+                XCTFail("No expected scheme id defined for \(kind)")
+                continue
             }
+            XCTAssertEqual(kind.suggestedSchemeID, expected,
+                           "\(kind) should map to \(expected)")
         }
     }
 

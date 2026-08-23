@@ -91,6 +91,14 @@ public final class AppState: @unchecked Sendable {
     /// Help panel visibility
     public var showHelpPanel: Bool = false
 
+    /// Transport bar visibility — persisted so it stays hidden across launches.
+    public var showTransportBar: Bool = !UserDefaults.standard.bool(forKey: "xpi_transport_bar_hidden")
+
+    public func toggleTransportBar() {
+        showTransportBar.toggle()
+        UserDefaults.standard.set(!showTransportBar, forKey: "xpi_transport_bar_hidden")
+    }
+
     /// Practice is opt-in: it is never the launch workspace and does not occupy
     /// persistent chrome until the user explicitly requests it.
     public var isPracticeRequested: Bool {

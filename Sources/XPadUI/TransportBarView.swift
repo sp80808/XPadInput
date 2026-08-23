@@ -5,7 +5,7 @@ import XPadMIDI
 import XPadAudio
 
 /// Persistent transport bar with playback, key/scale, BPM, and status indicators.
-/// Persistent transport bar with playback, key/scale, BPM, and status indicators.
+/// Can be collapsed to a thin tab to reclaim screenspace, or hidden entirely.
 struct TransportBar: View {
     @Environment(AppState.self) private var appState
     @Environment(\.viewportMetrics) private var viewport
@@ -15,8 +15,65 @@ struct TransportBar: View {
     @State private var recordPulse: Bool = false
     @State private var tapRippleTrigger: Int = 0
     @State private var panicShake: Double = 0
-    
+    @State private var isCollapsed: Bool = false
+
     var body: some View {
+        VStack(spacing: 0) {
+            if isCollapsed {
+                collapsedHandle
+            } else {
+                expandedContent
+            }
+        }
+        .frame(height: isCollapsed ? 6 : (viewport.isCompactHeight ? 42 : 48))
+        .background(XTheme.cardGradient)
+        .overlay(alignment: .top) {
+            if !isCollapsed {
+                Rectangle()
+                    .fill(Color.white.opacity(0.055))
+                    .frame(height: 1)
+            }
+        }
+        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isCollapsed)
+        .onAppear {
+            isCollapsed = !appState.showTransportBar
+        }
+    }
+
+    @ViewBuilder
+    private var collapsedHandle: some View {
+        HStack(spacing: 0) {
+            Button {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                    isCollapsed = false
+                }
+            } label: {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundColor(XTheme.textTertiary)
+                    .frame(maxWidth: .infinity)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Show Transport Bar")
+
+            Button {
+                appState.toggleTransportBar()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundColor(XTheme.textTertiary)
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .help("Hide Transport Bar permanently")
+        }
+        .keyboardShortcut("t", modifiers: [.command, .option])
+        .accessibilityLabel("Transport Bar hidden")
+    }
+
+    @ViewBuilder
+    private var expandedContent: some View {
         ViewThatFits(in: .horizontal) {
             content(density: .expanded)
             content(density: .regular)
@@ -25,7 +82,6 @@ struct TransportBar: View {
         .padding(.horizontal, viewport.isCompactWidth ? 10 : 16)
         .padding(.vertical, 6)
         .frame(height: viewport.isCompactHeight ? 42 : 48)
-        .background(XTheme.cardGradient)
         .overlay(alignment: .top) {
             Rectangle()
                 .fill(Color.white.opacity(0.055))
@@ -91,7 +147,23 @@ struct TransportBar: View {
             
             divider()
             
-            // 7. Panic button
+            // 7. Collapse toggle
+            Button {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                    isCollapsed = true
+                }
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundColor(XTheme.textTertiary)
+                    .frame(width: 24, height: 24)
+            }
+            .buttonStyle(.plain)
+            .help("Hide Transport Bar")
+            .keyboardShortcut("t", modifiers: [.command, .option])
+            .accessibilityLabel("Hide Transport Bar")
+            
+            // 8. Panic button
             panicButton()
         }
     }

@@ -3,27 +3,26 @@ import XPadCore
 import XPadController
 
 /// Main content view for the unified XPI performance workstation.
-/// Main content view for the unified XPI performance workstation.
 public struct ContentView: View {
     @Environment(AppState.self) private var appState
     @State private var isShowingSettings = false
     @State private var workspaceDirection: WorkspaceTransitionDirection = .forward
 
     private enum WorkspaceTransitionDirection { case forward, backward }
-    
+
     public init() {}
-    
+
     public var body: some View {
         GeometryReader { geo in
             let metrics = ViewportMetrics(size: geo.size)
-            
+
             VStack(spacing: 0) {
-                // Top Pro Performance Header Bar
+                // Top Performance Header Bar
                 TopPerformanceHeaderView(onOpenSettings: { isShowingSettings = true })
-                
+
                 Divider()
-                    .background(XTheme.border)
-                
+                    .overlay(XTheme.border)
+
                 // Play is the launch workspace. Practice is swapped in only after
                 // an explicit request (View > Show Practice) so it never occupies
                 // first-launch screenspace.
@@ -42,59 +41,61 @@ public struct ContentView: View {
                             removal:   .opacity.combined(with: .move(edge: .trailing))
                         ))
                 }
-                
+
                 Divider()
-                    .background(XTheme.border)
-                
-                // Transport Bar (Always docked at bottom)
-                TransportBar()
+                    .overlay(XTheme.border)
+
+                // Transport Bar (toggleable / docked at bottom)
+                if appState.showTransportBar {
+                    TransportBar()
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
             .environment(\.viewportMetrics, metrics)
         }
-        .animation(.easeInOut(duration: 0.25), value: appState.isPracticeRequested)
+        .animation(XTheme.easeInOut, value: appState.isPracticeRequested)
+        .animation(XTheme.easeInOut, value: appState.showTransportBar)
         .sheet(isPresented: $isShowingSettings) {
-            VStack(spacing: 0) {
-                HStack {
-                    HStack(spacing: 8) {
-                        Image(systemName: "slider.horizontal.3")
-                            .foregroundColor(XTheme.primary)
-                        Text("Controller & Hardware Configuration")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(XTheme.textPrimary)
-                    }
-                    Spacer()
-                    Button("Done") {
-                        isShowingSettings = false
-                    }
-                    .keyboardShortcut(.defaultAction)
-                }
-                .padding(16)
-                .background(XTheme.surfaceElevated)
-
-                Divider().overlay(XTheme.border)
-
-                ControlSchemeSettingsView()
-            }
-            .frame(minWidth: 780, minHeight: 600)
+            SettingsSheet()
         }
         .background {
-            ZStack {
-                XTheme.background
-                RadialGradient(
-                    colors: [XTheme.primary.opacity(0.14), .clear],
-                    center: .topLeading,
-                    startRadius: 24,
-                    endRadius: 800
-                )
-                LinearGradient(
-                    colors: [.clear, Color.black.opacity(0.3)],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            }
-            .ignoresSafeArea()
+            XTheme.canvasGradient
+                .ignoresSafeArea()
         }
         .preferredColorScheme(.dark)
+    }
+}
+
+// MARK: - Settings Sheet
+
+private struct SettingsSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                HStack(spacing: XTheme.space3) {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(XTheme.brand)
+                    Text("Controller & Hardware Configuration")
+                        .font(XTheme.fontHeadline)
+                        .foregroundColor(XTheme.textPrimary)
+                }
+                Spacer()
+                Button("Done") { dismiss() }
+                    .xButton(.primary, size: .regular)
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(XTheme.space5)
+            .background(XTheme.surface)
+
+            Divider().overlay(XTheme.border)
+
+            ControlSchemeSettingsView()
+        }
+        .frame(minWidth: 820, minHeight: 640)
+        .background(XTheme.surface)
     }
 }
 
@@ -107,89 +108,89 @@ struct TopPerformanceHeaderView: View {
     @State private var gearHovered = false
     @State private var connectRippleTrigger = 0
     @State private var wasConnected = false
-    
+
     var body: some View {
         @Bindable var state = appState
         let isCompact = viewport.isCompactWidth
-        
-        HStack(spacing: isCompact ? 10 : 16) {
+
+        HStack(spacing: isCompact ? XTheme.space3 : XTheme.space4) {
             // App Branding
-            HStack(spacing: isCompact ? 6 : 8) {
+            HStack(spacing: isCompact ? XTheme.space2 : XTheme.space3) {
                 Image(systemName: "gamecontroller.fill")
-                    .font(.system(size: isCompact ? 14 : 16, weight: .bold))
-                    .foregroundColor(XTheme.primary)
-                    .scaleEffect(appState.controllerManager.isConnected ? 1.04 : 1.0)
+                    .font(.system(size: isCompact ? 16 : 18, weight: .bold))
+                    .foregroundColor(XTheme.brand)
+                    .scaleEffect(appState.controllerManager.isConnected ? 1.03 : 1.0)
                     .animation(
                         appState.controllerManager.isConnected
-                            ? .easeInOut(duration: 1.6).repeatForever(autoreverses: true)
-                            : .easeOut(duration: 0.2),
+                            ? .easeInOut(duration: 1.8).repeatForever(autoreverses: true)
+                            : XTheme.easeOut,
                         value: appState.controllerManager.isConnected
                     )
-                    .xGlow(isActive: appState.controllerManager.isConnected)
-                
+                    .xPulse(isActive: appState.controllerManager.isConnected, color: XTheme.connected)
+
                 VStack(alignment: .leading, spacing: 0) {
                     Text("XPI")
-                        .font(.system(size: isCompact ? 13 : 14, weight: .black, design: .rounded))
+                        .font(.system(size: isCompact ? 14 : 16, weight: .black, design: .rounded))
                         .foregroundColor(XTheme.textPrimary)
                     if !isCompact {
                         Text("MPE INSTRUMENT")
-                            .font(.system(size: 8, weight: .bold, design: .monospaced))
-                            .foregroundColor(XTheme.primary)
+                            .font(XTheme.fontMonoTiny)
+                            .foregroundColor(XTheme.brand)
                     }
                 }
             }
-            
+
             Divider()
                 .frame(height: 20)
-                .background(XTheme.border)
-            
+                .overlay(XTheme.border)
+
             // Instrument Profile Switcher
-            InstrumentSelectorView(minWidth: isCompact ? 86 : 116)
-            
+            InstrumentSelectorView(minWidth: isCompact ? 92 : 128)
+
             Divider()
                 .frame(height: 20)
-                .background(XTheme.border)
-            
+                .overlay(XTheme.border)
+
             // Key & Scale Selectors
-            HStack(spacing: isCompact ? 4 : 8) {
+            HStack(spacing: isCompact ? XTheme.space2 : XTheme.space3) {
                 KeySelectorView()
                 ScaleSelectorView()
             }
-            
-            Spacer(minLength: 8)
-            
+
+            Spacer(minLength: XTheme.space3)
+
             // Controller Hardware Status Badge
             Button {
                 onOpenSettings()
             } label: {
-                HStack(spacing: 5) {
+                HStack(spacing: XTheme.space2) {
                     Circle()
-                        .fill(appState.controllerManager.isConnected ? XTheme.controllerConnected : XTheme.primaryLight.opacity(0.6))
+                        .fill(appState.controllerManager.isConnected ? XTheme.connected : XTheme.disconnected)
                         .frame(width: 7, height: 7)
-                        .xPulse(isActive: appState.controllerManager.isConnected, color: XTheme.controllerConnected)
-                    
+                        .xPulse(isActive: appState.controllerManager.isConnected, color: XTheme.connected, speed: 0.8)
+
                     Text(controllerBadgeText(isCompact: isCompact))
-                        .font(.system(size: isCompact ? 10 : 11, weight: .semibold))
+                        .font(XTheme.fontCaptionSmall)
                         .foregroundColor(XTheme.textPrimary)
                         .lineLimit(1)
-                    
+
                     Image(systemName: "chevron.right")
                         .font(.system(size: 8, weight: .bold))
                         .foregroundColor(XTheme.textTertiary)
                 }
-                .padding(.horizontal, isCompact ? 7 : 10)
-                .padding(.vertical, 5)
-                .background(XTheme.surface)
+                .padding(.horizontal, isCompact ? XTheme.space3 : XTheme.space4)
+                .padding(.vertical, XTheme.space1)
+                .background(XTheme.control)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: XTheme.radiusS)
                         .stroke(
-                            appState.controllerManager.isConnected ? XTheme.controllerConnected.opacity(0.5) : XTheme.border,
-                            lineWidth: 1
+                            appState.controllerManager.isConnected ? XTheme.borderBrand : XTheme.border,
+                            lineWidth: XTheme.borderThin
                         )
-                        .animation(XTheme.glassIn, value: appState.controllerManager.isConnected)
+                        .animation(XTheme.easeOut, value: appState.controllerManager.isConnected)
                 )
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-                .xRipple(trigger: connectRippleTrigger, color: XTheme.controllerConnected, size: 56)
+                .clipShape(RoundedRectangle(cornerRadius: XTheme.radiusS))
+                .xRipple(trigger: connectRippleTrigger, color: XTheme.connected, size: 56)
             }
             .buttonStyle(.plain)
             .help("Configure Controller Scheme, Calibrate Deadzones, and Remap Buttons")
@@ -197,29 +198,29 @@ struct TopPerformanceHeaderView: View {
                 if isConnected && !wasConnected { connectRippleTrigger += 1 }
                 wasConnected = isConnected
             }
-            
+
             // Settings Button
             Button {
                 onOpenSettings()
             } label: {
                 Image(systemName: "gearshape.fill")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(gearHovered ? XTheme.primary : XTheme.textSecondary)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(gearHovered ? XTheme.brand : XTheme.textSecondary)
                     .rotationEffect(.degrees(gearHovered ? 45 : 0))
-                    .animation(XTheme.snappy, value: gearHovered)
-                    .padding(6)
-                    .background(XTheme.surface)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .animation(XTheme.springSnappy, value: gearHovered)
+                    .padding(XTheme.space2)
+                    .background(XTheme.control)
+                    .clipShape(RoundedRectangle(cornerRadius: XTheme.radiusS))
             }
             .buttonStyle(.plain)
             .help("Open Settings")
             .onHover { gearHovered = $0 }
         }
-        .padding(.horizontal, isCompact ? 10 : 16)
-        .padding(.vertical, isCompact ? 6 : 8)
-        .background(XTheme.surface.opacity(0.4))
+        .padding(.horizontal, isCompact ? XTheme.space4 : XTheme.space5)
+        .padding(.vertical, isCompact ? XTheme.space2 : XTheme.space3)
+        .background(XTheme.surface.opacity(0.6))
     }
-    
+
     private func controllerBadgeText(isCompact: Bool) -> String {
         guard appState.controllerManager.isConnected else {
             return isCompact ? "Sim Pad" : "Simulated Gamepad"

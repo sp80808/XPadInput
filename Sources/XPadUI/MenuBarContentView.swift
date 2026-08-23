@@ -103,6 +103,13 @@ public struct MenuBarContentView: View {
 
             Divider()
 
+            Button(appState.showTransportBar ? "Hide Transport Bar" : "Show Transport Bar") {
+                appState.toggleTransportBar()
+            }
+            .keyboardShortcut("t", modifiers: [.command, .option])
+
+            Divider()
+
             Button("Quit XPadInput") {
                 NSApplication.shared.terminate(nil)
             }

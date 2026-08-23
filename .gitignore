@@ -64,3 +64,22 @@ CLAUDE.md
 .beads-credential-key
 .beads/proxieddb/
 
+# ALL dot-folders & local tooling state (catch-all) — CI and lint configs stay tracked
+.*/
+.*
+!.gitignore
+!.github/
+!.swift-format
+!.swiftlint.yml
+
+# Secrets & environment
+.env
+.env.*
+!.env.example
+
+# Test & profiling artifacts
+*.xcresult
+*.profraw
+*.profdata
+*.gcda
+
