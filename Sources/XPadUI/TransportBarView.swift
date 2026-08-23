@@ -16,6 +16,10 @@ struct TransportBar: View {
     @State private var tapRippleTrigger: Int = 0
     @State private var panicShake: Double = 0
     @State private var isCollapsed: Bool = false
+    @State private var handleChevronHovered = false
+    @State private var handleCloseHovered = false
+    @State private var collapseChevronHovered = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
@@ -50,11 +54,14 @@ struct TransportBar: View {
             } label: {
                 Image(systemName: "chevron.up")
                     .font(.system(size: 8, weight: .bold))
-                    .foregroundColor(XTheme.textTertiary)
-                    .frame(maxWidth: .infinity)
+                    .foregroundColor(handleChevronHovered ? XTheme.textSecondary : XTheme.textTertiary)
+                    .offset(y: handleChevronHovered ? -1 : 0)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .onHover { handleChevronHovered = $0 }
+            .animation(reduceMotion ? nil : XTheme.quickAnimation, value: handleChevronHovered)
             .help("Show Transport Bar")
 
             Button {
@@ -62,12 +69,16 @@ struct TransportBar: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 8, weight: .bold))
-                    .foregroundColor(XTheme.textTertiary)
+                    .foregroundColor(handleCloseHovered ? XTheme.textSecondary : XTheme.textTertiary)
                     .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .onHover { handleCloseHovered = $0 }
+            .animation(reduceMotion ? nil : XTheme.quickAnimation, value: handleCloseHovered)
             .help("Hide Transport Bar permanently")
         }
+        .xShimmer(isActive: appState.isPlaying && !reduceMotion, color: XTheme.primary)
         .keyboardShortcut("t", modifiers: [.command, .option])
         .accessibilityLabel("Transport Bar hidden")
     }
@@ -155,10 +166,13 @@ struct TransportBar: View {
             } label: {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 8, weight: .bold))
-                    .foregroundColor(XTheme.textTertiary)
+                    .foregroundColor(collapseChevronHovered ? XTheme.textSecondary : XTheme.textTertiary)
                     .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .onHover { collapseChevronHovered = $0 }
+            .animation(reduceMotion ? nil : XTheme.quickAnimation, value: collapseChevronHovered)
             .help("Hide Transport Bar")
             .keyboardShortcut("t", modifiers: [.command, .option])
             .accessibilityLabel("Hide Transport Bar")
@@ -215,6 +229,8 @@ struct TransportBar: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(appState.metronomeEnabled ? XTheme.primary : XTheme.textTertiary)
                     .frame(width: 24, height: 24)
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(reduceMotion ? nil : XTheme.quickAnimation, value: appState.metronomeEnabled)
             }
             .buttonStyle(XTactileButtonStyle(isActive: appState.metronomeEnabled))
             .help(appState.metronomeEnabled ? "Disable metronome" : "Enable metronome")
@@ -227,6 +243,8 @@ struct TransportBar: View {
                     .font(.system(size: 12, weight: .bold, design: .monospaced))
                     .foregroundColor(XTheme.textPrimary)
                     .frame(width: 28)
+                    .contentTransition(.numericText(value: appState.bpm))
+                    .animation(reduceMotion ? nil : XTheme.snappy, value: appState.bpm)
                     .scaleEffect(bpmPulse ? 1.2 : 1.0)
                 
                 if !compact {
@@ -339,6 +357,8 @@ struct TransportBar: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(appState.isSynthMuted ? XTheme.warning : XTheme.textSecondary)
                     .frame(width: 24, height: 24)
+                    .contentTransition(.symbolEffect(.replace))
+                    .animation(reduceMotion ? nil : XTheme.snappy, value: appState.isSynthMuted)
             }
             .buttonStyle(
                 XTactileButtonStyle(
@@ -451,22 +471,24 @@ struct TransportButton: View {
     @State private var rippleTrigger = 0
     
     var body: some View {
-        Button {
-            if !reduceMotion { rippleTrigger += 1 }
-            action()
-        } label: {
-            ZStack {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(isActive ? activeColor : XTheme.textSecondary)
-                    .frame(width: 28, height: 28)
-                if isActive && label == "Play" {
-                    Circle()
-                        .fill(activeColor.opacity(0.12))
-                        .frame(width: 36, height: 36)
+            Button {
+                if !reduceMotion { rippleTrigger += 1 }
+                action()
+            } label: {
+                ZStack {
+                    Image(systemName: icon)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(isActive ? activeColor : XTheme.textSecondary)
+                        .frame(width: 28, height: 28)
+                        .animation(reduceMotion ? nil : XTheme.quickAnimation, value: isActive)
+                    if isActive && label == "Play" {
+                        Circle()
+                            .fill(activeColor.opacity(0.12))
+                            .frame(width: 36, height: 36)
+                            .transition(.opacity)
+                    }
                 }
             }
-        }
         .buttonStyle(XTactileButtonStyle(isActive: isActive, activeColor: activeColor))
         .help(label)
         .accessibilityLabel(label)

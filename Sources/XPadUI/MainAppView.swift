@@ -104,8 +104,10 @@ private struct SettingsSheet: View {
 struct TopPerformanceHeaderView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.viewportMetrics) private var viewport
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var onOpenSettings: () -> Void = {}
     @State private var gearHovered = false
+    @State private var badgeHovered = false
     @State private var connectRippleTrigger = 0
     @State private var wasConnected = false
 
@@ -176,17 +178,19 @@ struct TopPerformanceHeaderView: View {
 
                     Image(systemName: "chevron.right")
                         .font(.system(size: 8, weight: .bold))
-                        .foregroundColor(XTheme.textTertiary)
+                        .foregroundColor(badgeHovered ? XTheme.textSecondary : XTheme.textTertiary)
+                        .offset(x: badgeHovered ? 1.5 : 0)
                 }
                 .padding(.horizontal, isCompact ? XTheme.space3 : XTheme.space4)
                 .padding(.vertical, XTheme.space1)
-                .background(XTheme.control)
+                .background(badgeHovered ? XTheme.surfaceHover : XTheme.control)
                 .overlay(
                     RoundedRectangle(cornerRadius: XTheme.radiusS)
                         .stroke(
                             appState.controllerManager.isConnected ? XTheme.borderBrand : XTheme.border,
                             lineWidth: XTheme.borderThin
                         )
+                        .opacity(badgeHovered ? 1.0 : 0.8)
                         .animation(XTheme.easeOut, value: appState.controllerManager.isConnected)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: XTheme.radiusS))
@@ -194,6 +198,8 @@ struct TopPerformanceHeaderView: View {
             }
             .buttonStyle(.plain)
             .help("Configure Controller Scheme, Calibrate Deadzones, and Remap Buttons")
+            .onHover { badgeHovered = $0 }
+            .animation(reduceMotion ? nil : XTheme.quickAnimation, value: badgeHovered)
             .onChange(of: appState.controllerManager.isConnected) { _, isConnected in
                 if isConnected && !wasConnected { connectRippleTrigger += 1 }
                 wasConnected = isConnected
@@ -207,10 +213,13 @@ struct TopPerformanceHeaderView: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(gearHovered ? XTheme.brand : XTheme.textSecondary)
                     .rotationEffect(.degrees(gearHovered ? 45 : 0))
-                    .animation(XTheme.springSnappy, value: gearHovered)
+                    .animation(reduceMotion ? nil : XTheme.springSnappy, value: gearHovered)
                     .padding(XTheme.space2)
-                    .background(XTheme.control)
-                    .clipShape(RoundedRectangle(cornerRadius: XTheme.radiusS))
+                    .background(
+                        RoundedRectangle(cornerRadius: XTheme.radiusS)
+                            .fill(gearHovered ? AnyShapeStyle(XTheme.surfaceHover) : AnyShapeStyle(XTheme.control))
+                            .animation(reduceMotion ? nil : XTheme.quickAnimation, value: gearHovered)
+                    )
             }
             .buttonStyle(.plain)
             .help("Open Settings")

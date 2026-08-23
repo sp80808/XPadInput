@@ -43,7 +43,51 @@ public struct XTheme {
     public static let surfaceHigh = Color(hue: 0.372, saturation: 0.04, brightness: 0.16)    // #272D29
     
     /// Input fields, controls
-    public static let control = Color(hue: 0.372, saturation: 0.04, brightness: 0.11)       #1B201E
+    public static let control = Color(hue: 0.372, saturation: 0.04, brightness: 0.11)      // #1B201E
+
+    // MARK: - Semantic Aliases (DESIGN.md §23 — canonical token layer)
+
+    public static let background = canvas
+    public static let surfaceElevated = surfaceRaised
+    /// Hover lift for interactive controls (between surface and surfaceRaised)
+    public static let surfaceHover = Color(hue: 0.372, saturation: 0.05, brightness: 0.13)
+    /// Pressed state — one step above hover
+    public static let surfacePressed = Color(hue: 0.372, saturation: 0.045, brightness: 0.155)
+
+    /// Primary identity accent
+    public static let primary = brand
+    public static let primaryLight = Color(hue: 0.372, saturation: 0.62, brightness: 0.92)
+    public static let emerald = brand
+
+    // Harmonic tension spectrum (DESIGN.md §6.2)
+    public static let stable = brand                                        // tonic / resolution
+    public static let natural = Color(hue: 0.455, saturation: 0.70, brightness: 0.78)   // green-cyan subdominant
+    public static let strong = accent                                       // amber dominant
+    public static let colourful = creative                                  // violet modal colour
+    public static let tense = danger                                        // warm red outside harmony
+
+    public static let expression = info                                     // MPE bend/timbre cyan
+    public static let midiActivity = info
+
+    public static let controllerConnected = brand
+    public static let controllerDisconnected = disconnected
+
+    /// Ambient soft shadow used by floating chrome
+    public static let ambientShadow = Color.black.opacity(0.35)
+
+    // MARK: - Geometry Aliases
+
+    public static let radiusSmall = radiusS
+    public static let radiusMedium = radiusM
+    public static let radiusLarge = radiusL
+
+    public static let strokeSubtle = borderThin
+    public static let borderActive = Color(hue: 0.372, saturation: 0.55, brightness: 0.55).opacity(0.65)
+
+    // MARK: - Typography Aliases
+
+    /// Control value text inside compact transport selectors (~28pt tall controls)
+    public static let controlLabelFont = Font.system(size: 12, weight: .semibold)
     
     // MARK: - Borders & Dividers
     
@@ -143,7 +187,7 @@ public struct XTheme {
     public static let elevationBrand2 = (color: brand.opacity(0.22), radius: CGFloat(10), y: CGFloat(4))
     
     // MARK: - Animation Curves
-    
+
     public static let springUI = Animation.spring(response: 0.32, dampingFraction: 0.82)
     public static let springSnappy = Animation.spring(response: 0.22, dampingFraction: 0.78)
     public static let springBouncy = Animation.spring(response: 0.28, dampingFraction: 0.55)
@@ -151,6 +195,22 @@ public struct XTheme {
     public static let easeOut = Animation.easeOut(duration: 0.18)
     public static let easeInOut = Animation.easeInOut(duration: 0.22)
     public static let easeInOutSlow = Animation.easeInOut(duration: 0.35)
+
+    // Motion tokens (DESIGN.md §23) — semantic timing vocabulary
+    /// Tactile touch / key press response
+    public static let feedbackFast = Animation.easeOut(duration: 0.09)
+    /// Control hover and menu transitions
+    public static let quickAnimation = Animation.easeOut(duration: 0.15)
+    /// Subtle disclosure state changes
+    public static let transitionShort = Animation.easeOut(duration: 0.18)
+    /// Standard UI physics
+    public static let springAnimation = Animation.spring(response: 0.35, dampingFraction: 0.70)
+    /// Playful overshoot for toggles & icon bounces
+    public static let bouncy = Animation.spring(response: 0.30, dampingFraction: 0.52)
+    /// Crisp immediate spring for tab selections & numeric badges
+    public static let snappy = Animation.spring(response: 0.22, dampingFraction: 0.80)
+    /// Surface and overlay entrances
+    public static let glassIn = Animation.easeOut(duration: 0.22)
     
     // MARK: - Gradients (Restrained, Purposeful)
     
@@ -158,9 +218,17 @@ public struct XTheme {
         colors: [brand, brandStrong],
         startPoint: .topLeading, endPoint: .bottomTrailing
     )
-    
+
+    public static let primaryGradient = brandGradient
+
     public static let surfaceGradient = LinearGradient(
         colors: [surface, surfaceRaised],
+        startPoint: .top, endPoint: .bottom
+    )
+
+    /// Raised strip gradient for persistent chrome (transport bar)
+    public static let cardGradient = LinearGradient(
+        colors: [surfaceRaised, surface],
         startPoint: .top, endPoint: .bottom
     )
     
@@ -372,30 +440,40 @@ public extension View {
 
 // MARK: - Purposeful Animation Modifiers (Minimal Set)
 
-/// Subtle pulse for live/recording states — single ring, no shimmer
+/// Subtle pulse for live/recording states — concentric rings, no shimmer
 public struct XPulseModifier: ViewModifier {
     public var isActive: Bool
     public var color: Color = XTheme.brand
     public var speed: Double = 1.0
+    public var rings: Int = 1
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
-    
-    public init(isActive: Bool, color: Color = XTheme.brand, speed: Double = 1.0) {
-        self.isActive = isActive; self.color = color; self.speed = speed
+
+    public init(isActive: Bool, color: Color = XTheme.brand, speed: Double = 1.0, rings: Int = 1) {
+        self.isActive = isActive; self.color = color; self.speed = speed; self.rings = max(1, rings)
     }
-    
+
     public func body(content: Content) -> some View {
         content
             .overlay {
                 if isActive && !reduceMotion {
-                    Circle()
-                        .stroke(color, lineWidth: 1.5)
-                        .scaleEffect(pulse ? 1.6 : 1.0)
-                        .opacity(pulse ? 0 : 0.45)
-                        .animation(.easeOut(duration: 1.2 / speed).repeatForever(autoreverses: false), value: pulse)
-                        .onAppear { pulse = true }
-                        .onChange(of: isActive) { _, v in pulse = v }
-                        .allowsHitTesting(false)
+                    ZStack {
+                        ForEach(0..<rings, id: \.self) { ring in
+                            Circle()
+                                .stroke(color.opacity(ring == 0 ? 0.45 : 0.28), lineWidth: 1.5)
+                                .scaleEffect(pulse ? 1.6 : 1.0)
+                                .opacity(pulse ? 0 : (ring == 0 ? 0.45 : 0.25))
+                                .animation(
+                                    .easeOut(duration: (1.2 / speed) + Double(ring) * 0.35)
+                                        .repeatForever(autoreverses: false)
+                                        .delay(Double(ring) * 0.4 / speed),
+                                    value: pulse
+                                )
+                        }
+                    }
+                    .onAppear { pulse = true }
+                    .onChange(of: isActive) { _, v in pulse = v }
+                    .allowsHitTesting(false)
                 }
             }
     }
@@ -440,29 +518,143 @@ public struct XRippleModifier: ViewModifier {
 }
 
 public extension View {
-    func xPulse(isActive: Bool, color: Color = XTheme.brand, speed: Double = 1.0) -> some View {
-        modifier(XPulseModifier(isActive: isActive, color: color, speed: speed))
+    func xPulse(isActive: Bool, color: Color = XTheme.brand, speed: Double = 1.0, rings: Int = 1) -> some View {
+        modifier(XPulseModifier(isActive: isActive, color: color, speed: speed, rings: rings))
     }
-    
+
     func xRipple<T: Hashable>(trigger: T, color: Color = XTheme.brand, size: CGFloat = 56) -> some View {
         modifier(XRippleModifier(trigger: trigger, color: color, size: size))
     }
 }
 
-// MARK: - Color Extension for Hex
+// MARK: - Glow
 
-extension Color {
-    init(hex: String) {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
-        let a, r, g, b: UInt64
-        switch hex.count {
-        case 3: (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
-        case 6: (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
-        case 8: (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
-        default: (a, r, g, b) = (255, 0, 0, 0)
-        }
-        self.init(.sRGB, red: Double(r) / 255, green: Double(g) / 255, blue: Double(b) / 255, opacity: Double(a) / 255)
+/// Soft luminous halo for active musical feedback (stick cursor, pressed pads).
+/// Static while held; no breathing loop. Suppressed under Reduce Motion.
+public struct XGlowModifier: ViewModifier {
+    public var isActive: Bool
+    public var color: Color = XTheme.brand
+    public var radius: CGFloat = 8
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    public init(isActive: Bool, color: Color = XTheme.brand, radius: CGFloat = 8) {
+        self.isActive = isActive
+        self.color = color
+        self.radius = radius
+    }
+
+    public func body(content: Content) -> some View {
+        content
+            .shadow(color: isActive && !reduceMotion ? color.opacity(0.45) : .clear, radius: radius)
+            .shadow(color: isActive && !reduceMotion ? color.opacity(0.20) : .clear, radius: radius * 2)
+            .animation(reduceMotion ? nil : XTheme.quickAnimation, value: isActive)
+    }
+}
+
+public extension View {
+    func xGlow(isActive: Bool, color: Color = XTheme.brand, radius: CGFloat = 8) -> some View {
+        modifier(XGlowModifier(isActive: isActive, color: color, radius: radius))
+    }
+}
+
+// MARK: - Tactile Quick-Control Button Style
+
+/// Tactile style for performance quick-controls: quiet at rest, hover lift,
+/// press compression, tinted wash when active. Zero layout shift.
+public struct XTactileButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    public var isActive: Bool = false
+    public var activeColor: Color = XTheme.brand
+    @State private var isHovering = false
+
+    public init(isActive: Bool = false, activeColor: Color = XTheme.brand) {
+        self.isActive = isActive
+        self.activeColor = activeColor
+    }
+
+    public func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed && !reduceMotion
+
+        configuration.label
+            .opacity(isEnabled ? 1 : 0.45)
+            .background(
+                RoundedRectangle(cornerRadius: XTheme.radiusS)
+                    .fill(fill(pressed: pressed))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: XTheme.radiusS)
+                            .stroke(border(pressed: pressed), lineWidth: XTheme.borderThin)
+                    )
+            )
+            .scaleEffect(pressed ? 0.97 : 1)
+            .onHover { hovering in
+                guard isEnabled else { return }
+                isHovering = hovering
+            }
+            .animation(reduceMotion ? nil : XTheme.feedbackFast, value: configuration.isPressed)
+            .animation(reduceMotion ? nil : XTheme.quickAnimation, value: isHovering)
+            .animation(reduceMotion ? nil : XTheme.quickAnimation, value: isActive)
+    }
+
+    private func fill(pressed: Bool) -> Color {
+        if isActive { return activeColor.opacity(0.10) }
+        if pressed { return Color.white.opacity(0.08) }
+        if isHovering { return Color.white.opacity(0.05) }
+        return .clear
+    }
+
+    private func border(pressed: Bool) -> Color {
+        if isActive { return activeColor.opacity(0.28) }
+        if pressed || isHovering { return XTheme.borderEmphasized }
+        return .clear
+    }
+}
+
+// MARK: - Shimmer (DESIGN.md §23)
+
+/// Subtle horizontal highlight sweep for live/selected chrome. Purely additive,
+/// loops slowly, suppressed under Reduce Motion.
+public struct XShimmerModifier: ViewModifier {
+    public var isActive: Bool
+    public var color: Color = XTheme.brand
+    public var period: Double = 2.4
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var phase: CGFloat = -1
+
+    public init(isActive: Bool, color: Color = XTheme.brand, period: Double = 2.4) {
+        self.isActive = isActive
+        self.color = color
+        self.period = period
+    }
+
+    public func body(content: Content) -> some View {
+        content
+            .overlay {
+                if isActive && !reduceMotion {
+                    GeometryReader { geo in
+                        let bandWidth = max(24, geo.size.width * 0.4)
+                        LinearGradient(
+                            colors: [.clear, color.opacity(0.16), .clear],
+                            startPoint: .leading, endPoint: .trailing
+                        )
+                        .frame(width: bandWidth)
+                        .offset(x: phase * (geo.size.width + bandWidth))
+                        .blur(radius: 2)
+                    }
+                    .allowsHitTesting(false)
+                    .clipShape(Rectangle())
+                    .onAppear {
+                        withAnimation(.linear(duration: period).repeatForever(autoreverses: false)) {
+                            phase = 1
+                        }
+                    }
+                }
+            }
+    }
+}
+
+public extension View {
+    func xShimmer(isActive: Bool, color: Color = XTheme.brand, period: Double = 2.4) -> some View {
+        modifier(XShimmerModifier(isActive: isActive, color: color, period: period))
     }
 }

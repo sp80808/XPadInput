@@ -106,6 +106,8 @@ private struct CompactTransportMenuLabel: View {
     let prefix: String?
     let value: String
     let minWidth: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -117,25 +119,30 @@ private struct CompactTransportMenuLabel: View {
 
             Text(value)
                 .font(XTheme.controlLabelFont)
-                .foregroundColor(XTheme.textPrimary)
+                .foregroundColor(isHovering ? XTheme.textPrimary : XTheme.textPrimary.opacity(0.88))
                 .lineLimit(1)
 
             Spacer(minLength: 2)
 
             Image(systemName: "chevron.down")
                 .font(.system(size: 8, weight: .bold))
-                .foregroundColor(XTheme.textTertiary)
+                .foregroundColor(isHovering ? XTheme.textSecondary : XTheme.textTertiary)
         }
         .padding(.horizontal, 8)
         .frame(minWidth: minWidth, minHeight: 28, maxHeight: 28)
         .background(
             RoundedRectangle(cornerRadius: XTheme.radiusSmall)
-                .fill(XTheme.controlGradient)
+                .fill(isHovering ? AnyShapeStyle(XTheme.surfaceHover) : AnyShapeStyle(XTheme.controlGradient))
                 .overlay(
                     RoundedRectangle(cornerRadius: XTheme.radiusSmall)
-                        .stroke(Color.white.opacity(0.10), lineWidth: XTheme.strokeSubtle)
+                        .stroke(
+                            isHovering ? XTheme.borderActive.opacity(0.55) : Color.white.opacity(0.10),
+                            lineWidth: XTheme.strokeSubtle
+                        )
                 )
         )
         .contentShape(RoundedRectangle(cornerRadius: XTheme.radiusSmall))
+        .onHover { isHovering = $0 }
+        .animation(reduceMotion ? nil : XTheme.quickAnimation, value: isHovering)
     }
 }
