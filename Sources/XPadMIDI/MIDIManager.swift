@@ -99,39 +99,34 @@ public final class MIDIEngine: @unchecked Sendable {
     public private(set) var midiActivityTimestamp: Date?
     public var isMIDIActive: Bool {
         lock.lock()
-        let timestamp = midiActivityTimestamp
-        lock.unlock()
-        guard let timestamp else { return false }
+        defer { lock.unlock() }
+        guard let timestamp = midiActivityTimestamp else { return false }
         return Date().timeIntervalSince(timestamp) < 0.3
     }
 
     public var sentMessages: [MIDIMessageRecord] {
         lock.lock()
-        let messages: [MIDIMessageRecord]
+        defer { lock.unlock() }
         if messageLog.count < Self.messageLogCapacity || messageLogWriteIndex == 0 {
-            messages = messageLog
+            return messageLog
         } else {
-            messages = Array(messageLog[messageLogWriteIndex...])
+            return Array(messageLog[messageLogWriteIndex...])
                 + Array(messageLog[..<messageLogWriteIndex])
         }
-        lock.unlock()
-        return messages
     }
 
     /// Number of unique note/channel/port voices that still require a Note Off.
     public var activeNoteCount: Int {
         lock.lock()
-        let count = activeNotes.count
-        lock.unlock()
-        return count
+        defer { lock.unlock() }
+        return activeNotes.count
     }
 
     /// Sources that CoreMIDI created successfully for the current enabled session.
     public var availableVirtualPorts: Set<VirtualPort> {
         lock.lock()
-        let ports = Set(outputs.compactMap { $0.value == 0 ? nil : $0.key })
-        lock.unlock()
-        return ports
+        defer { lock.unlock() }
+        return Set(outputs.compactMap { $0.value == 0 ? nil : $0.key })
     }
 
     private var midiClient: MIDIClientRef = 0
@@ -166,22 +161,25 @@ public final class MIDIEngine: @unchecked Sendable {
 
     public func clearMessageLog() {
         lock.lock()
+        defer { lock.unlock() }
         messageLog.removeAll(keepingCapacity: true)
         messageLogWriteIndex = 0
-        lock.unlock()
     }
 
     /// Cleans up state before endpoints are disposed. When CoreMIDI never created
     /// an endpoint, emitting a full 16-channel panic cannot reach a receiver and
     /// only adds avoidable startup/teardown work.
     func prepareForVirtualSourceDisposal() {
-        lock.lock()
-        let hasLiveEndpoint = outputs.values.contains { $0 != 0 }
-        if !hasLiveEndpoint {
-            activeNotes.removeAll()
-            lastSentNotes.removeAll()
+        let hasLiveEndpoint: Bool
+        do {
+            lock.lock()
+            defer { lock.unlock() }
+            hasLiveEndpoint = outputs.values.contains { $0 != 0 }
+            if !hasLiveEndpoint {
+                activeNotes.removeAll()
+                lastSentNotes.removeAll()
+            }
         }
-        lock.unlock()
 
         if hasLiveEndpoint {
             panic()
@@ -206,9 +204,12 @@ public final class MIDIEngine: @unchecked Sendable {
         let protocolID = transportProtocol.coreMIDIProtocol
 
         for port in VirtualPort.allCases {
-            lock.lock()
-            let alreadyExists = outputs[port] != nil
-            lock.unlock()
+            let alreadyExists: Bool
+            do {
+                lock.lock()
+                defer { lock.unlock() }
+                alreadyExists = outputs[port] != nil
+            }
             guard !alreadyExists else { continue }
 
             var endpoint: MIDIEndpointRef = 0
@@ -229,9 +230,11 @@ public final class MIDIEngine: @unchecked Sendable {
                     kMIDIPropertyModel,
                     "Game Controller MIDI" as CFString
                 )
-                lock.lock()
-                outputs[port] = endpoint
-                lock.unlock()
+                do {
+                    lock.lock()
+                    defer { lock.unlock() }
+                    outputs[port] = endpoint
+                }
             } else {
                 failures.append("\(port.rawValue) source (OSStatus \(status))")
                 print("⚠️ Failed to create \(port.rawValue) MIDI source: \(status)")
@@ -264,12 +267,16 @@ public final class MIDIEngine: @unchecked Sendable {
     }
 
     private func disposeVirtualSources() {
-        lock.lock()
-        let endpoints = Array(outputs.values)
-        outputs.removeAll()
-        let dest = inputDestination
-        inputDestination = 0
-        lock.unlock()
+        let endpoints: [MIDIEndpointRef]
+        let dest: MIDIEndpointRef
+        do {
+            lock.lock()
+            defer { lock.unlock() }
+            endpoints = Array(outputs.values)
+            outputs.removeAll()
+            dest = inputDestination
+            inputDestination = 0
+        }
 
         for endpoint in endpoints where endpoint != 0 {
             MIDIEndpointDispose(endpoint)
@@ -284,10 +291,13 @@ public final class MIDIEngine: @unchecked Sendable {
         guard numPackets > 0 else { return }
 
         var forwardedDirectly = false
-        lock.lock()
-        let shouldForward = passthruMode.routesToOutputs && virtualMIDIEnabled
-        let mainEndpoint = shouldForward ? outputs[.main] : nil
-        lock.unlock()
+        let mainEndpoint: MIDIEndpointRef?
+        do {
+            lock.lock()
+            defer { lock.unlock() }
+            let shouldForward = passthruMode.routesToOutputs && virtualMIDIEnabled
+            mainEndpoint = shouldForward ? outputs[.main] : nil
+        }
 
         // Zero-copy fast-path: forward raw UMP event list directly to destination virtual output
         if let mainEndpoint, mainEndpoint != 0 {
@@ -321,9 +331,11 @@ public final class MIDIEngine: @unchecked Sendable {
         for message in messages {
             switch message {
             case .sysEx(let bytes):
-                lock.lock()
-                midiActivityTimestamp = Date()
-                lock.unlock()
+                do {
+                    lock.lock()
+                    defer { lock.unlock() }
+                    midiActivityTimestamp = Date()
+                }
                 if !bytes.isEmpty, bytes.first == 0xF0 {
                     if let response = ciSession.processIncomingSysEx(bytes) {
                         sendSysEx(response, to: .main)
@@ -337,56 +349,70 @@ public final class MIDIEngine: @unchecked Sendable {
                     emit(rawBytes, to: .main)
                 }
 
-                lock.lock()
-                midiActivityTimestamp = Date()
-                let record = MIDIMessageRecord(port: .main, bytes: rawBytes)
-                if messageLog.count < Self.messageLogCapacity {
-                    messageLog.append(record)
-                } else {
-                    messageLog[messageLogWriteIndex] = record
-                    messageLogWriteIndex = (messageLogWriteIndex + 1) % Self.messageLogCapacity
+                do {
+                    lock.lock()
+                    defer { lock.unlock() }
+                    midiActivityTimestamp = Date()
+                    let record = MIDIMessageRecord(port: .main, bytes: rawBytes)
+                    if messageLog.count < Self.messageLogCapacity {
+                        messageLog.append(record)
+                    } else {
+                        messageLog[messageLogWriteIndex] = record
+                        messageLogWriteIndex = (messageLogWriteIndex + 1) % Self.messageLogCapacity
+                    }
                 }
-                lock.unlock()
 
                 onIncomingEvent?(event, rawBytes)
 
             case .noteOnAttribute(let channel, let note, let vel16, let attrType, let attrData):
-                lock.lock()
-                midiActivityTimestamp = Date()
-                lock.unlock()
+                do {
+                    lock.lock()
+                    defer { lock.unlock() }
+                    midiActivityTimestamp = Date()
+                }
                 onIncomingNoteOnAttribute?(channel, note, vel16, attrType, attrData)
 
             case .perNotePitchBend(let channel, let note, let semitones, _):
-                lock.lock()
-                midiActivityTimestamp = Date()
-                lock.unlock()
+                do {
+                    lock.lock()
+                    defer { lock.unlock() }
+                    midiActivityTimestamp = Date()
+                }
                 onIncomingPerNotePitchBend?(channel, note, semitones)
 
             case .perNotePressure(let channel, let note, let pressure):
-                lock.lock()
-                midiActivityTimestamp = Date()
-                lock.unlock()
+                do {
+                    lock.lock()
+                    defer { lock.unlock() }
+                    midiActivityTimestamp = Date()
+                }
                 onIncomingPerNotePressure?(channel, note, pressure)
 
             case .perNoteController(let channel, let note, let controller, let value):
-                lock.lock()
-                midiActivityTimestamp = Date()
-                lock.unlock()
+                do {
+                    lock.lock()
+                    defer { lock.unlock() }
+                    midiActivityTimestamp = Date()
+                }
                 onIncomingPerNoteController?(channel, note, controller, value)
 
             case .perNoteRPNC(let channel, let note, let rpnc, let value):
-                lock.lock()
-                midiActivityTimestamp = Date()
-                lock.unlock()
+                do {
+                    lock.lock()
+                    defer { lock.unlock() }
+                    midiActivityTimestamp = Date()
+                }
                 onIncomingPerNoteRPNC?(channel, note, rpnc, value)
 
             case .perNoteManagement:
                 break
 
             case .systemRealtime:
-                lock.lock()
-                midiActivityTimestamp = Date()
-                lock.unlock()
+                do {
+                    lock.lock()
+                    defer { lock.unlock() }
+                    midiActivityTimestamp = Date()
+                }
             }
         }
     }
@@ -420,13 +446,16 @@ public final class MIDIEngine: @unchecked Sendable {
             channel: safeChannel,
             note: safeNote
         )
-        lock.lock()
-        let wasAlreadyActive = activeNotes.contains(activeNote)
-        activeNotes.insert(activeNote)
+        let wasAlreadyActive: Bool
+        do {
+            lock.lock()
+            defer { lock.unlock() }
+            wasAlreadyActive = activeNotes.contains(activeNote)
+            activeNotes.insert(activeNote)
 
-        lastSentNotes.append(safeNote)
-        if lastSentNotes.count > 12 { lastSentNotes.removeFirst() }
-        lock.unlock()
+            lastSentNotes.append(safeNote)
+            if lastSentNotes.count > 12 { lastSentNotes.removeFirst() }
+        }
 
         if wasAlreadyActive {
             emit([0x80 | safeChannel, safeNote, 0], to: port)
@@ -517,11 +546,13 @@ public final class MIDIEngine: @unchecked Sendable {
     public func sendNoteOff(port: VirtualPort, channel: UInt8, note: UInt8) {
         let safeChannel = min(15, channel)
         let safeNote = min(127, note)
-        lock.lock()
-        activeNotes.remove(
-            ActiveNote(port: port, channel: safeChannel, note: safeNote)
-        )
-        lock.unlock()
+        do {
+            lock.lock()
+            defer { lock.unlock() }
+            activeNotes.remove(
+                ActiveNote(port: port, channel: safeChannel, note: safeNote)
+            )
+        }
 
         // Note Off remains safe and intentional even if local tracking was lost.
         emit([0x80 | safeChannel, safeNote, 0], to: port)
@@ -758,10 +789,13 @@ public final class MIDIEngine: @unchecked Sendable {
 
     /// Dispatches a raw 64-bit MIDI 2.0 UMP message to the selected virtual endpoint.
     public func emitRawMIDI2UMP(_ message: MIDIMessage_64, to port: VirtualPort) {
-        lock.lock()
-        midiActivityTimestamp = Date()
-        let endpoint = virtualMIDIEnabled ? outputs[port] : nil
-        lock.unlock()
+        let endpoint: MIDIEndpointRef?
+        do {
+            lock.lock()
+            defer { lock.unlock() }
+            midiActivityTimestamp = Date()
+            endpoint = virtualMIDIEnabled ? outputs[port] : nil
+        }
 
         guard let endpoint, endpoint != 0 else { return }
         sendMIDI2Message(message, endpoint: endpoint)
@@ -769,11 +803,15 @@ public final class MIDIEngine: @unchecked Sendable {
 
     /// Dispatches a Universal SysEx or MIDI-CI byte buffer to the virtual endpoint.
     public func sendSysEx(_ bytes: [UInt8], to port: VirtualPort = .main) {
-        lock.lock()
-        midiActivityTimestamp = Date()
-        let endpoint = virtualMIDIEnabled ? outputs[port] : nil
-        let protocolID = transportProtocol
-        lock.unlock()
+        let endpoint: MIDIEndpointRef?
+        let protocolID: MIDITransportProtocol
+        do {
+            lock.lock()
+            defer { lock.unlock() }
+            midiActivityTimestamp = Date()
+            endpoint = virtualMIDIEnabled ? outputs[port] : nil
+            protocolID = transportProtocol
+        }
 
         guard let endpoint, endpoint != 0 else { return }
         sendMIDIMessage(bytes, endpoint: endpoint, protocolID: protocolID)
@@ -829,12 +867,15 @@ public final class MIDIEngine: @unchecked Sendable {
     /// the channel so reconnecting a DAW instrument cannot inherit expression state.
     public func sendAllNotesOff(port: VirtualPort, channel: UInt8) {
         let safeChannel = min(15, channel)
-        lock.lock()
-        let notesToStop = activeNotes
-            .filter { $0.port == port && $0.channel == safeChannel }
-            .sorted { $0.note < $1.note }
-        activeNotes.subtract(notesToStop)
-        lock.unlock()
+        let notesToStop: [ActiveNote]
+        do {
+            lock.lock()
+            defer { lock.unlock() }
+            notesToStop = activeNotes
+                .filter { $0.port == port && $0.channel == safeChannel }
+                .sorted { $0.note < $1.note }
+            activeNotes.subtract(notesToStop)
+        }
 
         for activeNote in notesToStop {
             emit([0x80 | safeChannel, activeNote.note, 0], to: port)
@@ -844,17 +885,20 @@ public final class MIDIEngine: @unchecked Sendable {
 
     /// Sends note-offs, neutral expression, and All Notes Off on every public port/channel.
     public func panic() {
-        lock.lock()
-        let notesToStop = activeNotes.sorted {
-            if $0.port.rawValue != $1.port.rawValue {
-                return $0.port.rawValue < $1.port.rawValue
+        let notesToStop: [ActiveNote]
+        do {
+            lock.lock()
+            defer { lock.unlock() }
+            notesToStop = activeNotes.sorted {
+                if $0.port.rawValue != $1.port.rawValue {
+                    return $0.port.rawValue < $1.port.rawValue
+                }
+                if $0.channel != $1.channel { return $0.channel < $1.channel }
+                return $0.note < $1.note
             }
-            if $0.channel != $1.channel { return $0.channel < $1.channel }
-            return $0.note < $1.note
+            activeNotes.removeAll()
+            lastSentNotes.removeAll()
         }
-        activeNotes.removeAll()
-        lastSentNotes.removeAll()
-        lock.unlock()
 
         for activeNote in notesToStop {
             emit(
@@ -885,18 +929,22 @@ public final class MIDIEngine: @unchecked Sendable {
         midi2Override: MIDIMessage_64?,
         to port: VirtualPort
     ) {
-        lock.lock()
-        let record = MIDIMessageRecord(port: port, bytes: bytes)
-        if messageLog.count < Self.messageLogCapacity {
-            messageLog.append(record)
-        } else {
-            messageLog[messageLogWriteIndex] = record
-            messageLogWriteIndex = (messageLogWriteIndex + 1) % Self.messageLogCapacity
+        let endpoint: MIDIEndpointRef?
+        let protocolID: MIDITransportProtocol
+        do {
+            lock.lock()
+            defer { lock.unlock() }
+            let record = MIDIMessageRecord(port: port, bytes: bytes)
+            if messageLog.count < Self.messageLogCapacity {
+                messageLog.append(record)
+            } else {
+                messageLog[messageLogWriteIndex] = record
+                messageLogWriteIndex = (messageLogWriteIndex + 1) % Self.messageLogCapacity
+            }
+            midiActivityTimestamp = Date()
+            endpoint = virtualMIDIEnabled ? outputs[port] : nil
+            protocolID = transportProtocol
         }
-        midiActivityTimestamp = Date()
-        let endpoint = virtualMIDIEnabled ? outputs[port] : nil
-        let protocolID = transportProtocol
-        lock.unlock()
 
         guard let endpoint, endpoint != 0 else { return }
 

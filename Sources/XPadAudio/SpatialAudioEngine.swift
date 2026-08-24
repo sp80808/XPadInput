@@ -83,11 +83,11 @@ public final class SpatialAudioEngine: @unchecked Sendable {
     /// Thread-safe update of spatial target coordinates (e.g. from Gamepad IMU / Gyro).
     public func setCoordinates(azimuth: Float, elevation: Float, distance: Float) {
         lock.lock()
+        defer { lock.unlock() }
         targetAzimuth = azimuth.clamped(to: -180.0...180.0)
         targetElevation = elevation.clamped(to: -90.0...90.0)
         targetDistance = max(0.2, min(10.0, distance))
         currentCoordinates = SpatialCoordinates(azimuthDegrees: targetAzimuth, elevationDegrees: targetElevation, distanceMeters: targetDistance)
-        lock.unlock()
     }
 
     /// Updates spatial coordinates from 6-axis controller gyro & acceleration readings.

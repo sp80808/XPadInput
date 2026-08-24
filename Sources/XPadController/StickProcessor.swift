@@ -104,6 +104,14 @@ public struct StickProcessor: Sendable {
             isNearEdge: finalRadius > 0.94
         )
     }
+
+    public mutating func reset() {
+        smoothedX = 0
+        smoothedY = 0
+        wasInDeadzone = true
+        smoother.reset()
+        velocityTracker.reset()
+    }
 }
 
 /// Rich state of an analog stick across physical, calibrated, and musically processed domains.

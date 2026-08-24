@@ -125,6 +125,7 @@ public struct InstrumentPerformanceEngine: Sendable {
     public var slideEngine: SlideEngine
     public var stringModel: VirtualStringModel
     public var intervalMemory = IntervalMemory()
+    private var heldNotesByRole: [ChordToneRole: Note] = [:]
 
     private var lastTimestamp: TimeInterval = 0
     private var previousFace: (a: Bool, x: Bool, y: Bool, b: Bool) = (false, false, false, false)
@@ -171,6 +172,7 @@ public struct InstrumentPerformanceEngine: Sendable {
     /// immediately in the new register on the next controller frame.
     public mutating func resetMelodicTargeting(rearmFaceButtons: Bool = false) {
         intervalMemory = IntervalMemory()
+        heldNotesByRole.removeAll()
         lastMelodicNote = nil
         lastMelodicTime = 0
         preparedLowerNote = nil
@@ -378,7 +380,6 @@ public struct InstrumentPerformanceEngine: Sendable {
         pickAttack: Bool,
         timestamp: TimeInterval
     ) -> [FaceButtonNoteEvent] {
-        guard let chord = context.chord else { return [] }
         let targeter = ContextualPitchTargeter()
         let pairs: [(pressed: Bool, was: Bool, role: ChordToneRole)] = [
             (state.buttonA, previousFace.a, .root),
@@ -389,6 +390,7 @@ public struct InstrumentPerformanceEngine: Sendable {
         var events: [FaceButtonNoteEvent] = []
         for pair in pairs {
             if pair.pressed && !pair.was {
+                guard let chord = context.chord else { continue }
                 let note = targeter.note(for: pair.role, chord: chord, previous: intervalMemory.lastNote, baseOctave: context.registerOctave)
                 let sameString = stringModel.wouldBeSameString(from: lastMelodicNote ?? note, to: note)
                 _ = stringModel.assign(note: note)
@@ -417,6 +419,7 @@ public struct InstrumentPerformanceEngine: Sendable {
                     slideEngine.begin(from: previous, to: note)
                 }
                 intervalMemory.remember(role: pair.role, note: note)
+                heldNotesByRole[pair.role] = note
                 if note < (lastMelodicNote ?? note) {
                     preparedLowerNote = lastMelodicNote
                 }
@@ -430,15 +433,18 @@ public struct InstrumentPerformanceEngine: Sendable {
                     velocity: legato?.velocity ?? 110
                 ))
             } else if !pair.pressed && pair.was {
-                let note = targeter.note(for: pair.role, chord: chord, previous: intervalMemory.lastNote, baseOctave: context.registerOctave)
-                preparedLowerNote = note
-                events.append(FaceButtonNoteEvent(
-                    role: pair.role,
-                    note: note,
-                    isOn: false,
-                    technique: .normal,
-                    velocity: 0
-                ))
+                let note = heldNotesByRole.removeValue(forKey: pair.role)
+                    ?? (context.chord.map { targeter.note(for: pair.role, chord: $0, previous: intervalMemory.lastNote, baseOctave: context.registerOctave) })
+                if let note {
+                    preparedLowerNote = note
+                    events.append(FaceButtonNoteEvent(
+                        role: pair.role,
+                        note: note,
+                        isOn: false,
+                        technique: .normal,
+                        velocity: 0
+                    ))
+                }
             }
         }
         return events

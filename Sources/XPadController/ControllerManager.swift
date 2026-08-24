@@ -142,6 +142,8 @@ public final class ControllerManager: @unchecked Sendable {
         let controllerId = "\(controller.vendorName ?? "generic")_\(controller.productCategory)"
         hardwareCalibration = ControllerSettingsStore.shared.loadCalibration(for: controllerId)
         applyCalibrationToProcessors()
+        analogPipeline.reset()
+        surfaceResolver.reset()
         
         setupInputHandlers(controller)
         
@@ -158,6 +160,8 @@ public final class ControllerManager: @unchecked Sendable {
         isConnected = false
         controllerName = "No Controller"
         capabilityProfile = nil
+        analogPipeline.reset()
+        surfaceResolver.reset()
         controllerState = ControllerState()
         currentState = GamepadState()
         controllerKind = .simulated

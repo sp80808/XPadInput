@@ -30,6 +30,12 @@ public struct TimeNormalizedEMA: Sendable {
             return referenceAlpha
         }
 
+        if timestamp < previousTimestamp {
+            // Clock restarted or jumped backwards (discontinuity / reconnect)
+            lastTimestamp = timestamp
+            return referenceAlpha
+        }
+
         guard timestamp > previousTimestamp else {
             // Duplicate/reordered callbacks must not advance filter state.
             return 0

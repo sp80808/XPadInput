@@ -84,8 +84,8 @@ public final class MIDICISession: @unchecked Sendable {
         }
 
         lock.lock()
+        defer { lock.unlock() }
         self.remoteMUID = srcMUID
-        lock.unlock()
 
         switch subId2 {
         case SubID2.discoveryInquiry.rawValue:
@@ -156,17 +156,18 @@ public final class MIDICISession: @unchecked Sendable {
         msg.append(contentsOf: writeMUID(myMUID))
         msg.append(contentsOf: writeMUID(targetMUID))
         
-        // Device Manufacturer ID (0x00, 0x21, 0x48)
+        // Device Manufacturer ID (3-byte)
         msg.append(contentsOf: [0x00, 0x21, 0x48])
-        // Device Family & Model
+        // Family & Model
         msg.append(contentsOf: [0x01, 0x00, 0x01, 0x00])
         // Software Revision
         msg.append(contentsOf: [0x00, 0x00, 0x02, 0x00])
-        // CI Support Category Bitmap
+        // CI Support Category
         msg.append(0x7F)
-        // Max SysEx message size
+        // Max SysEx size (512 bytes)
         msg.append(contentsOf: [0x00, 0x04])
-        
+        // Output Path ID
+        msg.append(0x00)
         msg.append(0xF7)
         return msg
     }
@@ -273,8 +274,8 @@ public final class MIDICISession: @unchecked Sendable {
             if let bendRange = dataPayload.first {
                 let clamped = min(max(Double(bendRange & 0x7F), 1.0), 96.0)
                 lock.lock()
+                defer { lock.unlock() }
                 self.negotiatedBendRangeSemitones = clamped
-                lock.unlock()
             }
         }
 

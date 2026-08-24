@@ -612,6 +612,7 @@ public final class AudioEngine: @unchecked Sendable {
         guard isRunning else { return }
         
         lock.lock()
+        defer { lock.unlock() }
         
         // Stop existing voice on same note
         if let existing = voices[note] {
@@ -652,8 +653,6 @@ public final class AudioEngine: @unchecked Sendable {
         
         voice.start()
         voices[note] = voice
-        
-        lock.unlock()
     }
 
     /// Plays a short one-shot through the same EQ, compressor, reverb and
@@ -697,21 +696,21 @@ public final class AudioEngine: @unchecked Sendable {
         guard engine != nil else { return }
         
         lock.lock()
-        if let voice = voices[note] {
-            voice.startRelease()
-
-            // Keep release tails owned until detachment so panic can hard-stop them.
-            let voiceID = ObjectIdentifier(voice)
-            let releaseTime = voice.releaseTime
-            voices.removeValue(forKey: note)
-            releasingVoices[voiceID] = voice
+        guard let voice = voices[note] else {
             lock.unlock()
+            return
+        }
+        voice.startRelease()
 
-            voiceCleanupQueue.asyncAfter(deadline: .now() + releaseTime) { [weak self] in
-                self?.finishRelease(voice)
-            }
-        } else {
-            lock.unlock()
+        // Keep release tails owned until detachment so panic can hard-stop them.
+        let voiceID = ObjectIdentifier(voice)
+        let releaseTime = voice.releaseTime
+        voices.removeValue(forKey: note)
+        releasingVoices[voiceID] = voice
+        lock.unlock()
+
+        voiceCleanupQueue.asyncAfter(deadline: .now() + releaseTime) { [weak self] in
+            self?.finishRelease(voice)
         }
     }
     
@@ -739,16 +738,14 @@ public final class AudioEngine: @unchecked Sendable {
     /// Includes active voices and envelope tails still connected to the mixer.
     public var trackedVoiceCount: Int {
         lock.lock()
-        let count = voices.count + releasingVoices.count
-        lock.unlock()
-        return count
+        defer { lock.unlock() }
+        return voices.count + releasingVoices.count
     }
 
     public var trackedDrumVoiceCount: Int {
         lock.lock()
-        let count = percussionVoices.count
-        lock.unlock()
-        return count
+        defer { lock.unlock() }
+        return percussionVoices.count
     }
 
     private func finishRelease(_ voice: SynthVoice) {
@@ -778,45 +775,44 @@ public final class AudioEngine: @unchecked Sendable {
     /// Applies a per-note pitch offset without retriggering the voice.
     public func setPitchBend(for note: UInt8, semitones: Double) {
         lock.lock()
+        defer { lock.unlock() }
         voices[note]?.setPitchOffset(semitones)
-        lock.unlock()
     }
 
     public func currentPitchBend(for note: UInt8) -> Double? {
         lock.lock()
-        let bend = voices[note]?.currentPitchOffset
-        lock.unlock()
-        return bend
+        defer { lock.unlock() }
+        return voices[note]?.currentPitchOffset
     }
 
     public func setPressure(for note: UInt8, pressure: Double) {
         lock.lock()
+        defer { lock.unlock() }
         voices[note]?.setPressure(pressure)
-        lock.unlock()
     }
 
     public func setTimbre(for note: UInt8, timbre: Double) {
         lock.lock()
+        defer { lock.unlock() }
         voices[note]?.setTimbre(timbre)
-        lock.unlock()
     }
 
     public func setDamping(for note: UInt8, damping: Double) {
         lock.lock()
+        defer { lock.unlock() }
         voices[note]?.setDamping(damping)
-        lock.unlock()
     }
 
     public func setPan(for note: UInt8, pan: Double) {
         lock.lock()
+        defer { lock.unlock() }
         voices[note]?.setPan(pan)
-        lock.unlock()
     }
 
     public func setResonance(for note: UInt8, resonance: Double) {
         lock.lock()
+        defer { lock.unlock() }
         voices[note]?.setResonanceOffset(resonance)
-        lock.unlock()
     }
 
     public func setRPNC(for note: UInt8, controllerIndex: UInt8, normalizedValue: Double) {
@@ -836,8 +832,8 @@ public final class AudioEngine: @unchecked Sendable {
 
     public func setHarmonicEmphasis(for note: UInt8, amount: Double, pinch: Bool) {
         lock.lock()
+        defer { lock.unlock() }
         voices[note]?.setHarmonic(amount: amount, pinch: pinch)
-        lock.unlock()
     }
 
     public func applyExpression(_ event: InstrumentPerformanceEvent) {

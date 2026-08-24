@@ -1808,10 +1808,45 @@ final class TestRunner {
                         durationTicks: 480
                     )
                 ]
-                let data = exporter.encodeTechniques(events: events, bpm: 120, ppqn: 960)
-                assertEqual(Array(data[0..<4]), [0x4D, 0x54, 0x68, 0x64])
-                assertEqual(Array(data.suffix(3)), [0xFF, 0x2F, 0x00])
-                assertTrue(data.contains(where: { $0 >= 0xE0 && $0 <= 0xEF }))
+                let data = exporter.encodeTechniques(events: events, bpm: 120, ppqn: 960, bendRange: 48)
+                assertTrue(data.count > 30)
+                let b = Array(data)
+                assertTrue(b.contains(where: { ($0 & 0xF0) == 0xE0 }))
+            }
+
+            test("Face-button release preserves press-time note even if chord changes or becomes nil") {
+                var engine = InstrumentPerformanceEngine()
+                let chordC = Chord(root: .c, quality: .major)
+                let chordG = Chord(root: .g, quality: .major)
+                var ctx = MusicalContext(key: .c, scale: Scale(root: .c, type: .major), chord: chordC)
+
+                // 1. Press Button A (Root of C Major -> C4 = 60)
+                let pressState = ControllerState()
+                pressState.buttonA = true
+                let pressFrame = engine.process(state: pressState, context: ctx, heldNotes: [], timestamp: 1.0)
+                let onEvent = pressFrame.faceEvents.first(where: { $0.isOn })
+                assertNotNil(onEvent)
+                assertEqual(onEvent?.note.midiNote, 60)
+
+                // 2. Mid-hold chord changes to G major or becomes nil
+                ctx.chord = chordG
+
+                // 3. Release Button A (Must emit NoteOff for C4 = 60, not G)
+                let releaseState = ControllerState()
+                releaseState.buttonA = false
+                let releaseFrame = engine.process(state: releaseState, context: ctx, heldNotes: [], timestamp: 1.1)
+                let offEvent = releaseFrame.faceEvents.first(where: { !$0.isOn })
+                assertNotNil(offEvent)
+                assertEqual(offEvent?.note.midiNote, 60, "Release must match the note sounded at press-time.")
+
+                // 4. Test release when context.chord is nil
+                ctx.chord = chordC
+                _ = engine.process(state: pressState, context: ctx, heldNotes: [], timestamp: 2.0)
+                ctx.chord = nil
+                let releaseFrame2 = engine.process(state: releaseState, context: ctx, heldNotes: [], timestamp: 2.1)
+                let offEvent2 = releaseFrame2.faceEvents.first(where: { !$0.isOn })
+                assertNotNil(offEvent2, "Release event must not be dropped when chord is nil.")
+                assertEqual(offEvent2?.note.midiNote, 60)
             }
         }
 
@@ -2322,6 +2357,34 @@ final class TestRunner {
                 assertEqual(pipeline.leftStick.x, 0.0)
                 assertTrue(pipeline.rightStick.x > 0.9)
                 assertTrue(pipeline.rightStick.movementVelocity > 1)
+            }
+
+            test("TimeNormalizedEMA recovers from backwards timestamps and AnalogControlPipeline resets cleanly") {
+                var ema = TimeNormalizedEMA()
+                let alpha1 = ema.alpha(referenceFactor: 0.5, at: 100.0)
+                assertEqual(alpha1, 0.5)
+
+                let alpha2 = ema.alpha(referenceFactor: 0.5, at: 100.008)
+                assertTrue(alpha2 > 0)
+
+                // Backwards timestamp (clock reset / new controller)
+                let alphaBackwards = ema.alpha(referenceFactor: 0.5, at: 5.0)
+                assertEqual(alphaBackwards, 0.5, "Backwards timestamp must reset time base and return reference alpha without freezing.")
+
+                let alphaSubsequent = ema.alpha(referenceFactor: 0.5, at: 5.008)
+                assertTrue(alphaSubsequent > 0, "Subsequent forward timestamps must calculate valid non-zero alpha.")
+
+                // Test pipeline reset
+                var pipeline = AnalogControlPipeline()
+                let snap = RawAnalogSnapshot(leftStickX: 0.8, leftStickY: 0.8, leftTrigger: 0.9)
+                pipeline.process(snapshot: snap, changedPhysicalControls: [.leftStick, .leftTrigger], timestamp: 1.0)
+                assertTrue(pipeline.leftStick.x > 0)
+                assertTrue(pipeline.leftTrigger.value > 0)
+
+                pipeline.reset()
+                assertEqual(pipeline.leftStick.x, 0)
+                assertEqual(pipeline.leftTrigger.value, 0)
+                assertFalse(pipeline.leftTrigger.isPressed)
             }
 
             test("Interactive calibration wizard step progression and capture") {

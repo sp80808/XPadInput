@@ -140,4 +140,15 @@ public struct AnalogControlPipeline: Sendable {
             }
         }
     }
+
+    public mutating func reset() {
+        leftStickProcessor.reset()
+        rightStickProcessor.reset()
+        leftTriggerProcessor.reset()
+        rightTriggerProcessor.reset()
+        leftStick = ProcessedStickState()
+        rightStick = ProcessedStickState()
+        leftTrigger = ProcessedTriggerState()
+        rightTrigger = ProcessedTriggerState()
+    }
 }

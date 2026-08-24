@@ -83,6 +83,15 @@ public struct TriggerProcessor: Sendable {
             isPressed: isHeld
         )
     }
+
+    public mutating func reset() {
+        smoothedValue = 0
+        isHeld = false
+        holdStartTime = 0
+        lastAttackVelocity = 0
+        smoother.reset()
+        velocityTracker.reset()
+    }
 }
 
 /// Rich state of an analog trigger across physical, calibrated, and processed domains.

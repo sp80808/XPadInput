@@ -94,17 +94,16 @@ public final class MPEManager: @unchecked Sendable {
         isMinorChord: Bool = false
     ) {
         lock.lock()
+        defer { lock.unlock() }
         self.scaleRoot = scaleRoot
         self.activeChordRoot = activeChordRoot
         self.isMinorChord = isMinorChord
-        lock.unlock()
     }
 
     public var currentZoneLayout: MPEZoneLayout {
         lock.lock()
-        let value = zoneLayout
-        lock.unlock()
-        return value
+        defer { lock.unlock() }
+        return zoneLayout
     }
 
     /// Rebuilds member-channel allocation to match a DAW host zone. Callers must
@@ -133,9 +132,8 @@ public final class MPEManager: @unchecked Sendable {
     public var bendRangeSemitones: Double {
         get {
             lock.lock()
-            let value = configuredBendRangeSemitones
-            lock.unlock()
-            return value
+            defer { lock.unlock() }
+            return configuredBendRangeSemitones
         }
         set {
             lock.lock()
@@ -147,16 +145,14 @@ public final class MPEManager: @unchecked Sendable {
 
     public var activeVoiceCount: Int {
         lock.lock()
-        let count = activeVoices.count
-        lock.unlock()
-        return count
+        defer { lock.unlock() }
+        return activeVoices.count
     }
 
     public func activeVoice(for note: UInt8) -> MPEVoice? {
         lock.lock()
-        let voice = activeVoices[note]
-        lock.unlock()
-        return voice
+        defer { lock.unlock() }
+        return activeVoices[note]
     }
 
     public func voice(for note: UInt8) -> MPEVoice? {

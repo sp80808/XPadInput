@@ -87,34 +87,34 @@ public final class VirtualAudioDriver: @unchecked Sendable {
     /// Enables or disables the virtual audio loopback stream.
     public func setEnabled(_ enabled: Bool) {
         lock.lock()
+        defer { lock.unlock() }
         isEnabled = enabled
         driverState.isStreaming = enabled
         if !enabled {
             ringBuffer.reset()
             levelMeter.reset()
         }
-        lock.unlock()
     }
     
     public func setSampleRate(_ rate: VirtualAudioSampleRate) {
         lock.lock()
+        defer { lock.unlock() }
         sampleRate = rate
         driverState.sampleRate = rate
-        lock.unlock()
     }
     
     public func setBufferSize(_ size: VirtualAudioBufferSize) {
         lock.lock()
+        defer { lock.unlock() }
         bufferSize = size
         driverState.bufferSize = size
-        lock.unlock()
     }
     
     public func setTapSource(_ source: VirtualAudioTapSource) {
         lock.lock()
+        defer { lock.unlock() }
         tapSource = source
         driverState.tapSource = source
-        lock.unlock()
     }
     
     /// Ingests real-time stereo audio frames from AudioEngine into the virtual loopback driver.
@@ -128,10 +128,10 @@ public final class VirtualAudioDriver: @unchecked Sendable {
         levelMeter.processFrames(left: left, right: right, frameCount: frameCount)
         
         lock.lock()
+        defer { lock.unlock() }
         driverState.totalFramesStreamed &+= UInt64(frameCount)
         driverState.overrunCount = ringBuffer.overrunCount
         driverState.underrunCount = ringBuffer.underrunCount
-        lock.unlock()
     }
     
     /// Virtual loopback consumer pull: reads stereo interleaved audio for virtual audio HAL tap.
