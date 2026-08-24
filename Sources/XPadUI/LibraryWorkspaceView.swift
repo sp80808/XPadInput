@@ -5,6 +5,7 @@ import XPadAudio
 import XPadMIDI
 
 public struct LibraryWorkspaceView: View {
+    @Environment(AppState.self) private var appState
     @State private var selectedPreset: SynthPreset = .acousticSine
 
     public init() {}
@@ -34,6 +35,40 @@ public struct LibraryWorkspaceView: View {
 
                 // CoreAudio Virtual Audio Driver & Loopback Section
                 VirtualAudioView()
+
+                Divider()
+
+                // Guided Interactive Tutorials (Learn Hub)
+                Button {
+                    appState.showLearnHub = true
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "graduationcap.fill")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(XTheme.primary)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Learn Hub — Guided Interactive Tutorials")
+                                .font(.headline)
+                                .foregroundColor(XTheme.textPrimary)
+                            Text("Five missions that watch your controller input in real time and coach you through strumming, MPE expression, harmony navigation, finger drumming and sustain technique.")
+                                .font(.caption)
+                                .foregroundColor(XTheme.textSecondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(XTheme.textTertiary)
+                    }
+                    .padding(14)
+                    .background(XTheme.surface)
+                    .overlay(RoundedRectangle(cornerRadius: XTheme.radiusMedium).strokeBorder(XTheme.primary.opacity(0.35), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+
+                Divider()
+
+                // Ways to Play — one-tap control-scheme gallery
+                WaysToPlayGallery()
 
                 Divider()
 

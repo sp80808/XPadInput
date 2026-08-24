@@ -13,6 +13,7 @@ public struct ContentView: View {
     public init() {}
 
     public var body: some View {
+        @Bindable var appState = appState
         GeometryReader { geo in
             let metrics = ViewportMetrics(size: geo.size)
 
@@ -57,6 +58,16 @@ public struct ContentView: View {
         .animation(XTheme.easeInOut, value: appState.showTransportBar)
         .sheet(isPresented: $isShowingSettings) {
             SettingsSheet()
+        }
+        .sheet(isPresented: $appState.showLearnHub) {
+            LearnHubView()
+        }
+        .overlay(alignment: .trailing) {
+            TutorialOverlayView()
+                .padding(.trailing, 16)
+                .padding(.bottom, 64)
+                .frame(maxHeight: .infinity, alignment: .bottom)
+                .animation(XTheme.glassIn, value: appState.activeTutorialMissionID)
         }
         .background {
             XTheme.canvasGradient

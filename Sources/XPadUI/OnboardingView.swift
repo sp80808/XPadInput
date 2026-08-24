@@ -181,6 +181,11 @@ public struct OnboardingView: View {
                         Button("Next →") { advance(by: 1) }
                             .buttonStyle(OnboardingPrimaryButtonStyle())
                     } else {
+                        Button("Try Interactive Tutorials") {
+                            appState.completeOnboarding()
+                            appState.startTutorial(missionID: "first_strum")
+                        }
+                        .buttonStyle(OnboardingSecondaryButtonStyle())
                         Button("Get Started") { appState.completeOnboarding() }
                             .buttonStyle(OnboardingPrimaryButtonStyle())
                     }

@@ -113,6 +113,41 @@ public final class AppState: @unchecked Sendable {
     /// Help panel visibility
     public var showHelpPanel: Bool = false
 
+    // MARK: Learn Hub — guided interactive tutorials
+
+    /// Live engine validating controller input against the active mission steps.
+    public let tutorialEngine = TutorialEngine()
+    public var showLearnHub: Bool = false
+    public var activeTutorialMissionID: String?
+
+    public var activeTutorialMission: TutorialMission? {
+        guard let id = activeTutorialMissionID else { return nil }
+        return TutorialMission.factoryPresets().first { $0.id == id }
+    }
+
+    public func startTutorial(missionID: String) {
+        guard let mission = TutorialMission.factoryPresets().first(where: { $0.id == missionID }) else { return }
+        tutorialEngine.onMissionComplete = { [weak self] in
+            Task { @MainActor in
+                if let id = self?.activeTutorialMissionID {
+                    TutorialMissionStore.markCompleted(id)
+                }
+            }
+        }
+        tutorialEngine.load(mission: mission)
+        activeTutorialMissionID = missionID
+        showLearnHub = false
+    }
+
+    public func endActiveTutorial(markCompleteIfFinished: Bool) {
+        if markCompleteIfFinished, tutorialEngine.currentProgress.isMissionComplete,
+           let id = activeTutorialMissionID {
+            TutorialMissionStore.markCompleted(id)
+        }
+        tutorialEngine.reset()
+        activeTutorialMissionID = nil
+    }
+
     /// Transport bar visibility — persisted so it stays hidden across launches.
     public var showTransportBar: Bool = !UserDefaults.standard.bool(forKey: "xpi_transport_bar_hidden")
 
@@ -417,6 +452,7 @@ public final class AppState: @unchecked Sendable {
 
     public func setInstrument(_ profile: InstrumentProfile) {
         stopActiveNotes()
+        droneEngine.resetSilently()
         applyInstrument(profile)
     }
 
@@ -681,7 +717,48 @@ public final class AppState: @unchecked Sendable {
     public func setPlayMode(_ mode: InstrumentPlayMode) {
         guard selectedPlayMode != mode else { return }
         stopArpeggiator()
+        if selectedPlayMode == .drone {
+            handleDroneEvents(droneEngine.releaseAll())
+        }
         selectedPlayMode = mode
+    }
+
+    // MARK: Drone Pad
+
+    /// Sustained chord bed for Drone Pad mode. Morphs with chord selection;
+    /// note-offs fire only on chord change or panic.
+    public private(set) var droneEngine = DroneBedEngine()
+
+    private func updateDroneBed(state: ControllerState, timestamp: TimeInterval) {
+        var chord = currentChord ?? diatonicChords.first ?? Chord(root: currentKey, quality: .major)
+        chord = applyModifier(chord, modifier: state.activeModifier)
+        let voice = makeChordVoice(chord)
+        let events = droneEngine.setVoice(voice, timestamp: timestamp)
+        handleDroneEvents(events)
+    }
+
+    private func handleDroneEvents(_ events: [DroneBedEngine.Event]) {
+        for event in events {
+            switch event {
+            case .noteOn(let note, let velocity):
+                beginPhysicalVoice(note, velocity: velocity, technique: .normal)
+                if !destinationProfile.supportsMPE {
+                    midiEngine.sendNoteOn(
+                        port: .chords,
+                        channel: midiChannel(.chords),
+                        note: note.midiNote,
+                        velocity: velocity
+                    )
+                }
+                addActiveNote(note)
+            case .noteOff(let note):
+                if !destinationProfile.supportsMPE {
+                    midiEngine.sendNoteOff(port: .chords, channel: midiChannel(.chords), note: note.midiNote)
+                }
+                removeActiveNote(note)
+                finishPhysicalVoiceIfUnowned(note)
+            }
+        }
     }
 
     public func updateArpeggiatorConfiguration(_ configuration: ArpeggiatorConfiguration) {
@@ -789,7 +866,18 @@ public final class AppState: @unchecked Sendable {
         let surface = controllerManager.surfaceFrame
         applySurfaceActions(surface)
         if surface.didRise(.panic) { return }
+
+        // Guided tutorial validation runs alongside live performance.
+        if activeTutorialMissionID != nil {
+            _ = tutorialEngine.process(state: state, timestamp: now)
+        }
         handleChordSelection(state)
+
+        // Drone Pad: the sustained bed follows chord selection every frame;
+        // no strum gate is involved.
+        if selectedPlayMode == .drone {
+            updateDroneBed(state: state, timestamp: now)
+        }
 
         // Duo drums are suspended while the fret lane owns the triggers & face cluster.
         var suppressesInstrumentFaceButtons = false
@@ -1298,6 +1386,10 @@ public final class AppState: @unchecked Sendable {
                     let events = arpeggiatorEngine.setVoice(voice)
                     handleArpeggiatorEvents(events)
                     startArpeggiatorTimer()
+                } else if selectedPlayMode == .drone {
+                    // Strum accents the sustained bed without re-gating it.
+                    let events = droneEngine.rearticulate(velocity: velocity)
+                    handleDroneEvents(events)
                 } else {
                     let events = chordGateEngine.process(
                         voice: voice,
@@ -1313,6 +1405,8 @@ public final class AppState: @unchecked Sendable {
                 if !arpeggiatorConfiguration.isLatched && chordGateConfiguration.mode == .momentary {
                     stopArpeggiator()
                 }
+            } else if selectedPlayMode == .drone {
+                // Sustain: release does nothing — note-offs fire on chord change or panic.
             } else {
                 let events = chordGateEngine.process(
                     voice: nil,
@@ -1322,7 +1416,7 @@ public final class AppState: @unchecked Sendable {
                 handleChordGateEvents(events, velocity: lastVelocity, direction: lastStrumDirection)
             }
         } else {
-            if selectedPlayMode != .arp {
+            if selectedPlayMode != .arp && selectedPlayMode != .drone {
                 let events = chordGateEngine.advance(timestamp: timestamp)
                 handleChordGateEvents(events, velocity: lastVelocity, direction: lastStrumDirection)
             }
@@ -1650,6 +1744,7 @@ public final class AppState: @unchecked Sendable {
 
     public func panic() {
         stopActiveNotes()
+        droneEngine.resetSilently()
         midiEngine.panic()
         lastFrame = nil
         lastDrumHit = nil

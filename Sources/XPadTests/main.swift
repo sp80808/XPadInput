@@ -3345,6 +3345,325 @@ final class TestRunner {
             }
         }
 
+        // ==================================================
+        // SUITE: Tutorial Engine: Gesture Validation, Scheme Hints & Mission Progress
+        // ==================================================
+        suite("Tutorial Engine: Gesture Validation, Scheme Hints & Mission Progress") {
+            func makeState() -> ControllerState { ControllerState() }
+
+            test("Factory missions have unique IDs, non-empty steps and resolvable gestures") {
+                let missions = TutorialMission.factoryPresets()
+                assertEqual(missions.count, 5)
+                assertEqual(Set(missions.map(\.id)).count, 5)
+                for mission in missions {
+                    assertTrue(!mission.steps.isEmpty)
+                    for step in mission.steps {
+                        // Every instruction either embeds a control placeholder or stands alone
+                        assertTrue(!step.instruction.isEmpty)
+                    }
+                }
+            }
+
+            test("First Strum mission completes via synthetic navigate → strum → pluck sequence") {
+                let engine = TutorialEngine(scheme: ControlSchemePreset.xpiPerformance)
+                let mission = TutorialMission.factoryPresets()[0]
+                assertEqual(mission.id, "first_strum")
+                engine.load(mission: mission)
+
+                var t: TimeInterval = 0
+                var progress = engine.process(state: makeState(), timestamp: t)
+
+                // Step 1: harmony navigation past 0.45 radius on left stick (scheme-bound)
+                t += 0.05
+                let nav = makeState()
+                nav.leftStick = ProcessedStickState(
+                    rawX: 0.8, rawY: 0.0, calibratedX: 0.8, calibratedY: 0.0,
+                    x: 0.8, y: 0.0, radius: 0.8, angle: 0,
+                    movementVelocity: 0, xVelocity: 0, yVelocity: 0, radialVelocity: 0
+                )
+                progress = engine.process(state: nav, timestamp: t)
+                assertTrue(progress.stepJustCompleted)
+                assertEqual(progress.currentStepIndex, 1)
+
+                // Step 2: strum sweep — right stick Y velocity above threshold
+                t += 0.05
+                let strum = makeState()
+                strum.rightStick = ProcessedStickState(
+                    rawX: 0.0, rawY: -1.0, calibratedX: 0.0, calibratedY: -1.0,
+                    x: 0.0, y: -1.0, radius: 1.0, angle: -.pi / 2,
+                    movementVelocity: 2.4, xVelocity: 0, yVelocity: -2.4, radialVelocity: 2.4
+                )
+                progress = engine.process(state: strum, timestamp: t)
+                assertTrue(progress.stepJustCompleted)
+                assertEqual(progress.currentStepIndex, 2)
+
+                // Step 3: root pluck — rising edge of button bound to voiceDegree1 (buttonSouth)
+                t += 0.05
+                let idle = makeState()
+                progress = engine.process(state: idle, timestamp: t) // settle edge tracker
+                t += 0.05
+                let pluck = makeState()
+                pluck.buttonA = true
+                progress = engine.process(state: pluck, timestamp: t)
+                assertTrue(progress.stepJustCompleted)
+                assertTrue(progress.isMissionComplete)
+                assertEqual(progress.completedSteps.count, 3)
+                assertEqual(progress.completedSteps.map(\.stepID), ["fs_navigate", "fs_strum", "fs_pluck"])
+            }
+
+            test("Pressure-hold gesture accumulates only while threshold sustained") {
+                let engine = TutorialEngine(scheme: ControlSchemePreset.xpiPerformance)
+                let mission = TutorialMission(
+                    id: "hold_test",
+                    title: "Hold",
+                    summary: "",
+                    steps: [
+                        TutorialStep(
+                            id: "h1",
+                            instruction: "Hold %@",
+                            gesture: .pressureHold(action: .pressureExpression, threshold: 0.6, duration: 0.4)
+                        )
+                    ]
+                )
+                engine.load(mission: mission)
+
+                var t: TimeInterval = 0
+                // Below threshold — no accumulation
+                let soft = makeState()
+                soft.rightTrigger = ProcessedTriggerState(rawValue: 0.3, calibratedValue: 0.3, value: 0.3, isPressed: false)
+                var progress = engine.process(state: soft, timestamp: t)
+                assertFalse(progress.isMissionComplete)
+
+                // Above threshold but reset by dip mid-way
+                t += 0.2
+                let firm = makeState()
+                firm.rightTrigger = ProcessedTriggerState(rawValue: 0.8, calibratedValue: 0.8, value: 0.8, isPressed: true)
+                _ = engine.process(state: firm, timestamp: t)
+                t += 0.2
+                _ = engine.process(state: soft, timestamp: t)   // dip resets accumulator
+                t += 0.2
+                _ = engine.process(state: firm, timestamp: t)
+                t += 0.15
+                progress = engine.process(state: firm, timestamp: t)
+                assertFalse(progress.isMissionComplete)          // only 0.35s since reset
+
+                // Sustained past duration completes the mission
+                t += 0.1
+                progress = engine.process(state: firm, timestamp: t)
+                assertTrue(progress.isMissionComplete)
+                assertEqual(progress.totalSteps, 1)
+            }
+
+            test("Scheme-aware hints name the physical controls from the active scheme") {
+                let performance = TutorialEngine(scheme: ControlSchemePreset.xpiPerformance)
+                assertTrue(performance.resolvedHint(for: .navigateHarmony(radius: 0.5)).contains("Left Stick"))
+                assertTrue(performance.resolvedHint(for: .strumSweep(minVelocity: 1)).contains("Right Stick"))
+                assertTrue(performance.resolvedHint(for: .pluckVoice(degree: .root)).contains("South Button"))
+
+                // One-hand-left scheme binds excitation to left trigger — hint follows the scheme
+                let oneHand = TutorialEngine(scheme: ControlSchemePreset.oneHandLeft)
+                assertTrue(oneHand.resolvedHint(for: .strumSweep(minVelocity: 1)).contains("Trigger"))
+                // oneHandLeft maps the root voice degree onto D-Pad Left
+                assertTrue(oneHand.resolvedHint(for: .pluckVoice(degree: .root)).contains("D-Pad Left"))
+
+                // First-timer scheme leaves expression unmapped
+                let beginner = TutorialEngine(scheme: ControlSchemePreset.firstTimer)
+                assertEqual(beginner.resolvedHint(for: .pressureHold(action: .pressureExpression, threshold: 0.5, duration: 1)), "unmapped")
+            }
+
+            test("Octave shift and motion tilt gestures complete with scheme bindings respected") {
+                let engine = TutorialEngine(scheme: ControlSchemePreset.xpiPerformance)
+                let mission = TutorialMission(
+                    id: "octave_motion",
+                    title: "Octave & Motion",
+                    summary: "",
+                    steps: [
+                        TutorialStep(id: "up", instruction: "%@", gesture: .shiftOctave(direction: .up)),
+                        TutorialStep(id: "tilt", instruction: "%@", gesture: .tiltMotion(axis: .pitch, degrees: 10))
+                    ]
+                )
+                engine.load(mission: mission)
+
+                var t: TimeInterval = 0
+                var progress = engine.process(state: makeState(), timestamp: t)
+
+                // D-Pad Up is bound to octaveUp in XPI Performance
+                t += 0.05
+                let dpadUp = makeState()
+                dpadUp.dpadUp = true
+                progress = engine.process(state: dpadUp, timestamp: t)
+                assertTrue(progress.stepJustCompleted)
+
+                // Motion disabled schemes never satisfy tilt
+                let noMotion = TutorialEngine(scheme: ControlSchemePreset.xpiClassic)
+                noMotion.load(mission: mission)
+                let tilted = makeState()
+                tilted.pitchTilt = 30
+                tilted.hasMotion = true
+                progress = noMotion.process(state: tilted, timestamp: t + 0.05)
+                assertFalse(progress.stepJustCompleted)
+                assertFalse(noMotion.currentProgress.isMissionComplete)
+
+                // Motion-enabled scheme completes on tilt
+                t += 0.1
+                progress = engine.process(state: tilted, timestamp: t)
+                assertTrue(progress.stepJustCompleted)
+                assertTrue(progress.isMissionComplete)
+            }
+
+            test("Reset restores mission from scratch and completion callback fires once") {
+                let engine = TutorialEngine(scheme: ControlSchemePreset.firstTimer)
+                var completions = 0
+                engine.onMissionComplete = { completions += 1 }
+                let mission = TutorialMission(
+                    id: "cb_test",
+                    title: "Callback",
+                    summary: "",
+                    steps: [TutorialStep(id: "s", instruction: "%@", gesture: .pluckVoice(degree: .root))]
+                )
+                engine.load(mission: mission)
+
+                let press = makeState()
+                press.buttonA = true
+                var progress = engine.process(state: makeState(), timestamp: 0)
+                progress = engine.process(state: press, timestamp: 0.1)
+                assertTrue(progress.isMissionComplete)
+
+                // Re-processing after completion must not double-fire
+                _ = engine.process(state: press, timestamp: 0.2)
+                _ = engine.process(state: makeState(), timestamp: 0.3)
+
+                engine.reset()
+                assertFalse(engine.currentProgress.isMissionComplete)
+                assertEqual(engine.currentProgress.currentStepIndex, 0)
+
+                progress = engine.process(state: makeState(), timestamp: 1.0)
+                progress = engine.process(state: press, timestamp: 1.1)
+                assertTrue(progress.isMissionComplete)
+            }
+        }
+
+        // ==================================================
+        // SUITE: Drone Pad Bed: Sustain Lifecycle, Chord Morphing & Panic Cleanup
+        // ==================================================
+        suite("Drone Pad Bed: Sustain Lifecycle, Chord Morphing & Panic Cleanup") {
+            let cMaj = ChordGateVoice(
+                chord: Chord(root: .c, quality: .major),
+                notes: [Note(pitchClass: .c, octave: 4), Note(pitchClass: .e, octave: 4), Note(pitchClass: .g, octave: 4)]
+            )
+            // A minor shares C and E — only G leaves, A joins.
+            let aMin = ChordGateVoice(
+                chord: Chord(root: .a, quality: .minor),
+                notes: [Note(pitchClass: .a, octave: 3), Note(pitchClass: .c, octave: 4), Note(pitchClass: .e, octave: 4)]
+            )
+            let fMaj = ChordGateVoice(
+                chord: Chord(root: .f, quality: .major),
+                notes: [Note(pitchClass: .f, octave: 3), Note(pitchClass: .a, octave: 3), Note(pitchClass: .c, octave: 4)]
+            )
+
+            test("First setVoice attacks the full chord; bed holds with no further events") {
+                var bed = DroneBedEngine()
+                let events = bed.setVoice(cMaj, timestamp: 0)
+                assertEqual(events.count, 3)
+                assertTrue(events.allSatisfy { if case .noteOn = $0 { return true } else { return false } })
+                assertEqual(bed.activeNotes.count, 3)
+                assertEqual(bed.currentVoice?.chord.root, PitchClass.c)
+
+                // Re-asserting the identical voice is a no-op — sustain continues.
+                let repeatEvents = bed.setVoice(cMaj, timestamp: 0.5)
+                assertEqual(repeatEvents.count, 0)
+                assertEqual(bed.activeNotes.count, 3)
+            }
+
+            test("Chord change morphs the bed — shared notes keep sounding") {
+                var bed = DroneBedEngine()
+                _ = bed.setVoice(cMaj, timestamp: 0)
+                let morph = bed.setVoice(aMin, timestamp: 1.0)
+
+                // Exactly one off (G4) and one on (A3).
+                assertEqual(morph.count, 2)
+                let offs = morph.filter { if case .noteOff(let n) = $0 { return n.midiNote == 67 } else { return false } }
+                let ons = morph.filter { if case .noteOn(let n, _) = $0 { return n.midiNote == 57 } else { return false } }
+                assertEqual(offs.count, 1)
+                assertEqual(ons.count, 1)
+                // Sustained set is now A3, C4, E4
+                assertEqual(bed.activeNotes.map(\.midiNote).sorted(), [57, 60, 64])
+            }
+
+            test("Full change releases everything before attacking the new chord") {
+                var bed = DroneBedEngine()
+                _ = bed.setVoice(cMaj, timestamp: 0)
+                let swap = bed.setVoice(fMaj, timestamp: 2.0)
+
+                // Only C4 survives; E4 and G4 release; F3 and A3 join.
+                let offCount = swap.filter { if case .noteOff = $0 { return true } else { return false } }.count
+                let onCount = swap.filter { if case .noteOn = $0 { return true } else { return false } }.count
+                assertEqual(offCount, 2)   // E4, G4
+                assertEqual(onCount, 2)    // F3, A3
+                assertEqual(bed.activeNotes.map(\.midiNote).sorted(), [53, 57, 60])
+            }
+
+            test("Rearticulate accents all sounding notes without changing membership") {
+                var bed = DroneBedEngine()
+                _ = bed.setVoice(cMaj, timestamp: 0)
+                let accent = bed.rearticulate(velocity: 110)
+
+                assertEqual(accent.count, 3)
+                assertTrue(accent.allSatisfy { if case .noteOn(_, velocity: 110) = $0 { return true } else { return false } })
+                assertEqual(bed.lastVelocity, 110)
+                assertEqual(bed.activeNotes.count, 3)
+            }
+
+            test("Release all silences the bed and clears voice state") {
+                var bed = DroneBedEngine()
+                _ = bed.setVoice(cMaj, timestamp: 0)
+                let release = bed.releaseAll()
+
+                assertEqual(release.count, 3)
+                assertTrue(release.allSatisfy { if case .noteOff = $0 { return true } else { return false } })
+                assertEqual(bed.activeNotes.count, 0)
+                assertEqual(bed.currentVoice, nil)
+
+                // Releasing an empty bed is a no-op.
+                assertEqual(bed.releaseAll().count, 0)
+            }
+
+            test("Setting nil voice releases; silent reset drops bookkeeping for panic paths") {
+                var bed = DroneBedEngine()
+                _ = bed.setVoice(cMaj, timestamp: 0)
+                let viaNil = bed.setVoice(nil, timestamp: 3.0)
+                assertEqual(viaNil.count, 3)
+                assertTrue(viaNil.allSatisfy { if case .noteOff = $0 { return true } else { return false } })
+
+                _ = bed.setVoice(cMaj, timestamp: 4.0)
+                bed.resetSilently()
+                assertEqual(bed.activeNotes.count, 0)
+                assertEqual(bed.currentVoice, nil)
+            }
+
+            test("Duplicate voicing entries are collapsed into single sustained notes") {
+                var bed = DroneBedEngine()
+                let doubled = ChordGateVoice(
+                    chord: cMaj.chord,
+                    notes: [Note(pitchClass: .c, octave: 4), Note(pitchClass: .c, octave: 4), Note(pitchClass: .g, octave: 4)]
+                )
+                let events = bed.setVoice(doubled, timestamp: 0)
+                assertEqual(events.count, 2)
+                assertEqual(bed.activeNotes.count, 2)
+            }
+
+            test("Velocity persists across subsequent morphs") {
+                var bed = DroneBedEngine()
+                _ = bed.setVoice(cMaj, timestamp: 0)
+                _ = bed.rearticulate(velocity: 100)
+                let morph = bed.setVoice(aMin, timestamp: 1.0)
+                let joined = morph.compactMap { if case .noteOn(let n, let v) = $0 { return (n.midiNote, v) } else { return nil } }
+                assertEqual(joined.count, 1)
+                assertEqual(joined[0].0, 57)
+                assertEqual(joined[0].1, 100)
+            }
+        }
+
         // MARK: - Final Summary
         print("\n==================================================")
         print("📊 Test Execution Summary")

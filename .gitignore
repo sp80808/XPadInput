@@ -64,6 +64,14 @@ CLAUDE.md
 .beads-credential-key
 .beads/proxieddb/
 
+# Gas Town daemon infrastructure (crew, mayor, polecats, refinery, witness)
+# These are local runtime/process-management state — never commit
+crew/
+mayor/
+polecats/
+refinery/
+witness/
+
 # ALL dot-folders & local tooling state (catch-all) — CI and lint configs stay tracked
 .*/
 .*
