@@ -917,6 +917,7 @@ struct PerformanceMonitorView: View {
                 // Pitch Bend
                 ExpressionBar(
                     label: "Bend",
+                    icon: "arrow.left.and.right",
                     value: appState.lastFrame?.bend.bendSemitones ?? 0,
                     range: -12...12,
                     color: XTheme.expression,
@@ -926,6 +927,7 @@ struct PerformanceMonitorView: View {
                 // Pressure / Aftertouch
                 ExpressionBar(
                     label: "Pressure",
+                    icon: "hand.raised.fill",
                     value: appState.lastFrame?.pressure.smoothed ?? 0,
                     range: 0...1,
                     color: XTheme.primary,
@@ -935,6 +937,7 @@ struct PerformanceMonitorView: View {
                 // Timbre / CC74
                 ExpressionBar(
                     label: "Timbre",
+                    icon: "slider.horizontal.2.square",
                     value: appState.lastFrame?.timbre ?? 0,
                     range: 0...1,
                     color: XTheme.tense,
@@ -944,6 +947,7 @@ struct PerformanceMonitorView: View {
                 // Palm Mute
                 ExpressionBar(
                     label: "Mute",
+                    icon: "hand.tap.fill",
                     value: appState.lastFrame?.palmMuteAmount ?? 0,
                     range: 0...1,
                     color: XTheme.accent,
@@ -952,6 +956,9 @@ struct PerformanceMonitorView: View {
                 
                 // Active notes count
                 VStack(spacing: 2) {
+                    Image(systemName: "music.note")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundColor(XTheme.textTertiary)
                     Text("Notes")
                         .font(.system(size: 8, weight: .medium, design: .monospaced))
                         .foregroundColor(XTheme.textTertiary)
@@ -973,6 +980,7 @@ struct PerformanceMonitorView: View {
 
 private struct ExpressionBar: View {
     let label: String
+    var icon: String? = nil          // optional SF Symbol prefix
     let value: Double
     let range: ClosedRange<Double>
     let color: Color
@@ -989,6 +997,12 @@ private struct ExpressionBar: View {
     
     var body: some View {
         VStack(spacing: 2) {
+            // Icon + label row
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundColor(color.opacity(0.75))
+            }
             Text(label)
                 .font(.system(size: 8, weight: .medium, design: .monospaced))
                 .foregroundColor(XTheme.textTertiary)

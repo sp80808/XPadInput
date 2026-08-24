@@ -16,7 +16,7 @@ public struct ControlSchemeArchive: Codable, Sendable, Equatable {
     public init(
         schemaVersion: Int = currentSchemaVersion,
         exportedAt: Date = Date(),
-        appVersion: String = "0.0.02",
+        appVersion: String = "0.0.04",
         scheme: ControlScheme,
         metadata: [String: String] = [:]
     ) {
@@ -70,7 +70,7 @@ public enum ControlSchemeTransferError: LocalizedError, Sendable, Equatable {
 
 /// Handles robust serialization, deserialization, migration, and diagnostic reporting for ControlScheme archives.
 public enum ControlSchemeTransfer {
-    private static let iso8601Formatter: ISO8601DateFormatter = {
+    private nonisolated(unsafe) static let iso8601Formatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return formatter
@@ -92,7 +92,7 @@ public enum ControlSchemeTransfer {
     /// Exports a ControlScheme wrapped in a versioned archive as UTF-8 JSON Data.
     public static func exportArchive(
         _ scheme: ControlScheme,
-        appVersion: String = "0.0.02",
+        appVersion: String = "0.0.04",
         metadata: [String: String] = [:]
     ) throws -> Data {
         let archive = ControlSchemeArchive(
@@ -108,7 +108,7 @@ public enum ControlSchemeTransfer {
     /// Exports a ControlScheme wrapped in a versioned archive as a UTF-8 JSON string.
     public static func exportJSON(
         _ scheme: ControlScheme,
-        appVersion: String = "0.0.02",
+        appVersion: String = "0.0.04",
         metadata: [String: String] = [:]
     ) throws -> String {
         let data = try exportArchive(scheme, appVersion: appVersion, metadata: metadata)

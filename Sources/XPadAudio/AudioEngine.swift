@@ -875,6 +875,24 @@ public final class AudioEngine: @unchecked Sendable {
 
 private final class VoiceControlState: @unchecked Sendable {
     struct Snapshot {
+        var note: UInt8 = 0
+        var baseFrequency: Double = 440.0
+        var targetAmplitude: Double = 0.8
+        var attackTime: Double = 0.01
+        var decayTime: Double = 0.15
+        var sustainLevel: Double = 0.6
+        var releaseTime: Double = 0.4
+        var oscillator1: OscillatorType = .sine
+        var oscillator2: OscillatorType = .triangle
+        var osc2Level: Double = 0.28
+        var osc2Detune: Double = 1.0
+        var baseFilterCutoff: Double = 2600.0
+        var filterResonance: Double = 0.0
+        var filterType: FilterType = .lowPass
+        var saturationAmount: Double = 0.0
+        var velocity: UInt8 = 100
+        var generation: UInt32 = 0
+        var isIdle: Bool = true
         var isReleasing: Bool = false
         var isStopped: Bool = false
         var pitchOffset: Double = 0.0
@@ -885,6 +903,7 @@ private final class VoiceControlState: @unchecked Sendable {
         var pinch: Bool = false
         var pan: Double = 0.5
         var resonanceOffset: Double = 0.0
+        var startTime: Date = Date()
     }
 
     private let state = OSAllocatedUnfairLock(initialState: Snapshot())
@@ -893,18 +912,117 @@ private final class VoiceControlState: @unchecked Sendable {
         state.withLock { $0 }
     }
 
-    /// Audio render threads never wait for control writers. If a write is in
-    /// progress, the voice reuses its last complete snapshot for one buffer.
     func trySnapshot() -> Snapshot? {
         state.withLockIfAvailable { $0 }
     }
 
+    func trigger(
+        note: UInt8,
+        velocity: UInt8,
+        sampleRate: Double,
+        technique: MusicalTechnique,
+        preset: SynthPreset,
+        velocityCurve: SynthVelocityCurve,
+        tuningOffsetSemitones: Double
+    ) {
+        let baseFrequency = 440.0 * pow(2.0, (Double(note) + tuningOffsetSemitones - 69.0) / 12.0)
+        let targetAmplitude = velocityCurve.normalizedAmplitude(for: velocity)
+        let rawAttack = max(0.0005, preset.attack)
+        let rawDecay = max(0.005, preset.decay)
+        let rawSustain = max(0, min(1, preset.sustain))
+        let rawRelease = max(0.01, preset.release)
+
+        let finalAttackTime: Double
+        let finalDecayTime: Double
+        let finalSustainLevel: Double
+        let finalReleaseTime: Double
+
+        switch technique {
+        case .hammerOn, .pullOff, .legato:
+            finalAttackTime = min(rawAttack, 0.002)
+            finalDecayTime = rawDecay
+            finalSustainLevel = min(rawSustain, 0.55)
+            finalReleaseTime = rawRelease
+        case .palmMute, .ghostNote:
+            finalAttackTime = min(rawAttack, 0.001)
+            finalDecayTime = min(rawDecay, 0.06)
+            finalSustainLevel = min(rawSustain, 0.18)
+            finalReleaseTime = min(rawRelease, 0.08)
+        case .pinchHarmonic, .harmonic:
+            finalAttackTime = min(rawAttack, 0.001)
+            finalDecayTime = rawDecay
+            finalSustainLevel = min(rawSustain, 0.45)
+            finalReleaseTime = rawRelease
+        default:
+            finalAttackTime = rawAttack
+            finalDecayTime = rawDecay
+            finalSustainLevel = rawSustain
+            finalReleaseTime = rawRelease
+        }
+
+        let velocityBrightness = 0.82 + 0.36 * (Double(velocity) / 127.0)
+        let baseFilterCutoff = max(80, min(sampleRate * 0.42, preset.filterCutoffHz * velocityBrightness))
+        let filterResonance = max(0.0, min(0.95, preset.filterResonance))
+        let osc2Level = max(0.0, min(1.0, preset.osc2Level))
+        let saturationAmount = max(0.0, min(1.0, preset.saturationAmount))
+        let osc2Detune = pow(2.0, preset.osc2DetuneCents / 1_200.0)
+
+        state.withLock {
+            $0.note = note
+            $0.baseFrequency = baseFrequency
+            $0.targetAmplitude = targetAmplitude
+            $0.attackTime = finalAttackTime
+            $0.decayTime = finalDecayTime
+            $0.sustainLevel = finalSustainLevel
+            $0.releaseTime = finalReleaseTime
+            $0.oscillator1 = preset.osc1Type
+            $0.oscillator2 = preset.osc2Type
+            $0.osc2Level = osc2Level
+            $0.osc2Detune = osc2Detune
+            $0.baseFilterCutoff = baseFilterCutoff
+            $0.filterResonance = filterResonance
+            $0.filterType = preset.filterType
+            $0.saturationAmount = saturationAmount
+            $0.velocity = velocity
+            $0.startTime = Date()
+            $0.isIdle = false
+            $0.isReleasing = false
+            $0.isStopped = false
+            $0.generation = $0.generation &+ 1
+            if technique == .pinchHarmonic {
+                $0.harmonic = 1.0
+                $0.pinch = true
+            } else if technique == .harmonic {
+                $0.harmonic = 0.6
+                $0.pinch = false
+            } else {
+                $0.harmonic = 0.0
+                $0.pinch = false
+            }
+        }
+    }
+
     func startRelease() {
-        state.withLock { $0.isReleasing = true }
+        state.withLock {
+            if !$0.isIdle {
+                $0.isReleasing = true
+            }
+        }
+    }
+
+    func markIdle() {
+        state.withLockIfAvailable {
+            $0.isIdle = true
+            $0.isReleasing = false
+        }
     }
 
     func stop() {
-        state.withLock { $0.isStopped = true }
+        state.withLock {
+            $0.isStopped = true
+            $0.isIdle = true
+            $0.isReleasing = false
+        }
     }
 
     func setPitchOffset(_ semitones: Double) {
@@ -941,86 +1059,46 @@ private final class VoiceControlState: @unchecked Sendable {
 
 /// Individual synth voice generating a single note.
 public final class SynthVoice: @unchecked Sendable {
-    public let note: UInt8
     public let sourceNode: AVAudioSourceNode
-    public let startTime: Date
-    public var releaseTime: Double = 0.4
-    
-    private let baseFrequency: Double
-    private var targetAmplitude: Double
     private let controlState = VoiceControlState()
     private let sampleRate: Double
-    
-    // Envelope
-    private var attackTime: Double = 0.01
-    private var decayTime: Double = 0.15
-    private var sustainLevel: Double = 0.6
-    
-    public init(
-        note: UInt8,
-        velocity: UInt8,
-        sampleRate: Double,
-        technique: MusicalTechnique = .normal,
-        preset: SynthPreset = .acousticSine,
-        velocityCurve: SynthVelocityCurve = .balanced,
-        tuningOffsetSemitones: Double = 0.0
-    ) {
-        self.note = note
+
+    public var note: UInt8 {
+        controlState.snapshot().note
+    }
+
+    public var startTime: Date {
+        controlState.snapshot().startTime
+    }
+
+    public var releaseTime: Double {
+        controlState.snapshot().releaseTime
+    }
+
+    public var isIdle: Bool {
+        controlState.snapshot().isIdle
+    }
+
+    public var isReleasing: Bool {
+        let snap = controlState.snapshot()
+        return !snap.isIdle && snap.isReleasing
+    }
+
+    public var isStopped: Bool {
+        controlState.snapshot().isStopped
+    }
+
+    public var currentPitchOffset: Double {
+        controlState.snapshot().pitchOffset
+    }
+
+    public init(sampleRate: Double) {
         self.sampleRate = sampleRate
-        self.baseFrequency = 440.0 * pow(2.0, (Double(note) + tuningOffsetSemitones - 69.0) / 12.0)
-        self.targetAmplitude = velocityCurve.normalizedAmplitude(for: velocity)
-        self.startTime = Date()
-
-        attackTime = max(0.0005, preset.attack)
-        decayTime = max(0.005, preset.decay)
-        sustainLevel = max(0, min(1, preset.sustain))
-        releaseTime = max(0.01, preset.release)
-
-        switch technique {
-        case .hammerOn, .pullOff, .legato:
-            attackTime = min(attackTime, 0.002)
-            sustainLevel = min(sustainLevel, 0.55)
-        case .palmMute, .ghostNote:
-            attackTime = min(attackTime, 0.001)
-            decayTime = min(decayTime, 0.06)
-            sustainLevel = min(sustainLevel, 0.18)
-            releaseTime = min(releaseTime, 0.08)
-        case .pinchHarmonic, .harmonic:
-            attackTime = min(attackTime, 0.001)
-            sustainLevel = min(sustainLevel, 0.45)
-        default:
-            break
-        }
-
-        if technique == .pinchHarmonic {
-            controlState.setHarmonic(amount: 1.0, pinch: true)
-        } else if technique == .harmonic {
-            controlState.setHarmonic(amount: 0.6, pinch: false)
-        }
-        
         let control = self.controlState
-        let baseFrequency = self.baseFrequency
-        let attack = self.attackTime
-        let decay = self.decayTime
-        let sustain = self.sustainLevel
-        let target = self.targetAmplitude
-        let release = self.releaseTime
-        let oscillator1 = preset.osc1Type
-        let oscillator2 = preset.osc2Type
-        let velocityBrightness = 0.82 + 0.36 * (Double(velocity) / 127.0)
-        let baseFilterCutoff = max(80, min(sampleRate * 0.42, preset.filterCutoffHz * velocityBrightness))
-        let filterResonance = max(0.0, min(0.95, preset.filterResonance))
-        let filterType = preset.filterType
-        let osc2Level = max(0.0, min(1.0, preset.osc2Level))
-        let osc2DetuneCents = preset.osc2DetuneCents
-        let saturationAmount = max(0.0, min(1.0, preset.saturationAmount))
-        let oscillator2Detune = pow(2.0, osc2DetuneCents / 1_200.0)
-        
+
         var oscillator1Phase = 0.0
         var oscillator2Phase = 0.0
-        // Unison saw: 7 detuned voices for thickness (phases staggered to avoid transient burst)
         var unisonPhases: [Double] = (0..<7).map { i in Double(i) / 7.0 }
-        // Strings: 4 slightly detuned saws with independent phases
         var stringsPhases: [Double] = (0..<4).map { i in Double(i) / 4.0 }
         var envPhase = 0.0
         var releasePhase = 0.0
@@ -1028,57 +1106,63 @@ public final class SynthVoice: @unchecked Sendable {
         var filterState1 = 0.0
         var filterState2 = 0.0
         var wasReleasing = false
-        var renderFinished = false
+        var currentGeneration: UInt32 = 0
         var cachedControlSnapshot = control.snapshot()
         var noiseState: UInt32 = 0x9E37_79B9
-        
+
         self.sourceNode = AVAudioSourceNode { _, _, frameCount, audioBufferList -> OSStatus in
             let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
             let buffer = ablPointer[0]
             guard let rawPtr = buffer.mData else { return noErr }
             let ptr = rawPtr.assumingMemoryBound(to: Float.self)
 
-            if renderFinished {
-                for frame in 0..<Int(frameCount) {
-                    ptr[frame] = 0
-                }
-                return noErr
-            }
-
             if let latest = control.trySnapshot() {
                 cachedControlSnapshot = latest
             }
-            let controlSnapshot = cachedControlSnapshot
-            if controlSnapshot.isStopped {
+            let snap = cachedControlSnapshot
+
+            if snap.isIdle || snap.isStopped {
                 for frame in 0..<Int(frameCount) {
                     ptr[frame] = 0
                 }
                 return noErr
             }
 
-            let releasing = controlSnapshot.isReleasing
+            if snap.generation != currentGeneration {
+                currentGeneration = snap.generation
+                oscillator1Phase = 0.0
+                oscillator2Phase = 0.0
+                for i in 0..<7 { unisonPhases[i] = Double(i) / 7.0 }
+                for i in 0..<4 { stringsPhases[i] = Double(i) / 4.0 }
+                envPhase = 0.0
+                releasePhase = 0.0
+                releaseStartAmp = 0.0
+                filterState1 = 0.0
+                filterState2 = 0.0
+                wasReleasing = false
+                noiseState = 0x9E37_79B9 ^ UInt32(snap.note) ^ UInt32(snap.velocity)
+            }
+
+            let releasing = snap.isReleasing
             if releasing && !wasReleasing {
                 releasePhase = 0
             }
             wasReleasing = releasing
 
-            let pitchMultiplier = pow(2.0, controlSnapshot.pitchOffset / 12.0)
-            let frequency = baseFrequency * pitchMultiplier
+            let pitchMultiplier = pow(2.0, snap.pitchOffset / 12.0)
+            let frequency = snap.baseFrequency * pitchMultiplier
             let oscillator1Increment = min(frequency / sampleRate, 0.49)
-            let oscillator2Increment = min(frequency * oscillator2Detune / sampleRate, 0.49)
-            let mute = controlSnapshot.damping
-            let expressiveCutoff = baseFilterCutoff
-                * (0.52 + controlSnapshot.timbre * 1.15)
+            let oscillator2Increment = min(frequency * snap.osc2Detune / sampleRate, 0.49)
+            let mute = snap.damping
+            let expressiveCutoff = snap.baseFilterCutoff
+                * (0.52 + snap.timbre * 1.15)
                 * (1.0 - mute * 0.78)
             let cutoff = max(70, min(sampleRate * 0.42, expressiveCutoff))
             
-            // Calculate filter coefficients based on type
-            // Using a simpler state-variable filter approach for better stability
-            let resonance = max(0.0, min(0.95, filterResonance))
+            let resonance = max(0.0, min(0.95, snap.filterResonance))
             let cutoffHz = cutoff
             let filterFrequencyRad = 2.0 * .pi * cutoffHz / sampleRate
             
-            // State-variable filter coefficients
             let f = sin(filterFrequencyRad) * 0.5
             let q = 1.0 - f * (1.0 - resonance * 0.8)
             
@@ -1088,32 +1172,31 @@ public final class SynthVoice: @unchecked Sendable {
                 // Envelope
                 let envValue: Double
                 if releasing {
-                    let releaseProgress = min(releasePhase / release, 1.0)
+                    let releaseProgress = min(releasePhase / snap.releaseTime, 1.0)
                     envValue = releaseStartAmp * (1.0 - releaseProgress)
                     if releaseProgress >= 1.0 {
                         reachedReleaseEnd = true
                     }
-                } else if envPhase < attack {
-                    envValue = (envPhase / attack) * target
-                } else if envPhase < attack + decay {
-                    let decayProgress = (envPhase - attack) / decay
-                    envValue = target - (target - target * sustain) * decayProgress
+                } else if envPhase < snap.attackTime {
+                    envValue = (envPhase / snap.attackTime) * snap.targetAmplitude
+                } else if envPhase < snap.attackTime + snap.decayTime {
+                    let decayProgress = (envPhase - snap.attackTime) / snap.decayTime
+                    envValue = snap.targetAmplitude - (snap.targetAmplitude - snap.targetAmplitude * snap.sustainLevel) * decayProgress
                 } else {
-                    envValue = target * sustain
+                    envValue = snap.targetAmplitude * snap.sustainLevel
                 }
                 
                 if !releasing {
                     releaseStartAmp = envValue
                 }
                 
-                let pressureAmp = 0.72 + controlSnapshot.pressure * 0.55
-                let h = controlSnapshot.harmonic
+                let pressureAmp = 0.72 + snap.pressure * 0.55
+                let h = snap.harmonic
 
                 // Generate oscillator samples
                 let first: Double
-                switch oscillator1 {
+                switch snap.oscillator1 {
                 case .unison:
-                    // 7-voice detuned saw stack: detunes ±35 cents spread
                     let unisonDetunes: [Double] = [-0.35, -0.22, -0.10, 0.0, 0.10, 0.22, 0.35]
                     var unisonMix = 0.0
                     for vi in 0..<7 {
@@ -1125,9 +1208,8 @@ public final class SynthVoice: @unchecked Sendable {
                         unisonPhases[vi] += inc
                         if unisonPhases[vi] >= 1.0 { unisonPhases[vi] -= floor(unisonPhases[vi]) }
                     }
-                    first = unisonMix * 0.18 // normalise 7 voices
+                    first = unisonMix * 0.18
                 case .strings:
-                    // 4-voice slightly detuned saws for string-ensemble chorus effect
                     let stringDetunes: [Double] = [-0.08, -0.025, 0.025, 0.08]
                     var strMix = 0.0
                     for vi in 0..<4 {
@@ -1142,21 +1224,20 @@ public final class SynthVoice: @unchecked Sendable {
                     first = strMix * 0.30
                 default:
                     first = SynthVoice.oscillatorSample(
-                        type: oscillator1,
+                        type: snap.oscillator1,
                         phase: oscillator1Phase,
                         increment: oscillator1Increment
                     )
                 }
                 
                 let second = SynthVoice.oscillatorSample(
-                    type: oscillator2,
+                    type: snap.oscillator2,
                     phase: oscillator2Phase,
                     increment: oscillator2Increment
                 )
                 
-                // Handle noise oscillator — xorshift32 for better spectral distribution
                 let noiseSample: Double
-                if oscillator2 == .noise {
+                if snap.oscillator2 == .noise {
                     noiseState ^= noiseState << 13
                     noiseState ^= noiseState >> 17
                     noiseState ^= noiseState << 5
@@ -1165,32 +1246,28 @@ public final class SynthVoice: @unchecked Sendable {
                     noiseSample = 0.0
                 }
                 
-                // Mix oscillators with configurable levels
-                var sample = first * (1.0 - osc2Level)
+                var sample = first * (1.0 - snap.osc2Level)
                 
-                if oscillator2 == .noise {
-                    sample += noiseSample * osc2Level
+                if snap.oscillator2 == .noise {
+                    sample += noiseSample * snap.osc2Level
                 } else {
-                    sample += second * osc2Level
+                    sample += second * snap.osc2Level
                 }
                 
-                // Add guitar FFT harmonic enhancement (sine overtones: 2nd octave and 3rd compound fifth)
                 if h > 0 {
                     sample += h * (0.22 * sin(oscillator1Phase * 2.0 * .pi * 2.0) + 0.14 * sin(oscillator1Phase * 2.0 * .pi * 3.0))
                 }
-                if controlSnapshot.pinch {
+                if snap.pinch {
                     sample = sample * 0.45
                         + 0.30 * sin(oscillator1Phase * 2.0 * .pi * 3.0)
                         + 0.20 * sin(oscillator1Phase * 2.0 * .pi * 4.0)
                         + 0.12 * sin(oscillator1Phase * 2.0 * .pi * 5.0)
                 }
 
-                // Apply saturation — tanh-approximated tube warmth
                 let saturatedSample: Double
-                if saturationAmount > 0 {
-                    let drive = 1.0 + saturationAmount * 3.5
+                if snap.saturationAmount > 0 {
+                    let drive = 1.0 + snap.saturationAmount * 3.5
                     let x = sample * drive
-                    // Padé approximant of tanh(x) for |x| < 4 — cheaper than Foundation tanh
                     let x2 = x * x
                     let softClip = x * (27.0 + x2) / (27.0 + 9.0 * x2)
                     saturatedSample = softClip / drive
@@ -1198,7 +1275,6 @@ public final class SynthVoice: @unchecked Sendable {
                     saturatedSample = sample
                 }
 
-                // Apply state-variable filter
                 let lowPass = filterState1 + f * (saturatedSample - filterState1)
                 let highPass = saturatedSample - lowPass
                 let bandPass = filterState2 + f * (highPass - filterState2)
@@ -1206,7 +1282,7 @@ public final class SynthVoice: @unchecked Sendable {
                 filterState1 = lowPass
                 
                 let filtered: Double
-                switch filterType {
+                switch snap.filterType {
                 case .lowPass:
                     filtered = lowPass + q * bandPass
                 case .highPass:
@@ -1228,11 +1304,90 @@ public final class SynthVoice: @unchecked Sendable {
             }
 
             if reachedReleaseEnd {
-                renderFinished = true
+                control.markIdle()
             }
 
             return noErr
         }
+    }
+
+    public convenience init(
+        note: UInt8,
+        velocity: UInt8,
+        sampleRate: Double,
+        technique: MusicalTechnique = .normal,
+        preset: SynthPreset = .acousticSine,
+        velocityCurve: SynthVelocityCurve = .balanced,
+        tuningOffsetSemitones: Double = 0.0
+    ) {
+        self.init(sampleRate: sampleRate)
+        trigger(
+            note: note,
+            velocity: velocity,
+            sampleRate: sampleRate,
+            technique: technique,
+            preset: preset,
+            velocityCurve: velocityCurve,
+            tuningOffsetSemitones: tuningOffsetSemitones
+        )
+    }
+
+    public func trigger(
+        note: UInt8,
+        velocity: UInt8,
+        sampleRate: Double,
+        technique: MusicalTechnique = .normal,
+        preset: SynthPreset = .acousticSine,
+        velocityCurve: SynthVelocityCurve = .balanced,
+        tuningOffsetSemitones: Double = 0.0
+    ) {
+        controlState.trigger(
+            note: note,
+            velocity: velocity,
+            sampleRate: sampleRate,
+            technique: technique,
+            preset: preset,
+            velocityCurve: velocityCurve,
+            tuningOffsetSemitones: tuningOffsetSemitones
+        )
+    }
+
+    public func start() {}
+
+    public func startRelease() {
+        controlState.startRelease()
+    }
+
+    public func stop() {
+        controlState.stop()
+    }
+
+    public func setPitchOffset(_ semitones: Double) {
+        controlState.setPitchOffset(semitones)
+    }
+
+    public func setPressure(_ value: Double) {
+        controlState.setPressure(value)
+    }
+
+    public func setTimbre(_ value: Double) {
+        controlState.setTimbre(value)
+    }
+
+    public func setDamping(_ value: Double) {
+        controlState.setDamping(value)
+    }
+
+    public func setPan(_ value: Double) {
+        controlState.setPan(value)
+    }
+
+    public func setResonanceOffset(_ value: Double) {
+        controlState.setResonanceOffset(value)
+    }
+
+    public func setHarmonic(amount: Double, pinch: Bool) {
+        controlState.setHarmonic(amount: amount, pinch: pinch)
     }
 
     @inline(__always)
@@ -1266,58 +1421,6 @@ public final class SynthVoice: @unchecked Sendable {
             let sub = sin(phase * .pi)
             return saw * 0.7 + sub * 0.3
         }
-    }
-
-    public func start() {
-        // Voice starts automatically via render callback
-    }
-    
-    public func startRelease() {
-        controlState.startRelease()
-    }
-    
-    public func stop() {
-        controlState.stop()
-    }
-    
-    public var isReleasing: Bool {
-        controlState.snapshot().isReleasing
-    }
-    
-    public var isStopped: Bool {
-        controlState.snapshot().isStopped
-    }
-
-    public func setPitchOffset(_ semitones: Double) {
-        controlState.setPitchOffset(semitones)
-    }
-
-    public func setPressure(_ value: Double) {
-        controlState.setPressure(value)
-    }
-
-    public func setTimbre(_ value: Double) {
-        controlState.setTimbre(value)
-    }
-
-    public func setDamping(_ value: Double) {
-        controlState.setDamping(value)
-    }
-
-    public func setPan(_ value: Double) {
-        controlState.setPan(value)
-    }
-
-    public func setResonanceOffset(_ value: Double) {
-        controlState.setResonanceOffset(value)
-    }
-
-    public func setHarmonic(amount: Double, pinch: Bool) {
-        controlState.setHarmonic(amount: amount, pinch: pinch)
-    }
-
-    public var currentPitchOffset: Double {
-        controlState.snapshot().pitchOffset
     }
 }
 

@@ -131,6 +131,7 @@ public final class Sequencer: ObservableObject {
         if transport.isPlaying {
             clockStartTick = transport.currentTick
             clockStartHostTime = .now()
+            startClock()
         }
         transport.bpm = clamped
     }
@@ -152,11 +153,13 @@ public final class Sequencer: ObservableObject {
     public func recordNoteOff(note: UInt8) {
         guard transport.isRecording, let start = activeNoteStarts.removeValue(forKey: note) else { return }
         let duration: UInt64
-        if transport.currentTick >= start {
-            duration = max(60, transport.currentTick - start)
+        let currentTick = transport.currentTick
+        
+        if currentTick >= start {
+            duration = max(60, currentTick - start)
         } else if transport.loopEnabled && transport.loopEndTick > start {
             let preWrap = transport.loopEndTick - start
-            let postWrap = transport.currentTick >= transport.loopStartTick ? (transport.currentTick - transport.loopStartTick) : 0
+            let postWrap = currentTick >= transport.loopStartTick ? (currentTick - transport.loopStartTick) : 0
             duration = max(60, preWrap + postWrap)
         } else {
             duration = 60
@@ -166,13 +169,14 @@ public final class Sequencer: ObservableObject {
     }
 
     private func finalizeActiveNotes() {
+        let currentTick = transport.currentTick
         for (note, start) in activeNoteStarts {
             let duration: UInt64
-            if transport.currentTick >= start {
-                duration = max(60, transport.currentTick - start)
+            if currentTick >= start {
+                duration = max(60, currentTick - start)
             } else if transport.loopEnabled && transport.loopEndTick > start {
                 let preWrap = transport.loopEndTick - start
-                let postWrap = transport.currentTick >= transport.loopStartTick ? (transport.currentTick - transport.loopStartTick) : 0
+                let postWrap = currentTick >= transport.loopStartTick ? (currentTick - transport.loopStartTick) : 0
                 duration = max(60, preWrap + postWrap)
             } else {
                 duration = 60
@@ -186,9 +190,13 @@ public final class Sequencer: ObservableObject {
     private func startClock() {
         stopClock()
         let t = DispatchSource.makeTimerSource(queue: timerQueue)
-        // High-resolution ~2ms timer tick, calculated against host clock for 0 drift
-        t.schedule(deadline: .now(), repeating: .milliseconds(2))
-
+        // Adaptive timer interval based on BPM for smooth transport
+        // At 960 PPQN: 120 BPM = 1920 ticks/sec = ~0.52ms/tick
+        // Use min(2ms, tick_interval/2) for responsive updates
+        let tickIntervalNs = UInt64(60_000_000_000.0 / (transport.bpm * 960.0))
+        let timerIntervalNs = min(2_000_000, tickIntervalNs / 2)
+        t.schedule(deadline: .now(), repeating: .nanoseconds(Int(timerIntervalNs)))
+        
         t.setEventHandler { [weak self] in
             DispatchQueue.main.async {
                 self?.tick()
@@ -209,7 +217,7 @@ public final class Sequencer: ObservableObject {
         let elapsedSeconds = Double(elapsedNs) / 1_000_000_000.0
         let ticksElapsed = UInt64(elapsedSeconds * (transport.bpm / 60.0) * 960.0)
         var newTick = clockStartTick + ticksElapsed
-
+        
         if transport.loopEnabled && transport.loopEndTick > transport.loopStartTick {
             let loopSpan = transport.loopEndTick - transport.loopStartTick
             if newTick >= transport.loopEndTick {

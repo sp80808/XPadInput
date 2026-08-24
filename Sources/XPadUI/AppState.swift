@@ -179,6 +179,10 @@ public final class AppState: @unchecked Sendable {
     public var currentTick: UInt64 {
         sequencer.transport.currentTick
     }
+    public var selectedPlayMode: InstrumentPlayMode = .chords
+    public var arpeggiatorConfiguration = ArpeggiatorConfiguration()
+    public private(set) var arpeggiatorEngine = ArpeggiatorEngine()
+    private var arpeggiatorTimer: DispatchSourceTimer?
     public var chordGateConfiguration = ChordGateConfiguration(mode: .timed, timedDuration: 0.85)
     public var duoPerformanceMode: DuoPerformanceMode = .instrumentOnly
     public var lastDrumHit: DuoDrumHit?
@@ -672,6 +676,86 @@ public final class AppState: @unchecked Sendable {
         let releaseEvents = chordGateEngine.updateConfiguration(configuration)
         chordGateConfiguration = configuration
         handleChordGateEvents(releaseEvents, velocity: lastVelocity, direction: lastStrumDirection)
+    }
+
+    public func setPlayMode(_ mode: InstrumentPlayMode) {
+        guard selectedPlayMode != mode else { return }
+        stopArpeggiator()
+        selectedPlayMode = mode
+    }
+
+    public func updateArpeggiatorConfiguration(_ configuration: ArpeggiatorConfiguration) {
+        arpeggiatorConfiguration = configuration
+        _ = arpeggiatorEngine.updateConfiguration(configuration)
+        if arpeggiatorTimer != nil {
+            startArpeggiatorTimer()
+        }
+    }
+
+    public func startArpeggiator(with voice: ChordGateVoice? = nil) {
+        let activeChord = voice?.chord ?? currentChord ?? diatonicChords.first ?? Chord(root: currentKey, quality: .major)
+        let resolvedVoice = voice ?? makeChordVoice(activeChord)
+        let events = arpeggiatorEngine.setVoice(resolvedVoice)
+        handleArpeggiatorEvents(events)
+        startArpeggiatorTimer()
+    }
+
+    public func stopArpeggiator() {
+        stopArpeggiatorTimer()
+        let events = arpeggiatorEngine.releaseAll()
+        handleArpeggiatorEvents(events)
+    }
+
+    private func startArpeggiatorTimer() {
+        stopArpeggiatorTimer()
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        let interval = arpeggiatorConfiguration.rate.secondsPerStep(tempoBPM: bpm)
+        timer.schedule(deadline: .now(), repeating: interval, leeway: .milliseconds(2))
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            let events = self.arpeggiatorEngine.advance(
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                tempoBPM: self.bpm,
+                velocity: self.lastVelocity
+            )
+            self.handleArpeggiatorEvents(events)
+        }
+        arpeggiatorTimer = timer
+        timer.resume()
+    }
+
+    private func stopArpeggiatorTimer() {
+        arpeggiatorTimer?.cancel()
+        arpeggiatorTimer = nil
+    }
+
+    private func handleArpeggiatorEvents(_ events: [ArpeggiatorEvent]) {
+        for event in events {
+            switch event {
+            case .noteOn(let note, let velocity):
+                let technique: MusicalTechnique = controllerManager.performanceState.leftTrigger.value > 0.35 ? .palmMute : .normal
+                beginPhysicalVoice(note, velocity: velocity, technique: technique)
+                if !destinationProfile.supportsMPE {
+                    midiEngine.sendNoteOn(
+                        port: .chords,
+                        channel: midiChannel(.chords),
+                        note: note.midiNote,
+                        velocity: velocity
+                    )
+                }
+                addActiveNote(note)
+            case .noteOff(let note):
+                if !destinationProfile.supportsMPE {
+                    midiEngine.sendNoteOff(port: .chords, channel: midiChannel(.chords), note: note.midiNote)
+                }
+                removeActiveNote(note)
+                finishPhysicalVoiceIfUnowned(note)
+            }
+        }
+    }
+
+    public func toggleArpeggiator() {
+        setPlayMode(selectedPlayMode == .arp ? .chords : .arp)
     }
 
     private func applyInstrument(_ profile: InstrumentProfile) {
@@ -1210,24 +1294,38 @@ public final class AppState: @unchecked Sendable {
                 var chord = currentChord ?? diatonicChords.first ?? Chord(root: currentKey, quality: .major)
                 chord = applyModifier(chord, modifier: state.activeModifier)
                 let voice = makeChordVoice(chord)
-                let events = chordGateEngine.process(
-                    voice: voice,
-                    isGestureActive: true,
-                    timestamp: timestamp
-                )
-                handleChordGateEvents(events, velocity: velocity, velocity16: velocity16, direction: direction)
+                if selectedPlayMode == .arp {
+                    let events = arpeggiatorEngine.setVoice(voice)
+                    handleArpeggiatorEvents(events)
+                    startArpeggiatorTimer()
+                } else {
+                    let events = chordGateEngine.process(
+                        voice: voice,
+                        isGestureActive: true,
+                        timestamp: timestamp
+                    )
+                    handleChordGateEvents(events, velocity: velocity, velocity16: velocity16, direction: direction)
+                }
             }
         } else if travel < releaseThreshold {
             strumState.hasReset = true
-            let events = chordGateEngine.process(
-                voice: nil,
-                isGestureActive: false,
-                timestamp: timestamp
-            )
-            handleChordGateEvents(events, velocity: lastVelocity, direction: lastStrumDirection)
+            if selectedPlayMode == .arp {
+                if !arpeggiatorConfiguration.isLatched && chordGateConfiguration.mode == .momentary {
+                    stopArpeggiator()
+                }
+            } else {
+                let events = chordGateEngine.process(
+                    voice: nil,
+                    isGestureActive: false,
+                    timestamp: timestamp
+                )
+                handleChordGateEvents(events, velocity: lastVelocity, direction: lastStrumDirection)
+            }
         } else {
-            let events = chordGateEngine.advance(timestamp: timestamp)
-            handleChordGateEvents(events, velocity: lastVelocity, direction: lastStrumDirection)
+            if selectedPlayMode != .arp {
+                let events = chordGateEngine.advance(timestamp: timestamp)
+                handleChordGateEvents(events, velocity: lastVelocity, direction: lastStrumDirection)
+            }
         }
     }
 
@@ -1437,6 +1535,10 @@ public final class AppState: @unchecked Sendable {
         if !activeNotes.contains(where: { $0.midiNote == note.midiNote }) {
             activeNotes.append(note)
         }
+    }
+
+    private func removeActiveNote(_ note: Note) {
+        activeNotes.removeAll(where: { $0.midiNote == note.midiNote })
     }
 
     private func isNoteOwned(_ midiNote: UInt8) -> Bool {

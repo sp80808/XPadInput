@@ -15,6 +15,33 @@ struct ExpressionMapWorkspaceView: View {
         case midi = "MIDI Translation"
 
         var id: String { rawValue }
+
+        var iconName: String {
+            switch self {
+            case .physical:   return "l.joystick.fill"
+            case .gesture:    return "hand.draw.fill"
+            case .instrument: return "pianokeys"
+            case .midi:       return "cable.connector"
+            }
+        }
+
+        var accentColor: Color {
+            switch self {
+            case .physical:   return XTheme.primary
+            case .gesture:    return XTheme.expression
+            case .instrument: return XTheme.accent
+            case .midi:       return XTheme.creative
+            }
+        }
+
+        var contextHint: String {
+            switch self {
+            case .physical:   return "Deadzone, response curves, and smoothing for sticks and triggers."
+            case .gesture:    return "Pitch assist, realism, and theory-aware chord-tone layout."
+            case .instrument: return "Family, preset, bend range, vibrato, and articulation windows."
+            case .midi:       return "Host, channel routing, MPE zone, pressure mode, and passthru."
+            }
+        }
     }
 
     var body: some View {
@@ -23,7 +50,7 @@ struct ExpressionMapWorkspaceView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Picker("Section", selection: $section) {
                     ForEach(MapSection.allCases) { item in
-                        Text(item.rawValue).tag(item)
+                        Label(item.rawValue, systemImage: item.iconName).tag(item)
                     }
                 }
                 .pickerStyle(.segmented)
@@ -48,26 +75,89 @@ struct ExpressionMapWorkspaceView: View {
             .frame(minWidth: 420)
 
             VStack(alignment: .leading, spacing: 12) {
-                Text("Technique Monitor")
-                    .font(.headline)
+                HStack(spacing: 6) {
+                    Image(systemName: "waveform.path.ecg")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(XTheme.primary)
+                    Text("Technique Monitor")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundColor(XTheme.textPrimary)
+                }
                 if let translation = appState.lastMIDITranslation {
-                    Text(translation.diagnosticSummary)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundStyle(XTheme.textSecondary)
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .xCard()
+                    VStack(alignment: .leading, spacing: 6) {
+                        // Technique name badge
+                        HStack(spacing: 6) {
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundColor(XTheme.accent)
+                            Text(translation.technique.displayName)
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundColor(XTheme.textPrimary)
+                            Spacer()
+                            Text("LIVE")
+                                .font(.system(size: 8, weight: .black, design: .monospaced))
+                                .foregroundColor(XTheme.primary)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(XTheme.primary.opacity(0.12))
+                                .clipShape(Capsule())
+                        }
+                        Divider().background(XTheme.border)
+                        Text(translation.diagnosticSummary)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(XTheme.textSecondary)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .xCard(isActive: true)
                 } else {
-                    Text("Play a technique to inspect MIDI here.\nThis detail stays out of PLAY.")
-                        .font(.caption)
-                        .foregroundStyle(XTheme.textTertiary)
+                    HStack(spacing: 8) {
+                        Image(systemName: "play.circle")
+                            .font(.system(size: 20))
+                            .foregroundColor(XTheme.textTertiary)
+                        Text("Play a technique to inspect MIDI here.\nThis detail stays out of PLAY.")
+                            .font(.caption)
+                            .foregroundStyle(XTheme.textTertiary)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(XTheme.surface.opacity(0.5))
+                    .clipShape(RoundedRectangle(cornerRadius: XTheme.radiusSmall))
                 }
 
                 if let fallback = appState.lastMIDITranslation?.fallbackDescription {
-                    Text(fallback)
-                        .font(.caption)
-                        .foregroundStyle(XTheme.tense)
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(XTheme.tense)
+                        Text(fallback)
+                            .font(.caption)
+                            .foregroundStyle(XTheme.tense)
+                    }
                 }
+
+                // Section-specific quick legend
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 5) {
+                        Image(systemName: section.iconName)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(section.accentColor)
+                        Text(section.rawValue)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(section.accentColor)
+                    }
+                    Text(section.contextHint)
+                        .font(.system(size: 10))
+                        .foregroundColor(XTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(10)
+                .background(section.accentColor.opacity(0.07))
+                .clipShape(RoundedRectangle(cornerRadius: XTheme.radiusSmall))
+                .overlay(
+                    RoundedRectangle(cornerRadius: XTheme.radiusSmall)
+                        .stroke(section.accentColor.opacity(0.2), lineWidth: 1)
+                )
 
                 Spacer()
             }

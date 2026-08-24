@@ -36,6 +36,7 @@ public enum WorkspaceTab: String, CaseIterable, Identifiable {
 
 public enum InstrumentPlayMode: String, CaseIterable, Identifiable {
     case chords = "Chord Strummer"
+    case arp = "Arpeggiator"
     case drums = "Rhythm Compass"
     case bass = "Bassline"
     case melody = "Melody Lead"

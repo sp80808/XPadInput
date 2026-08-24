@@ -382,12 +382,13 @@ public final class PracticeEngine: ObservableObject {
     private func startChallengeTimer(timeLimit: TimeInterval) {
         challengeTimer?.invalidate()
         challengeRemainingTime = timeLimit
-        challengeTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
+        challengeTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 self.challengeRemainingTime -= 1.0
                 if self.challengeRemainingTime <= 0 {
-                    timer.invalidate()
+                    self.challengeTimer?.invalidate()
+                    self.challengeTimer = nil
                     self.completeChallenge(timeExpired: true)
                 }
             }

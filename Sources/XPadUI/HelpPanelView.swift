@@ -360,7 +360,7 @@ public struct HelpPanelView: View {
 
 // MARK: - Help Section Enum
 
-public enum HelpSection: String, CaseIterable, Identifiable {
+public enum HelpSection: String, CaseIterable, Identifiable, Sendable {
     case controls    = "Controls"
     case theory      = "Music Theory"
     case midi        = "MIDI Setup"
@@ -383,7 +383,7 @@ public enum HelpSection: String, CaseIterable, Identifiable {
 
 // MARK: - Searchable Entry model
 
-struct HelpEntry: Identifiable {
+struct HelpEntry: Identifiable, Sendable {
     let id = UUID()
     let section: HelpSection
     let title: String

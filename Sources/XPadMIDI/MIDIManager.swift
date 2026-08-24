@@ -987,19 +987,48 @@ public final class MIDIEngine: @unchecked Sendable {
     }
 
     private func sendMIDI1Message(_ bytes: [UInt8], endpoint: MIDIEndpointRef) {
+        guard !bytes.isEmpty else { return }
+
+        if bytes.first == 0xF0 || bytes.count >= 4 {
+            let packets = MIDI2UMPEncoder.sysex7Messages(from: bytes)
+            guard !packets.isEmpty else { return }
+            var eventList = MIDIEventList()
+            let packet = MIDIEventListInit(&eventList, ._1_0)
+            var words: [UInt32] = []
+            for p in packets {
+                words.append(p.word0)
+                words.append(p.word1)
+            }
+            _ = MIDIEventListAdd(
+                &eventList,
+                1024,
+                packet,
+                mach_absolute_time(),
+                words.count,
+                words
+            )
+            MIDIReceivedEventList(endpoint, &eventList)
+            return
+        }
+
         var eventList = MIDIEventList()
         let packet = MIDIEventListInit(&eventList, ._1_0)
         let word: UInt32
 
         if bytes.count == 3 {
-            word = (0x20 << 24)
+            let mt: UInt32 = bytes[0] >= 0xF0 ? 0x10 : 0x20
+            word = (mt << 24)
                 | (UInt32(bytes[0]) << 16)
                 | (UInt32(bytes[1]) << 8)
                 | UInt32(bytes[2])
         } else if bytes.count == 2 {
-            word = (0x20 << 24)
+            let mt: UInt32 = bytes[0] >= 0xF0 ? 0x10 : 0x20
+            word = (mt << 24)
                 | (UInt32(bytes[0]) << 16)
                 | (UInt32(bytes[1]) << 8)
+        } else if bytes.count == 1 {
+            word = (0x10 << 24)
+                | (UInt32(bytes[0]) << 16)
         } else {
             return
         }
@@ -1017,6 +1046,30 @@ public final class MIDIEngine: @unchecked Sendable {
     }
 
     private func sendMIDI2Message(_ bytes: [UInt8], endpoint: MIDIEndpointRef) {
+        guard !bytes.isEmpty else { return }
+
+        if bytes.first == 0xF0 || bytes.count >= 4 {
+            let packets = MIDI2UMPEncoder.sysex7Messages(from: bytes)
+            guard !packets.isEmpty else { return }
+            var eventList = MIDIEventList()
+            let packet = MIDIEventListInit(&eventList, ._2_0)
+            var words: [UInt32] = []
+            for p in packets {
+                words.append(p.word0)
+                words.append(p.word1)
+            }
+            _ = MIDIEventListAdd(
+                &eventList,
+                1024,
+                packet,
+                mach_absolute_time(),
+                words.count,
+                words
+            )
+            MIDIReceivedEventList(endpoint, &eventList)
+            return
+        }
+
         guard let message = MIDI2UMPEncoder.message(from: bytes) else { return }
         sendMIDI2Message(message, endpoint: endpoint)
     }

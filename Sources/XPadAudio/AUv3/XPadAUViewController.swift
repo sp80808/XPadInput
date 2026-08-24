@@ -5,7 +5,7 @@ import AudioToolbox
 import SwiftUI
 
 /// Audio Unit View Controller bridging AUv3 host windows (Logic Pro, Reaper, Bitwig, Cubase) to native SwiftUI views.
-open class XPadAUViewController: AUViewController, AUAudioUnitFactory, @unchecked Sendable {
+open class XPadAUViewController: AUViewController, @preconcurrency AUAudioUnitFactory, @unchecked Sendable {
     public var audioUnit: AUAudioUnit?
     private var hostingController: NSHostingController<AnyView>?
     

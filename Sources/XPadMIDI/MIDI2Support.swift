@@ -412,6 +412,60 @@ public enum MIDI2UMPEncoder {
         )
     }
 
+    /// Encodes arbitrary SysEx 7-bit bytes into 64-bit UMP packets (Message Type 0x3).
+    public static func sysex7Messages(from bytes: [UInt8], group: UInt8 = 0) -> [MIDIMessage_64] {
+        guard !bytes.isEmpty else { return [] }
+        var packets: [MIDIMessage_64] = []
+        let totalBytes = bytes.count
+        let chunkSize = 6
+
+        if totalBytes <= chunkSize {
+            packets.append(makeSysEx7Packet(bytes: bytes, group: group, status: 0))
+            return packets
+        }
+
+        var offset = 0
+        while offset < totalBytes {
+            let remaining = totalBytes - offset
+            let count = min(chunkSize, remaining)
+            let chunk = Array(bytes[offset..<(offset + count)])
+            let status: UInt8
+            if offset == 0 {
+                status = 1 // Start
+            } else if offset + count >= totalBytes {
+                status = 3 // End
+            } else {
+                status = 2 // Continue
+            }
+            packets.append(makeSysEx7Packet(bytes: chunk, group: group, status: status))
+            offset += count
+        }
+        return packets
+    }
+
+    private static func makeSysEx7Packet(bytes: [UInt8], group: UInt8, status: UInt8) -> MIDIMessage_64 {
+        let count = min(6, bytes.count)
+        let b1 = count > 0 ? UInt32(bytes[0]) : 0
+        let b2 = count > 1 ? UInt32(bytes[1]) : 0
+        let b3 = count > 2 ? UInt32(bytes[2]) : 0
+        let b4 = count > 3 ? UInt32(bytes[3]) : 0
+        let b5 = count > 4 ? UInt32(bytes[4]) : 0
+        let b6 = count > 5 ? UInt32(bytes[5]) : 0
+
+        let word0 = (0x3 << 28)
+            | (UInt32(group & 0x0F) << 24)
+            | (UInt32(status & 0x0F) << 20)
+            | (UInt32(count & 0x0F) << 16)
+            | (b1 << 8)
+            | b2
+        let word1 = (b3 << 24)
+            | (b4 << 16)
+            | (b5 << 8)
+            | b6
+
+        return MIDIMessage_64(word0: word0, word1: word1)
+    }
+
     /// Full-range conversion that preserves 0 and 127 exactly.
     public static func scale7To16(_ value: UInt8) -> UInt16 {
         let clamped = UInt32(min(127, value))

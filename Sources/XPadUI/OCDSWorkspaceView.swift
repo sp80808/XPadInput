@@ -26,14 +26,14 @@ public struct OCDSProfileManagerView: View {
             HStack(spacing: 12) {
                 Image(systemName: "doc.badge.gearshape.fill")
                     .font(.title2)
-                    .foregroundStyle(Color.green)
+                    .foregroundStyle(XTheme.accent)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Open Controller Definition Standard (OCDS)")
                         .font(.headline)
                     Text("Universal JSON schema for community mapping, tactile resistance & 3D skinning")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(XTheme.textSecondary)
                 }
 
                 Spacer()
@@ -52,7 +52,7 @@ public struct OCDSProfileManagerView: View {
                     Label("Import Profile", systemImage: "square.and.arrow.down")
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.green)
+                .tint(XTheme.primary)
             }
             .padding(.horizontal)
 
@@ -77,7 +77,7 @@ public struct OCDSProfileManagerView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Profile Metadata")
                             .font(.caption.bold())
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(XTheme.textSecondary)
 
                         metaRow(label: "Identifier", value: activeProfile.metadata.id)
                         metaRow(label: "Author", value: activeProfile.metadata.author)
@@ -89,19 +89,19 @@ public struct OCDSProfileManagerView: View {
                         if !activeProfile.metadata.description.isEmpty {
                             Text(activeProfile.metadata.description)
                                 .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(XTheme.textSecondary)
                                 .padding(.top, 4)
                         }
                     }
                     .padding(12)
-                    .background(Color.white.opacity(0.04))
+                    .background(XTheme.surface)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
                     // Hardware Specs Card
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Hardware Capabilities")
                             .font(.caption.bold())
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(XTheme.textSecondary)
 
                         HStack(spacing: 8) {
                             capBadge(name: "Sticks: \(activeProfile.hardwareSpec.stickCount)", active: activeProfile.hardwareSpec.stickCount > 0)
@@ -116,7 +116,7 @@ public struct OCDSProfileManagerView: View {
                         }
                     }
                     .padding(12)
-                    .background(Color.white.opacity(0.04))
+                    .background(XTheme.surface)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
                     Spacer()
@@ -135,25 +135,26 @@ public struct OCDSProfileManagerView: View {
                             if activeProfile.inputBindings.isEmpty {
                                 Text("No custom input overrides defined. Using standard fallback.")
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(XTheme.textSecondary)
                             } else {
                                 ForEach(activeProfile.inputBindings) { binding in
                                     HStack {
                                         Text(binding.source.rawValue)
                                             .font(.caption.bold())
-                                            .foregroundStyle(Color.green)
+                                            .foregroundStyle(XTheme.primary)
                                         Image(systemName: "arrow.right")
                                             .font(.caption2)
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(XTheme.textTertiary)
                                         Text(binding.target.rawValue)
                                             .font(.caption)
+                                            .foregroundStyle(XTheme.textSecondary)
                                         Spacer()
                                         Text("Curve: \(binding.curve) · Deadzone: \(String(format: "%.2f", binding.deadzone))")
                                             .font(.system(size: 9))
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(XTheme.textTertiary)
                                     }
                                     .padding(8)
-                                    .background(Color.black.opacity(0.2))
+                                    .background(XTheme.surface)
                                     .clipShape(RoundedRectangle(cornerRadius: 6))
                                 }
                             }
@@ -169,14 +170,14 @@ public struct OCDSProfileManagerView: View {
                             if activeProfile.triggerConfigs.isEmpty {
                                 Text("Standard linear spring triggers (No adaptive motor profile).")
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(XTheme.textSecondary)
                             } else {
                                 ForEach(activeProfile.triggerConfigs) { trig in
                                     VStack(alignment: .leading, spacing: 4) {
                                         HStack {
                                             Text(trig.trigger.rawValue)
                                                 .font(.caption.bold())
-                                                .foregroundStyle(Color.orange)
+                                                .foregroundStyle(XTheme.accent)
                                             Spacer()
                                             Text("Mode: \(trig.mode)")
                                                 .font(.caption2.bold())
@@ -184,10 +185,10 @@ public struct OCDSProfileManagerView: View {
                                         }
                                         Text("Strength: \(String(format: "%.0f%%", trig.resistiveStrength * 100)) · Range: \(String(format: "%.0f%% - %.0f%%", trig.startPosition * 100, trig.endPosition * 100))")
                                             .font(.system(size: 10))
-                                            .foregroundStyle(.secondary)
+                                            .foregroundStyle(XTheme.textSecondary)
                                     }
                                     .padding(8)
-                                    .background(Color.orange.opacity(0.08))
+                                    .background(XTheme.accent.opacity(0.08))
                                     .clipShape(RoundedRectangle(cornerRadius: 6))
                                 }
                             }
@@ -209,7 +210,7 @@ public struct OCDSProfileManagerView: View {
                             if !activeProfile.visualSkin.meshAnchors.isEmpty {
                                 Text("Mesh Anchors: \(activeProfile.visualSkin.meshAnchors.count) elements attached")
                                     .font(.caption2)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(XTheme.textSecondary)
                             }
                         }
                     }
@@ -232,7 +233,7 @@ public struct OCDSProfileManagerView: View {
         HStack {
             Text(label)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(XTheme.textSecondary)
             Spacer()
             Text(value)
                 .font(.caption2.bold())
@@ -243,10 +244,10 @@ public struct OCDSProfileManagerView: View {
     private func capBadge(name: String, active: Bool) -> some View {
         Text(name)
             .font(.system(size: 9, weight: .semibold))
-            .foregroundStyle(active ? Color.green : Color.gray)
+            .foregroundStyle(active ? XTheme.primary : XTheme.textTertiary)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
-            .background(active ? Color.green.opacity(0.12) : Color.white.opacity(0.04))
+            .background(active ? XTheme.primary.opacity(0.12) : XTheme.surface)
             .clipShape(Capsule())
     }
 
@@ -259,7 +260,7 @@ public struct OCDSProfileManagerView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(label)
                     .font(.system(size: 9))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(XTheme.textSecondary)
                 Text(hex)
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
             }
@@ -293,7 +294,7 @@ public struct OCDSProfileManagerView: View {
             TextEditor(text: .constant(text))
                 .font(.system(size: 11, design: .monospaced))
                 .padding()
-                .background(Color.black.opacity(0.6))
+                .background(XTheme.canvas)
         }
         .frame(minWidth: 500, minHeight: 400)
     }
@@ -311,12 +312,12 @@ public struct OCDSProfileManagerView: View {
             TextEditor(text: $importJSONText)
                 .font(.system(size: 11, design: .monospaced))
                 .padding()
-                .background(Color.black.opacity(0.6))
+                .background(XTheme.canvas)
 
             if let err = importError {
                 Text(err)
                     .font(.caption)
-                    .foregroundStyle(Color.red)
+                    .foregroundStyle(XTheme.danger)
             }
 
             HStack {
@@ -333,7 +334,7 @@ public struct OCDSProfileManagerView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.green)
+                .tint(XTheme.primary)
             }
             .padding()
         }

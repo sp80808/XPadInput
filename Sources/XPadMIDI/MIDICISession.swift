@@ -43,7 +43,7 @@ public final class MIDICISession: @unchecked Sendable {
 
     // MARK: - State
 
-    private let lock = NSLock()
+    private let lock = NSRecursiveLock()
     public let myMUID: UInt32
     public private(set) var remoteMUID: UInt32?
     public private(set) var isMPEProfileActive: Bool = false
@@ -184,9 +184,7 @@ public final class MIDICISession: @unchecked Sendable {
         msg.append(contentsOf: writeMUID(myMUID))
         msg.append(contentsOf: writeMUID(targetMUID))
 
-        lock.lock()
         let isEnabled = isMPEProfileActive
-        lock.unlock()
 
         if isEnabled {
             // Enabled Profiles Count = 1
@@ -212,9 +210,7 @@ public final class MIDICISession: @unchecked Sendable {
         
         guard profileID == Self.mpeProfileID else { return nil }
 
-        lock.lock()
         isMPEProfileActive = true
-        lock.unlock()
 
         onProfileStateChanged?(true)
 
@@ -240,9 +236,7 @@ public final class MIDICISession: @unchecked Sendable {
         
         guard profileID == Self.mpeProfileID else { return nil }
 
-        lock.lock()
         isMPEProfileActive = false
-        lock.unlock()
 
         onProfileStateChanged?(false)
 
@@ -273,8 +267,6 @@ public final class MIDICISession: @unchecked Sendable {
             let dataPayload = Array(bytes[21..<(21 + dataLength)])
             if let bendRange = dataPayload.first {
                 let clamped = min(max(Double(bendRange & 0x7F), 1.0), 96.0)
-                lock.lock()
-                defer { lock.unlock() }
                 self.negotiatedBendRangeSemitones = clamped
             }
         }

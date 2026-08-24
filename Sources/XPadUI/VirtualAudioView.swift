@@ -216,13 +216,15 @@ public struct VirtualAudioView: View {
                 isRecordingStem = true
                 recordingDuration = 0
                 timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
-                    recordingDuration += 0.1
-                    if let writeError = loopbackEngine.recorder.lastWriteErrorDescription {
-                        recordingError = "Capture failed: \(writeError)"
-                        recordedURL = nil
-                        isRecordingStem = false
-                        timer?.invalidate()
-                        timer = nil
+                    Task { @MainActor in
+                        recordingDuration += 0.1
+                        if let writeError = loopbackEngine.recorder.lastWriteErrorDescription {
+                            recordingError = "Capture failed: \(writeError)"
+                            recordedURL = nil
+                            isRecordingStem = false
+                            timer?.invalidate()
+                            timer = nil
+                        }
                     }
                 }
             } catch {

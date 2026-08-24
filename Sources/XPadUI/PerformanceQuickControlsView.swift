@@ -8,6 +8,7 @@ struct PerformanceQuickControlsView: View {
     @Environment(AppState.self) private var appState
     @State private var showsGate = false
     @State private var showsVelocity = false
+    @State private var showsArp = false
     @State private var showsTriggers = false
     @State private var showsEQ = false
     @State private var showsCompressor = false
@@ -16,6 +17,7 @@ struct PerformanceQuickControlsView: View {
     @State private var duoFlip: Double = 0
     @State private var gateWiggle: Double = 0
     @State private var velocityWiggle: Double = 0
+    @State private var arpWiggle: Double = 0
     @State private var triggerWiggle: Double = 0
 
     var body: some View {
@@ -117,6 +119,26 @@ struct PerformanceQuickControlsView: View {
                 )
             )
             .help("Smart Soloing: Right stick locks to chord tones, passing runs, and blues inflections")
+
+            Button { showsArp.toggle(); wiggle { arpWiggle = $0 } } label: {
+                QuickControlLabel(
+                    icon: "waveform.path.ecg",
+                    title: "Arp",
+                    value: compact ? nil : (appState.selectedPlayMode == .arp ? appState.arpeggiatorConfiguration.pattern.rawValue : "Off"),
+                    compact: compact
+                )
+            }
+            .buttonStyle(
+                XTactileButtonStyle(
+                    isActive: appState.selectedPlayMode == .arp,
+                    activeColor: XTheme.accent
+                )
+            )
+            .popover(isPresented: $showsArp, arrowEdge: .bottom) {
+                ArpeggiatorPopover()
+            }
+            .help("Arpeggiator: Step chord tones to BPM across customizable patterns and octaves")
+            .rotationEffect(.degrees(arpWiggle))
 
             Button { showsTriggers.toggle(); wiggle { triggerWiggle = $0 } } label: {
                 QuickControlLabel(
@@ -601,4 +623,94 @@ private struct AdaptiveTriggerQuickPopover: View {
         .frame(width: 280)
     }
 }
+
+private struct ArpeggiatorPopover: View {
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        TactilePopoverShell(
+            title: "Arpeggiator",
+            subtitle: "Sequence chord tones in real-time synced to transport BPM."
+        ) {
+            Toggle("Enable Arpeggiator", isOn: Binding(
+                get: { appState.selectedPlayMode == .arp },
+                set: { appState.setPlayMode($0 ? .arp : .chords) }
+            ))
+            .toggleStyle(.switch)
+            .tint(XTheme.accent)
+
+            Divider().background(XTheme.border)
+
+            Picker("Pattern", selection: Binding(
+                get: { appState.arpeggiatorConfiguration.pattern },
+                set: {
+                    var updated = appState.arpeggiatorConfiguration
+                    updated.pattern = $0
+                    appState.updateArpeggiatorConfiguration(updated)
+                }
+            )) {
+                ForEach(ArpeggiatorPattern.allCases) { pattern in
+                    Label(pattern.rawValue, systemImage: pattern.iconName).tag(pattern)
+                }
+            }
+            .pickerStyle(.menu)
+
+            Picker("Rate", selection: Binding(
+                get: { appState.arpeggiatorConfiguration.rate },
+                set: {
+                    var updated = appState.arpeggiatorConfiguration
+                    updated.rate = $0
+                    appState.updateArpeggiatorConfiguration(updated)
+                }
+            )) {
+                ForEach(ArpeggiatorRate.allCases) { rate in
+                    Text(rate.rawValue).tag(rate)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Stepper(
+                "Octaves: \(appState.arpeggiatorConfiguration.octaveRange)",
+                value: Binding(
+                    get: { appState.arpeggiatorConfiguration.octaveRange },
+                    set: {
+                        var updated = appState.arpeggiatorConfiguration
+                        updated.octaveRange = $0
+                        appState.updateArpeggiatorConfiguration(updated)
+                    }
+                ),
+                in: 1...4
+            )
+
+            TactileSliderRow(
+                title: "Gate length",
+                value: "\(Int(appState.arpeggiatorConfiguration.gateLength * 100))%",
+                valueBinding: Binding(
+                    get: { appState.arpeggiatorConfiguration.gateLength },
+                    set: {
+                        var updated = appState.arpeggiatorConfiguration
+                        updated.gateLength = $0
+                        appState.updateArpeggiatorConfiguration(updated)
+                    }
+                ),
+                range: 0.1...1.0,
+                step: 0.05
+            )
+
+            Toggle("Latch Held Chord", isOn: Binding(
+                get: { appState.arpeggiatorConfiguration.isLatched },
+                set: {
+                    var updated = appState.arpeggiatorConfiguration
+                    updated.isLatched = $0
+                    appState.updateArpeggiatorConfiguration(updated)
+                }
+            ))
+            .toggleStyle(.switch)
+            .tint(XTheme.accent)
+        }
+        .padding(14)
+        .frame(width: 290)
+    }
+}
+
 

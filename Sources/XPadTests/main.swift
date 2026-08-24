@@ -2238,7 +2238,43 @@ final class TestRunner {
                 assertEqual(leftHanded.id, "xpi_left_handed")
                 assertEqual(leftHanded.bindings[.harmonyNavigate2D]?.input, .rightStick2D)
                 assertEqual(leftHanded.bindings[.primaryExcitation]?.input, .leftStickY)
-                assertEqual(ControlSchemePreset.allBuiltIn.count, 10)
+                assertEqual(ControlSchemePreset.allBuiltIn.count, 16)
+            }
+
+            test("Extended scheme presets: drummer, bass, ambient, theremin, turntablist, first-timer") {
+                let drummer = ControlSchemePreset.fingerDrummer
+                assertEqual(drummer.id, "xpi_finger_drummer")
+                assertEqual(drummer.bindings[.voiceDegree1]?.input, .buttonSouth)
+                assertEqual(drummer.bindings[.primaryExcitation]?.input, .dpadUp)
+                assertEqual(drummer.bindings[.dampingExpression]?.input, .dpadDown)
+
+                let bass = ControlSchemePreset.bassGrooveLab
+                assertEqual(bass.id, "xpi_bass_groove")
+                assertEqual(bass.stickFeel, .precise)
+                assertEqual(bass.triggerFeel, .firm)
+
+                let ambient = ControlSchemePreset.ambientDrift
+                assertEqual(ambient.id, "xpi_ambient_drift")
+                assertTrue(ambient.isMotionEnabled)
+                assertEqual(ambient.bindings[.pitchExpression]?.input, .motionPitch)
+                assertEqual(ambient.bindings[.primaryExcitation]?.digitalBehavior, .linearRamp)
+
+                let theremin = ControlSchemePreset.gyroTheremin
+                assertEqual(theremin.id, "xpi_gyro_theremin")
+                assertTrue(theremin.isMotionEnabled)
+                assertEqual(theremin.haptics, .off)
+                assertEqual(theremin.bindings[.secondaryExcitation]?.input, .motionRoll)
+
+                let turntablist = ControlSchemePreset.turntablistChops
+                assertEqual(turntablist.id, "xpi_turntablist")
+                assertEqual(turntablist.bindings[.secondaryExcitation]?.input, .leftStickY)
+                assertEqual(turntablist.bindings[.soloModeToggle]?.input, .buttonCenter)
+
+                let firstTimer = ControlSchemePreset.firstTimer
+                assertEqual(firstTimer.id, "xpi_first_timer")
+                assertEqual(firstTimer.bindings.count, 4)
+                assertEqual(firstTimer.binding(for: .harmonyNavigate2D)?.input, .leftStick2D)
+                assertEqual(firstTimer.binding(for: .primaryExcitation)?.input, .rightStickY)
             }
 
             test("Semantic musical action categories and compatibility") {
@@ -3126,14 +3162,19 @@ final class TestRunner {
                 assertEqual(kind.suggestedSchemeID, "xpi_arcade_stick")
             }
 
-            test("ControlSchemePreset.allBuiltIn contains 10 presets with unique IDs and valid bindings") {
+            test("ControlSchemePreset.allBuiltIn contains 16 presets with unique IDs and valid bindings") {
                 let presets = ControlSchemePreset.allBuiltIn
-                assertEqual(presets.count, 10)
+                assertEqual(presets.count, 16)
                 let ids = Set(presets.map { $0.id })
-                assertEqual(ids.count, 10)
+                assertEqual(ids.count, 16)
                 for preset in presets {
                     assertTrue(!preset.name.isEmpty)
                     assertTrue(!preset.bindings.isEmpty)
+                    // Every preset must cover critical actions (panic safety) and produce no hard conflicts
+                    let criticalGaps = preset.coverageIssues().filter { $0.severity == .critical }
+                    assertEqual(criticalGaps.count, 0)
+                    let criticalConflicts = MappingConflict.detectConflicts(in: preset).filter { $0.severity == .critical }
+                    assertEqual(criticalConflicts.count, 0)
                 }
             }
         }
@@ -3203,6 +3244,104 @@ final class TestRunner {
                 // Stop immediately cancels pending advance
                 engine.stopPractice()
                 assertFalse(engine.isPracticeActive)
+            }
+        }
+
+        // ==================================================
+        // SUITE: Arpeggiator Engine: Patterns, Octave Ranges & Tick/Time Scheduling
+        // ==================================================
+        suite("Arpeggiator: Pattern Generators, Octave Registrations & Clock Sync") {
+            test("Pattern generation: Up, Down, UpDown, DownUp, Converge, Diverge") {
+                let baseNotes = [
+                    Note(pitchClass: .c, octave: 4), // 60
+                    Note(pitchClass: .e, octave: 4), // 64
+                    Note(pitchClass: .g, octave: 4)  // 67
+                ]
+                var seed: UInt64 = 42
+
+                let up = ArpeggiatorEngine.generateSequence(from: baseNotes, pattern: .up, octaveRange: 1, rngSeed: &seed)
+                assertEqual(up.map(\.midiNote), [60, 64, 67])
+
+                let down = ArpeggiatorEngine.generateSequence(from: baseNotes, pattern: .down, octaveRange: 1, rngSeed: &seed)
+                assertEqual(down.map(\.midiNote), [67, 64, 60])
+
+                let upDown = ArpeggiatorEngine.generateSequence(from: baseNotes, pattern: .upDown, octaveRange: 1, rngSeed: &seed)
+                assertEqual(upDown.map(\.midiNote), [60, 64, 67, 64])
+
+                let downUp = ArpeggiatorEngine.generateSequence(from: baseNotes, pattern: .downUp, octaveRange: 1, rngSeed: &seed)
+                assertEqual(downUp.map(\.midiNote), [67, 64, 60, 64])
+
+                let converge = ArpeggiatorEngine.generateSequence(from: baseNotes, pattern: .converge, octaveRange: 1, rngSeed: &seed)
+                assertEqual(converge.map(\.midiNote), [60, 67, 64])
+
+                let diverge = ArpeggiatorEngine.generateSequence(from: baseNotes, pattern: .diverge, octaveRange: 1, rngSeed: &seed)
+                assertEqual(diverge.map(\.midiNote), [64, 67, 60])
+            }
+
+            test("Octave expansion spans multi-octave registers") {
+                let baseNotes = [
+                    Note(pitchClass: .c, octave: 3), // 48
+                    Note(pitchClass: .g, octave: 3)  // 55
+                ]
+                var seed: UInt64 = 100
+                let twoOctaves = ArpeggiatorEngine.generateSequence(from: baseNotes, pattern: .up, octaveRange: 2, rngSeed: &seed)
+                assertEqual(twoOctaves.map(\.midiNote), [48, 55, 60, 67])
+
+                let threeOctaves = ArpeggiatorEngine.generateSequence(from: baseNotes, pattern: .up, octaveRange: 3, rngSeed: &seed)
+                assertEqual(threeOctaves.map(\.midiNote), [48, 55, 60, 67, 72, 79])
+            }
+
+            test("Deterministic seeded random pattern generator") {
+                let baseNotes = [
+                    Note(pitchClass: .c, octave: 4),
+                    Note(pitchClass: .e, octave: 4),
+                    Note(pitchClass: .g, octave: 4),
+                    Note(pitchClass: .b, octave: 4)
+                ]
+                var seed1: UInt64 = 0xDEAD_BEEF
+                var seed2: UInt64 = 0xDEAD_BEEF
+                let random1 = ArpeggiatorEngine.generateSequence(from: baseNotes, pattern: .random, octaveRange: 1, rngSeed: &seed1)
+                let random2 = ArpeggiatorEngine.generateSequence(from: baseNotes, pattern: .random, octaveRange: 1, rngSeed: &seed2)
+                assertEqual(random1.map(\.midiNote), random2.map(\.midiNote))
+            }
+
+            test("ArpeggiatorEngine tick stepping and gate length note-off") {
+                var engine = ArpeggiatorEngine(
+                    configuration: ArpeggiatorConfiguration(pattern: .up, rate: .sixteenth, octaveRange: 1, gateLength: 0.5)
+                )
+                let voice = ChordGateVoice(
+                    chord: Chord(root: .c, quality: .major),
+                    notes: [Note(pitchClass: .c, octave: 4), Note(pitchClass: .e, octave: 4)]
+                )
+                let initialEvents = engine.setVoice(voice)
+                assertEqual(initialEvents.count, 0)
+                assertEqual(engine.sequence.map(\.midiNote), [60, 64])
+
+                // Step 0: Tick 0 triggers Note 60
+                let step0Events = engine.processTick(currentTick: 0, velocity: 90)
+                assertEqual(step0Events.count, 1)
+                assertEqual(step0Events[0], .noteOn(Note(pitchClass: .c, octave: 4), velocity: 90))
+
+                // Gate length 0.5 of 240 ticks = 120 ticks. At tick 120, noteOff is emitted
+                let gateEvents = engine.processTick(currentTick: 120, velocity: 90)
+                assertEqual(gateEvents.count, 1)
+                assertEqual(gateEvents[0], .noteOff(Note(pitchClass: .c, octave: 4)))
+
+                // Step 1: Tick 240 triggers Note 64
+                let step1Events = engine.processTick(currentTick: 240, velocity: 95)
+                assertEqual(step1Events.count, 1)
+                assertEqual(step1Events[0], .noteOn(Note(pitchClass: .e, octave: 4), velocity: 95))
+
+                // Release all ends active notes
+                let releaseEvents = engine.releaseAll()
+                assertEqual(releaseEvents.count, 1)
+                assertEqual(releaseEvents[0], .noteOff(Note(pitchClass: .e, octave: 4)))
+            }
+
+            test("Rate secondsPerStep calculation at various tempos") {
+                assertEqual(ArpeggiatorRate.sixteenth.secondsPerStep(tempoBPM: 120.0), 0.125)
+                assertEqual(ArpeggiatorRate.eighth.secondsPerStep(tempoBPM: 120.0), 0.25)
+                assertEqual(ArpeggiatorRate.quarter.secondsPerStep(tempoBPM: 120.0), 0.5)
             }
         }
 

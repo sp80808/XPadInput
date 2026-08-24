@@ -109,11 +109,11 @@ public final class MPEManager: @unchecked Sendable {
     /// Rebuilds member-channel allocation to match a DAW host zone. Callers must
     /// silence notes first; this resets the round-robin pointer.
     public func applyZoneLayout(_ layout: MPEZoneLayout, sendConfiguration: Bool = true) {
-        lock.lock()
-        zoneLayout = layout
-        memberChannels = layout.memberChannels
-        nextChannelIndex = 0
-        lock.unlock()
+        lock.withLock {
+            zoneLayout = layout
+            memberChannels = layout.memberChannels
+            nextChannelIndex = 0
+        }
         if sendConfiguration {
             sendMPEZoneConfiguration()
         }
@@ -131,28 +131,22 @@ public final class MPEManager: @unchecked Sendable {
 
     public var bendRangeSemitones: Double {
         get {
-            lock.lock()
-            defer { lock.unlock() }
-            return configuredBendRangeSemitones
+            lock.withLock { configuredBendRangeSemitones }
         }
         set {
-            lock.lock()
-            configuredBendRangeSemitones = max(1, newValue)
-            lock.unlock()
+            lock.withLock {
+                configuredBendRangeSemitones = max(1, newValue)
+            }
             sendPitchBendRangeConfiguration()
         }
     }
 
     public var activeVoiceCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return activeVoices.count
+        lock.withLock { activeVoices.count }
     }
 
     public func activeVoice(for note: UInt8) -> MPEVoice? {
-        lock.lock()
-        defer { lock.unlock() }
-        return activeVoices[note]
+        lock.withLock { activeVoices[note] }
     }
 
     public func voice(for note: UInt8) -> MPEVoice? {
@@ -161,9 +155,7 @@ public final class MPEManager: @unchecked Sendable {
 
     /// Initializes the active MPE zone (lower: master Ch 1; upper: master Ch 16).
     public func sendMPEZoneConfiguration() {
-        lock.lock()
-        let layout = zoneLayout
-        lock.unlock()
+        let layout = lock.withLock { zoneLayout }
 
         let master = layout.masterChannel
         let members = UInt8(layout.memberCount)
@@ -176,10 +168,7 @@ public final class MPEManager: @unchecked Sendable {
 
     /// Advertises the exact per-note bend range used by semantic pitch expression.
     public func sendPitchBendRangeConfiguration() {
-        lock.lock()
-        let range = configuredBendRangeSemitones
-        let channels = memberChannels
-        lock.unlock()
+        let (range, channels) = lock.withLock { (configuredBendRangeSemitones, memberChannels) }
 
         let semitones = UInt8(Int(range.rounded(.down)).clamped(to: 1...96))
         let cents = UInt8(Int(((range - floor(range)) * 100).rounded()).clamped(to: 0...99))
@@ -203,9 +192,7 @@ public final class MPEManager: @unchecked Sendable {
     ) {
         // CoreMIDI sources do not retain setup traffic for clients that attach later.
         // Re-advertise the lower zone and bend range at the start of every idle phrase.
-        lock.lock()
-        let startsIdlePhrase = activeVoices.isEmpty
-        lock.unlock()
+        let startsIdlePhrase = lock.withLock { activeVoices.isEmpty }
         if startsIdlePhrase && midiEngine.virtualMIDIEnabled {
             sendMPEZoneConfiguration()
         }
@@ -472,12 +459,13 @@ public final class MPEManager: @unchecked Sendable {
     }
 
     public func stopAllNotes() {
-        lock.lock()
-        let voices = activeVoices.values.sorted { $0.channel < $1.channel }
-        let channels = memberChannels
-        activeVoices.removeAll()
-        nextChannelIndex = 0
-        lock.unlock()
+        let (voices, channels) = lock.withLock { () -> ([MPEVoice], [UInt8]) in
+            let v = activeVoices.values.sorted { $0.channel < $1.channel }
+            let ch = memberChannels
+            activeVoices.removeAll()
+            nextChannelIndex = 0
+            return (v, ch)
+        }
 
         for voice in voices {
             release(voice)
