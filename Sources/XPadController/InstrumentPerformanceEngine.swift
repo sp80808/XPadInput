@@ -206,9 +206,11 @@ public struct InstrumentPerformanceEngine: Sendable {
         let rightX = Double(state.rightStick.x)
         let rightY = Double(state.rightStick.y)
         let notesHeld = held != nil
+        let isTechniqueMod = state.leftShoulder
         let lateral = abs(rightX) > 0.12 && abs(rightX) >= abs(rightY) * 0.7
-        let bendingNow = notesHeld && profile.supportsPitchBend && (
-            profile.family == .synthLead || profile.family == .genericMPE || lateral
+        let bendingNow = notesHeld && (
+            (profile.supportsPitchBend && (profile.family == .synthLead || profile.family == .genericMPE || lateral)) ||
+            (isTechniqueMod && abs(rightX) > 0.05)
         )
 
         let pickAttack = detectPickAttack(state: state, timestamp: timestamp)
@@ -221,7 +223,9 @@ public struct InstrumentPerformanceEngine: Sendable {
                 || Double(state.rightStick.radius) > 0.75
             candidates.append(strong ? .pinchHarmonic : .harmonic)
         }
-        if state.leftShoulder && notesHeld && profile.supportsSlides {
+        if isTechniqueMod && notesHeld && abs(rightX) > 0.05 {
+            candidates.append(.bend)
+        } else if isTechniqueMod && notesHeld && profile.supportsSlides {
             candidates.append(.slideUp)
         }
         if bendingNow { candidates.append(.bend) }
@@ -255,12 +259,22 @@ public struct InstrumentPerformanceEngine: Sendable {
             candidates.append(event.technique)
         }
 
-        let technique = TechniquePriority.resolve(candidates: candidates, profile: profile)
+        let technique = TechniquePriority.resolve(candidates: candidates, profile: profile, forceAllowBend: isTechniqueMod)
 
         let bendNote = held ?? context.currentNote
         var contextForBend = context
         contextForBend.currentNote = bendNote
         contextForBend.pitchAssist = settings.pitchAssist
+
+        // When holding technique mod, automatically set pitchEngine to scale-relevant bend range
+        if isTechniqueMod {
+            pitchEngine.instrumentRange = context.scale.scaleRelevantBendRange
+            pitchEngine.allowDownward = true
+        } else {
+            pitchEngine.instrumentRange = profile.preferredPitchBendRange
+            pitchEngine.allowDownward = profile.allowDownwardBend
+        }
+
         let bend = pitchEngine.process(
             stickX: bendingNow ? rightX : 0,
             heldNote: held,
@@ -280,18 +294,23 @@ public struct InstrumentPerformanceEngine: Sendable {
         lastPalmMuted = palmNow
 
         var hint: String?
-        if notesHeld && profile.supportsPitchBend && !hasUsedBend && !sustainHintShown {
+        if isTechniqueMod && notesHeld {
+            let range = Int(context.scale.scaleRelevantBendRange)
+            hint = "Chord Diatonic Bend (±\(range) st) · Move R-Stick X"
+        } else if notesHeld && profile.supportsPitchBend && !hasUsedBend && !sustainHintShown {
             hint = "Move R Stick sideways to bend"
             sustainHintShown = true
         }
         if notesHeld && profile.supportsAftertouch && !hasUsedPressure && pressure.smoothed < 0.05 && hint == nil {
             hint = "Press R2 while sustaining for pressure"
         }
-        if bend.isBending && abs(bend.bendSemitones) > 0.15 { hasUsedBend = true; hint = nil }
+        if bend.isBending && abs(bend.bendSemitones) > 0.15 { hasUsedBend = true; if !isTechniqueMod { hint = nil } }
         if pressure.isActive { hasUsedPressure = true; if hint?.contains("R2") == true { hint = nil } }
 
         var theory: String?
-        if settings.theoryAssist, let nearest = bend.nearestTarget, bend.targetProximity > 0.4 {
+        if isTechniqueMod && notesHeld && abs(rightX) > 0.05, let nearest = bend.nearestTarget {
+            theory = "Chord Bend → \(nearest.displayLabel)"
+        } else if settings.theoryAssist, let nearest = bend.nearestTarget, bend.targetProximity > 0.4 {
             let chordBit = nearest.isChordTone ? "chord \(nearest.roleLabel)" : (nearest.isScaleTone ? "scale" : "chromatic")
             theory = "Bend \(nearest.displayLabel) · \(chordBit)"
         }

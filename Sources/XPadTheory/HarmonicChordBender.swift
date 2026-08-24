@@ -28,8 +28,8 @@ public struct HarmonicChordBender: Sendable {
             return result
         }
 
-        // Chromatic mode or Pitch Assist off uses parallel pitch bend across all voices
-        if context.chromaticMode || context.pitchAssist == .off || notes.count <= 1 {
+        // Chromatic mode or single note uses parallel pitch bend across all voices
+        if context.chromaticMode || notes.count <= 1 {
             var result: [UInt8: Double] = [:]
             for note in notes {
                 result[note.midiNote] = leadBendSemitones

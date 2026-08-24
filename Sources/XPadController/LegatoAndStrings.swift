@@ -168,9 +168,10 @@ public enum TechniquePriority {
 
     public static func resolve(
         candidates: [MusicalTechnique],
-        profile: InstrumentProfile
+        profile: InstrumentProfile,
+        forceAllowBend: Bool = false
     ) -> MusicalTechnique {
-        let allowed = candidates.filter { profile.supports($0) || $0 == .normal }
+        let allowed = candidates.filter { profile.supports($0) || $0 == .normal || (forceAllowBend && $0 == .bend) }
         for ranked in documentedOrder {
             if allowed.contains(ranked) { return ranked }
         }

@@ -103,6 +103,20 @@ public struct Scale: Hashable, Codable, Sendable, Identifiable {
         type.isMinor || intervals.contains(3)
     }
 
+    /// Diatonic scale-relevant bend range (in semitones) based on the scale's interval structure.
+    /// Spans up to the scale's dominant/5th degree or natural modal span (e.g. 7 semitones),
+    /// providing an intuitive, musical range for polyphonic whole-chord diatonic bending.
+    public var scaleRelevantBendRange: Double {
+        if intervals.contains(7) {
+            return 7.0
+        } else if intervals.contains(6) {
+            return 6.0
+        } else if let maxInterval = intervals.filter({ $0 <= 12 }).last, maxInterval > 0 {
+            return Double(maxInterval)
+        }
+        return 7.0
+    }
+
     public func pitchClasses(root: PitchClass) -> [PitchClass] {
         intervals.map { root.transposed(by: $0) }
     }

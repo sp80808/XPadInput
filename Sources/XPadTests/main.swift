@@ -1799,6 +1799,42 @@ final class TestRunner {
                 assertTrue(downwardBends[67]! < 0)
             }
 
+            test("Holding technique mod enables whole chord bending with scale-relevant range") {
+                var engine = InstrumentPerformanceEngine(profile: .keys) // Keys normally has 0 bend range
+                let scale = Scale(root: .c, type: .major)
+                let chord = [
+                    Note(pitchClass: .c, octave: 4),
+                    Note(pitchClass: .e, octave: 4),
+                    Note(pitchClass: .g, octave: 4)
+                ]
+                let context = MusicalContext(
+                    key: .c,
+                    scale: scale,
+                    chord: Chord(root: .c, quality: .major),
+                    pitchAssist: .light
+                )
+
+                assertEqual(scale.scaleRelevantBendRange, 7.0)
+
+                // When holding leftShoulder (technique mod) and deflecting right stick X
+                let state = ControllerState()
+                state.leftShoulder = true
+                state.rightStick = ProcessedStickState(x: 0.8, y: 0.0)
+
+                let frame = engine.process(state: state, context: context, heldNotes: chord, timestamp: 1.0)
+                assertEqual(frame.activeTechnique, .bend)
+                assertTrue(frame.bend.isBending)
+                assertTrue(frame.bend.bendSemitones > 0.5)
+
+                // Harmonic chord bender produces diatonic scale trajectories for all notes in chord
+                let bender = HarmonicChordBender()
+                let noteBends = bender.bends(for: chord, leadBendSemitones: frame.bend.bendSemitones, context: context)
+                assertEqual(noteBends.count, 3)
+                assertTrue(noteBends[60] != nil)
+                assertTrue(noteBends[64] != nil)
+                assertTrue(noteBends[67] != nil)
+            }
+
             test("Technique SMF export includes pitch bend") {
                 let exporter = SMFExporter()
                 let events = [

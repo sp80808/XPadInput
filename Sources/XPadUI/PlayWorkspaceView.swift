@@ -185,7 +185,7 @@ public struct PlayView: View {
                         // Controller Visualizer - Prominent & dynamically scaled
                         if appState.showControllerVisualizer {
                             ControllerVisualizerView()
-                                .frame(minHeight: isCompactH ? 190 : 230, maxHeight: .infinity)
+                                .frame(minHeight: isCompactH ? 230 : (isExpandedH ? 320 : 270), maxHeight: .infinity)
                         }
 
                         // Splitter between Controller HUD and lower DSP section
@@ -193,7 +193,7 @@ public struct PlayView: View {
                             HorizontalSplitterHandle(ratio: Binding(
                                 get: { appState.rightVerticalSplitRatio },
                                 set: { appState.rightVerticalSplitRatio = $0 }
-                            ), defaultRatio: 0.48)
+                            ), defaultRatio: 0.58)
                         }
 
                         // Performance Quick Controls

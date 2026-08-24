@@ -138,7 +138,7 @@ public final class AppState: @unchecked Sendable {
     /// Vertical split ratio inside Right Column between Controller HUD and DSP Workspace.
     public var rightVerticalSplitRatio: CGFloat = {
         let stored = UserDefaults.standard.double(forKey: "xpi_right_vsplit_ratio")
-        return stored > 0.20 && stored < 0.85 ? CGFloat(stored) : 0.48
+        return stored > 0.20 && stored < 0.85 ? CGFloat(stored) : 0.58
     }() {
         didSet {
             UserDefaults.standard.set(Double(rightVerticalSplitRatio), forKey: "xpi_right_vsplit_ratio")
@@ -190,7 +190,7 @@ public final class AppState: @unchecked Sendable {
     public func resetPlayLayout() {
         playSplitRatio = 0.38
         leftVerticalSplitRatio = 0.58
-        rightVerticalSplitRatio = 0.48
+        rightVerticalSplitRatio = 0.58
         showHarmonicPanel = true
         showControllerVisualizer = true
         showPerformanceQuickControls = true

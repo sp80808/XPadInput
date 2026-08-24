@@ -122,8 +122,9 @@ struct ControllerPerformanceHUD: View {
 
     var body: some View {
         ZStack {
-            VStack(spacing: 18) {
-                HStack(alignment: .top, spacing: 16) {
+            VStack(spacing: 12) {
+                // Sleek, low-profile top header wings (LB/LT, Instrument Status, RB/RT)
+                HStack(alignment: .center, spacing: 12) {
                     ModifierControlGroup(
                         shoulderLabel: shoulderLabels.left,
                         shoulderRole: labels.l1,
@@ -135,10 +136,9 @@ struct ControllerPerformanceHUD: View {
                         threshold: 0.55,
                         tint: XTheme.warning
                     )
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Spacer(minLength: 8)
-
-                    VStack(spacing: 5) {
+                    VStack(spacing: 2) {
                         Label(
                             duoMode == .drumsAndInstrument ? "DUO · \(instrument.family.shortName)" : instrument.family.shortName,
                             systemImage: duoMode == .drumsAndInstrument ? "square.grid.2x2.fill" : "waveform.path.ecg"
@@ -152,10 +152,7 @@ struct ControllerPerformanceHUD: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.75)
                     }
-                    .frame(maxWidth: 108)
-                    .padding(.top, 5)
-
-                    Spacer(minLength: 8)
+                    .frame(maxWidth: 100)
 
                     ModifierControlGroup(
                         shoulderLabel: shoulderLabels.right,
@@ -168,14 +165,16 @@ struct ControllerPerformanceHUD: View {
                         threshold: 0.10,
                         tint: XTheme.expression
                     )
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                 }
 
+                // Symmetrical Performance Controls Row (Golden Ratio layout)
                 ViewThatFits(in: .horizontal) {
-                    controllerRow(scale: .expanded, showsDPad: true, spacing: 10)
-                    controllerRow(scale: .compact, showsDPad: true, spacing: 6)
-                    controllerRow(scale: .compact, showsDPad: false, spacing: 4)
-                    controllerRow(scale: .minimal, showsDPad: true, spacing: 3)
-                    controllerRow(scale: .minimal, showsDPad: false, spacing: 2)
+                    controllerRow(scale: .expanded, showsDPad: true, spacing: 14)
+                    controllerRow(scale: .compact, showsDPad: true, spacing: 8)
+                    controllerRow(scale: .compact, showsDPad: false, spacing: 6)
+                    controllerRow(scale: .minimal, showsDPad: true, spacing: 4)
+                    controllerRow(scale: .minimal, showsDPad: false, spacing: 3)
                 }
                 .frame(maxWidth: .infinity)
 
@@ -192,7 +191,7 @@ struct ControllerPerformanceHUD: View {
                             .foregroundStyle(XTheme.textTertiary)
                     }
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 7)
+                    .padding(.vertical, 5)
                     .background(XTheme.warning.opacity(0.07), in: Capsule())
                     .overlay(Capsule().stroke(XTheme.warning.opacity(0.18), lineWidth: 1))
                     .accessibilityElement(children: .combine)
@@ -212,7 +211,7 @@ struct ControllerPerformanceHUD: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
             }
         }
-        .padding(16)
+        .padding(14)
         .background(
             RoundedRectangle(cornerRadius: XTheme.radiusLarge)
                 .fill(
@@ -231,19 +230,24 @@ struct ControllerPerformanceHUD: View {
 
     @ViewBuilder
     private func controllerRow(scale: ControllerHUDScale, showsDPad: Bool, spacing: CGFloat) -> some View {
-        HStack(alignment: .center, spacing: spacing) {
-            TactileStickView(
-                state: state.leftStick,
-                label: "L",
-                role: labels.leftStick,
-                tint: XTheme.primary,
-                scale: scale
-            )
+        HStack(alignment: .center, spacing: 0) {
+            // LEFT WING: Harmonic Navigation Stick + Octave/Inversion D-Pad
+            HStack(spacing: spacing) {
+                TactileStickView(
+                    state: state.leftStick,
+                    label: "L",
+                    role: labels.leftStick,
+                    tint: XTheme.primary,
+                    scale: scale
+                )
 
-            if showsDPad {
-                TactileDPadView(state: state, scale: scale)
+                if showsDPad {
+                    TactileDPadView(state: state, scale: scale)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .center)
 
+            // CENTER ANCHOR: Expression & Dynamics Core (Golden Ratio Pivot)
             ExpressionCoreView(
                 chordName: currentChord?.displayName ?? "—",
                 technique: frame?.activeTechnique.playLabel,
@@ -253,25 +257,30 @@ struct ControllerPerformanceHUD: View {
                 timbre: frame?.timbre ?? 0,
                 scale: scale
             )
+            .padding(.horizontal, scale == .expanded ? 14 : 6)
 
-            TactileFaceButtonsView(
-                state: state,
-                iconPack: iconPack,
-                controllerKind: controllerKind,
-                roles: duoMode == .drumsAndInstrument ? .drums : .harmonic,
-                scale: scale
-            )
+            // RIGHT WING: Voice Pluck Face Buttons + Strum/Bend Stick
+            HStack(spacing: spacing) {
+                TactileFaceButtonsView(
+                    state: state,
+                    iconPack: iconPack,
+                    controllerKind: controllerKind,
+                    roles: duoMode == .drumsAndInstrument ? .drums : .harmonic,
+                    scale: scale
+                )
 
-            TactileStickView(
-                state: state.rightStick,
-                label: "R",
-                role: labels.rightStick,
-                tint: XTheme.expression,
-                showsStrings: instrument.supportsStrumming,
-                direction: lastStrumDirection,
-                velocity: lastVelocity,
-                scale: scale
-            )
+                TactileStickView(
+                    state: state.rightStick,
+                    label: "R",
+                    role: labels.rightStick,
+                    tint: XTheme.expression,
+                    showsStrings: instrument.supportsStrumming,
+                    direction: lastStrumDirection,
+                    velocity: lastVelocity,
+                    scale: scale
+                )
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
         }
     }
 
@@ -294,37 +303,37 @@ private enum ControllerHUDScale: Equatable {
 
     var stickDiameter: CGFloat {
         switch self {
-        case .expanded: return 108
-        case .compact: return 74
-        case .minimal: return 56
+        case .expanded: return 110
+        case .compact: return 84
+        case .minimal: return 64
         }
     }
     var stickTravel: CGFloat {
         switch self {
-        case .expanded: return 37
-        case .compact: return 25
-        case .minimal: return 18
+        case .expanded: return 38
+        case .compact: return 28
+        case .minimal: return 20
         }
     }
     var dPadKey: CGFloat {
         switch self {
         case .expanded: return 28
-        case .compact: return 20
-        case .minimal: return 15
+        case .compact: return 22
+        case .minimal: return 16
         }
     }
     var expressionDiameter: CGFloat {
         switch self {
-        case .expanded: return 76
-        case .compact: return 54
-        case .minimal: return 42
+        case .expanded: return 68
+        case .compact: return 52
+        case .minimal: return 40
         }
     }
     var expressionWidth: CGFloat {
         switch self {
-        case .expanded: return 92
-        case .compact: return 64
-        case .minimal: return 48
+        case .expanded: return 96
+        case .compact: return 74
+        case .minimal: return 54
         }
     }
     var glyphSize: GlyphSize {
@@ -336,7 +345,7 @@ private enum ControllerHUDScale: Equatable {
     }
     var roleWidth: CGFloat {
         switch self {
-        case .expanded: return 52
+        case .expanded: return 48
         case .compact: return 38
         case .minimal: return 30
         }
@@ -503,7 +512,7 @@ private struct ModifierControlGroup: View {
     let tint: Color
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 4) {
             TactileShoulderControl(
                 label: shoulderLabel,
                 role: shoulderRole,
@@ -519,7 +528,7 @@ private struct ModifierControlGroup: View {
                 tint: tint
             )
         }
-        .frame(minWidth: 138, maxWidth: 190)
+        .frame(minWidth: 120, maxWidth: 220)
     }
 }
 
@@ -534,27 +543,32 @@ private struct TactileShoulderControl: View {
     var body: some View {
         HStack(spacing: 6) {
             Text(label)
-                .font(.system(size: 11, weight: .black, design: .rounded))
+                .font(.system(size: 9.5, weight: .black, design: .rounded))
                 .foregroundStyle(isPressed ? Color.white : XTheme.textSecondary)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(isPressed ? tint.opacity(0.8) : Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 3.5))
+
             Text(role)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(isPressed ? Color.white.opacity(0.9) : XTheme.textTertiary)
+                .font(.system(size: 9.5, weight: .medium))
+                .foregroundStyle(isPressed ? Color.white.opacity(0.95) : XTheme.textTertiary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 9)
-        .frame(height: 32)
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity)
+        .frame(height: 22)
         .background(
-            RoundedRectangle(cornerRadius: 7)
-                .fill(isPressed ? AnyShapeStyle(tint.opacity(0.66)) : AnyShapeStyle(XTheme.controlGradient))
+            RoundedRectangle(cornerRadius: 5)
+                .fill(isPressed ? AnyShapeStyle(tint.opacity(0.60)) : AnyShapeStyle(XTheme.controlGradient))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 7)
+                    RoundedRectangle(cornerRadius: 5)
                         .stroke(isPressed ? tint : XTheme.border, lineWidth: isPressed ? 1.5 : 1)
                 )
-                .shadow(color: isPressed ? tint.opacity(0.30) : Color.black.opacity(0.26), radius: isPressed ? 5 : 3, y: isPressed ? 1 : 3)
+                .shadow(color: isPressed ? tint.opacity(0.25) : Color.black.opacity(0.18), radius: isPressed ? 4 : 2, y: 1)
         )
-        .offset(y: isPressed && !reduceMotion ? 2 : 0)
+        .offset(y: isPressed && !reduceMotion ? 1 : 0)
         .scaleEffect(isPressed && !reduceMotion ? 0.98 : 1)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.09), value: isPressed)
         .accessibilityElement(children: .ignore)
@@ -575,79 +589,61 @@ private struct TactileTriggerControl: View {
     private var feedbackValue: Double { min(1, max(0, semanticValue ?? value)) }
 
     var body: some View {
-        HStack(spacing: 8) {
-            ZStack(alignment: .top) {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.black.opacity(0.38))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(XTheme.border, lineWidth: 1))
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.system(size: 9.5, weight: .black, design: .rounded))
+                .foregroundStyle(value > 0.05 ? Color.white : XTheme.textSecondary)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(value > 0.05 ? tint.opacity(0.8) : Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 3.5))
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.white.opacity(0.08))
+                    .frame(height: 4)
 
                 Capsule()
-                    .fill(Color.white.opacity(value >= threshold ? 0.74 : 0.18))
-                    .frame(width: 24, height: 1)
-                    .offset(y: CGFloat(8 + threshold * 13))
-
-                RoundedRectangle(cornerRadius: 7)
                     .fill(
                         LinearGradient(
-                            colors: [Color.white.opacity(0.12), value > 0.05 ? tint.opacity(0.82) : XTheme.surfaceHover],
-                            startPoint: .top,
-                            endPoint: .bottom
+                            colors: [tint.opacity(0.7), tint],
+                            startPoint: .leading,
+                            endPoint: .trailing
                         )
                     )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 7)
-                            .stroke(value > 0.05 ? tint : Color.white.opacity(0.12), lineWidth: value > 0.05 ? 1.5 : 1)
-                    )
-                    .frame(width: 30, height: CGFloat(24 - value * 6))
-                    .offset(y: CGFloat(3 + value * 10))
-                    .shadow(color: value > 0.05 ? tint.opacity(0.32) : Color.black.opacity(0.28), radius: 4, y: 3)
-
-                Text(label)
-                    .font(.system(size: 9, weight: .black, design: .rounded))
-                    .foregroundStyle(value > 0.42 ? Color.white : XTheme.textSecondary)
-                    .offset(y: CGFloat(8 + value * 8))
+                    .frame(width: max(0, CGFloat(value) * 58), height: 4)
             }
-            .frame(width: 36, height: 38)
-            // Trigger travel is essential positional feedback. It must follow
-            // the processed value directly, even inside an animated ancestor.
+            .frame(width: 58, height: 6)
             .transaction { transaction in
                 transaction.animation = nil
             }
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(role)
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(value > 0.05 ? tint : XTheme.textSecondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                Text(feedbackLanguage)
-                    .font(.system(size: 8, weight: .medium))
-                    .foregroundStyle(XTheme.textTertiary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
+            Text(role)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(value > 0.05 ? tint : XTheme.textTertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
 
             Spacer(minLength: 0)
+
+            Text(value > 0.05 ? "\(Int(value * 100))%" : "0%")
+                .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                .monospacedDigit()
+                .foregroundStyle(value > 0.05 ? tint.opacity(0.9) : XTheme.textTertiary)
         }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 5)
-        .background(XTheme.controlGradient, in: RoundedRectangle(cornerRadius: 7))
-        .overlay(
-            RoundedRectangle(cornerRadius: 7)
-                .stroke(value > 0.1 ? tint.opacity(0.45) : XTheme.border, lineWidth: 1)
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity)
+        .frame(height: 22)
+        .background(
+            RoundedRectangle(cornerRadius: 5)
+                .fill(value > 0.05 ? AnyShapeStyle(tint.opacity(0.14)) : AnyShapeStyle(XTheme.controlGradient))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(value > 0.1 ? tint.opacity(0.4) : XTheme.border, lineWidth: 1)
+                )
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(label), \(role)")
         .accessibilityValue("\(Int(feedbackValue * 100)) percent")
-    }
-
-    private var feedbackLanguage: String {
-        switch feedbackValue {
-        case ..<0.08: return "At rest"
-        case ..<0.42: return "Light touch"
-        case ..<0.78: return "Engaged"
-        default: return "Full travel"
-        }
     }
 }
 
@@ -796,28 +792,55 @@ private struct TactileDPadView: View {
     let scale: ControllerHUDScale
 
     var body: some View {
-        VStack(spacing: 1) {
-            DPadKey(symbol: "chevron.up", isPressed: state.dpadUp, dimension: scale.dPadKey)
-            HStack(spacing: 1) {
-                DPadKey(symbol: "chevron.left", isPressed: state.dpadLeft, dimension: scale.dPadKey)
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(XTheme.surfacePressed)
-                    .frame(width: scale.dPadKey, height: scale.dPadKey)
-                DPadKey(symbol: "chevron.right", isPressed: state.dpadRight, dimension: scale.dPadKey)
+        VStack(spacing: 5) {
+            VStack(spacing: 1) {
+                DPadKey(symbol: "chevron.up", isPressed: state.dpadUp, dimension: scale.dPadKey)
+                HStack(spacing: 1) {
+                    DPadKey(symbol: "chevron.left", isPressed: state.dpadLeft, dimension: scale.dPadKey)
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(XTheme.surfacePressed)
+                        .frame(width: scale.dPadKey, height: scale.dPadKey)
+                    DPadKey(symbol: "chevron.right", isPressed: state.dpadRight, dimension: scale.dPadKey)
+                }
+                DPadKey(symbol: "chevron.down", isPressed: state.dpadDown, dimension: scale.dPadKey)
             }
-            DPadKey(symbol: "chevron.down", isPressed: state.dpadDown, dimension: scale.dPadKey)
+
+            VStack(spacing: 2) {
+                Text("Octave · Voicing")
+                    .font(.system(size: scale == .expanded ? 11 : 9, weight: .semibold))
+                    .foregroundStyle((state.dpadUp || state.dpadDown || state.dpadLeft || state.dpadRight) ? XTheme.primary : XTheme.textTertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.70)
+                    .frame(width: max(scale.dPadKey * 3 + 16, 76), height: 14)
+
+                Text(dpadActionText)
+                    .font(.system(size: scale == .expanded ? 9 : 8, weight: .medium, design: .monospaced))
+                    .monospacedDigit()
+                    .foregroundStyle((state.dpadUp || state.dpadDown || state.dpadLeft || state.dpadRight) ? XTheme.primaryLight : XTheme.textTertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.70)
+                    .frame(width: max(scale.dPadKey * 3 + 16, 76), height: 12)
+            }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Directional pad")
+        .accessibilityLabel("Directional pad, Octave and Voicing")
         .accessibilityValue(activeDirection)
+    }
+
+    private var dpadActionText: String {
+        if state.dpadUp { return "▲ Octave Up" }
+        if state.dpadDown { return "▼ Octave Down" }
+        if state.dpadRight { return "▶ Next Inv" }
+        if state.dpadLeft { return "◀ Prev Inv" }
+        return "▲▼ Oct · ◀▶ Inv"
     }
 
     private var activeDirection: String {
         var directions: [String] = []
-        if state.dpadUp { directions.append("Up") }
-        if state.dpadDown { directions.append("Down") }
-        if state.dpadLeft { directions.append("Left") }
-        if state.dpadRight { directions.append("Right") }
+        if state.dpadUp { directions.append("Octave Up") }
+        if state.dpadDown { directions.append("Octave Down") }
+        if state.dpadLeft { directions.append("Previous Inversion") }
+        if state.dpadRight { directions.append("Next Inversion") }
         return directions.isEmpty ? "Centered" : directions.joined(separator: " ")
     }
 }

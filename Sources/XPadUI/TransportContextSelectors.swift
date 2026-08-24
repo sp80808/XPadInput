@@ -23,7 +23,7 @@ struct KeySelectorView: View {
             CompactTransportMenuLabel(
                 prefix: "Key",
                 value: appState.currentKey.displayName,
-                minWidth: 66
+                minWidth: 72
             )
         }
         .menuStyle(.borderlessButton)
@@ -54,9 +54,9 @@ struct ScaleSelectorView: View {
             }
         } label: {
             CompactTransportMenuLabel(
-                prefix: nil,
+                prefix: "Scale",
                 value: appState.currentScale.shortDisplayName,
-                minWidth: 84
+                minWidth: 92
             )
         }
         .menuStyle(.borderlessButton)
@@ -89,7 +89,7 @@ struct TemperamentSelectorView: View {
             CompactTransportMenuLabel(
                 prefix: "Tuning",
                 value: appState.currentTemperament.rawValue,
-                minWidth: 88
+                minWidth: 96
             )
         }
         .menuStyle(.borderlessButton)
@@ -110,25 +110,26 @@ private struct CompactTransportMenuLabel: View {
     @State private var isHovering = false
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             if let prefix {
                 Text(prefix)
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.system(size: 10, weight: .medium))
                     .foregroundColor(XTheme.textTertiary)
             }
 
             Text(value)
-                .font(XTheme.controlLabelFont)
-                .foregroundColor(isHovering ? XTheme.textPrimary : XTheme.textPrimary.opacity(0.88))
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(isHovering ? XTheme.textPrimary : XTheme.primaryLight)
                 .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
 
-            Spacer(minLength: 2)
+            Spacer(minLength: 4)
 
             Image(systemName: "chevron.down")
                 .font(.system(size: 8, weight: .bold))
                 .foregroundColor(isHovering ? XTheme.textSecondary : XTheme.textTertiary)
         }
-        .padding(.horizontal, 8)
+        .padding(.horizontal, 9)
         .frame(minWidth: minWidth, minHeight: 28, maxHeight: 28)
         .background(
             RoundedRectangle(cornerRadius: XTheme.radiusSmall)
