@@ -16,7 +16,7 @@ public struct ControlSchemeArchive: Codable, Sendable, Equatable {
     public init(
         schemaVersion: Int = currentSchemaVersion,
         exportedAt: Date = Date(),
-        appVersion: String = "0.0.04",
+        appVersion: String = "0.0.05",
         scheme: ControlScheme,
         metadata: [String: String] = [:]
     ) {

@@ -68,116 +68,175 @@ public struct PlayView: View {
     public var body: some View {
         GeometryReader { geo in
             let metrics = ViewportMetrics(size: geo.size)
-            let leftWidth = geo.size.width * metrics.leftColumnRatio
-            let rightWidth = geo.size.width - leftWidth
-            
             let isCompactH = metrics.isCompactHeight
             let isExpandedH = metrics.heightClass == .expanded
-            
-            let chordDisplayHeight: CGFloat = isCompactH ? 58 : (isExpandedH ? 80 : 72)
-            let wheelMinH: CGFloat = isCompactH ? 180 : (isExpandedH ? 280 : 230)
-            let arcadeLaneH: CGFloat = isCompactH ? 108 : 128
-            let tabMinH: CGFloat = isCompactH ? 130 : 170
-            let controllerH: CGFloat = isCompactH ? 215 : (isExpandedH ? 295 : 255)
-            let quickControlsH: CGFloat = isCompactH ? 44 : 50
-            let perfMonitorH: CGFloat = isCompactH ? 76 : (isExpandedH ? 96 : 88)
-            let dspTabMinH: CGFloat = isCompactH ? 120 : 145
-            let strumMidiH: CGFloat = isCompactH ? 50 : (isExpandedH ? 64 : 58)
             let colPadding: CGFloat = isCompactH ? 8 : (metrics.isCompactWidth ? 10 : 12)
             let colSpacing: CGFloat = isCompactH ? 6 : 8
-            
+
+            // Compute dynamic column widths with user-adjustable split ratio
+            let hasLeft = appState.showHarmonicPanel
+            let hasRight = appState.showControllerVisualizer || appState.showDSPWorkspace || appState.showPerformanceMonitor || appState.showPerformanceQuickControls || appState.showStrumMidiBar
+
+            let leftWidth: CGFloat = {
+                if !hasLeft { return 0 }
+                if !hasRight { return geo.size.width }
+                let clampedRatio = max(0.22, min(0.78, appState.playSplitRatio))
+                return max(280, min(geo.size.width - 320, geo.size.width * clampedRatio))
+            }()
+
+            let rightWidth: CGFloat = {
+                if !hasRight { return 0 }
+                if !hasLeft { return geo.size.width }
+                return max(320, geo.size.width - leftWidth - 8)
+            }()
+
+            let chordDisplayHeight: CGFloat = isCompactH ? 58 : (isExpandedH ? 80 : 72)
+            let quickControlsH: CGFloat = isCompactH ? 42 : 48
+            let perfMonitorH: CGFloat = isCompactH ? 72 : (isExpandedH ? 92 : 84)
+            let strumMidiH: CGFloat = isCompactH ? 48 : (isExpandedH ? 60 : 54)
+
             HStack(spacing: 0) {
                 // LEFT COLUMN: Harmonic Workspace
-                VStack(spacing: colSpacing) {
-                    // Multi-Jam Bar (when active)
-                    if appState.multiJamManager.isSessionActive {
-                        MultiControllerJammingBarView(jammingManager: appState.multiJamManager)
-                            .transition(.opacity)
+                if hasLeft {
+                    VStack(spacing: colSpacing) {
+                        // Multi-Jam Bar (when active)
+                        if appState.multiJamManager.isSessionActive {
+                            MultiControllerJammingBarView(jammingManager: appState.multiJamManager)
+                                .transition(.opacity)
+                        }
+
+                        // Current Chord Display with integrated static contextual hint
+                        EnhancedChordDisplayView()
+                            .frame(height: chordDisplayHeight)
+
+                        // Solo HUD (when active)
+                        if appState.instrumentProfile.family == .synthLead || appState.isSoloModeActive {
+                            SmartSoloHUDView(telemetry: appState.smartSoloEngine.telemetry, chord: appState.currentChord)
+                                .transition(.opacity)
+                        }
+
+                        // Arcade Frets lane (hidden Guitar Hero mode)
+                        if appState.isArcadeModeEnabled {
+                            ArcadeLaneView()
+                                .frame(height: isCompactH ? 108 : 128)
+                                .transition(.opacity)
+                        }
+
+                        // Harmonic Wheel - chord selection via stick
+                        HarmonicWheelView()
+                            .frame(minHeight: 160, maxHeight: .infinity)
+                            .padding(.vertical, isCompactH ? 2 : 4)
+
+                        // Splitter between wheel and tabbed workspace
+                        if appState.showHarmonicTabSection {
+                            HorizontalSplitterHandle(ratio: Binding(
+                                get: { appState.leftVerticalSplitRatio },
+                                set: { appState.leftVerticalSplitRatio = $0 }
+                            ), defaultRatio: 0.58)
+
+                            // Tabbed: Chords | Progression | Suggestions
+                            HarmonicTabbedWorkspace(
+                                tab: $harmonicWorkspaceTab,
+                                activeProgression: $activeProgression,
+                                selectedBlockIndex: $selectedBlockIndex,
+                                isPlayingProgression: $isPlayingProgression,
+                                diatonicChords: diatonicChords,
+                                currentOrSelectedChord: currentOrSelectedChord,
+                                harmonicSuggestions: harmonicSuggestions,
+                                onAuditionChord: auditionChord,
+                                onSendToSequencer: sendProgressionToSequencer
+                            )
+                            .frame(minHeight: 120, maxHeight: .infinity)
+                        }
+
+                        // Active Notes
+                        ActiveNotesView()
                     }
-
-                    // Current Chord Display
-                    EnhancedChordDisplayView()
-                        .frame(height: chordDisplayHeight)
-
-                    // Solo HUD (when active)
-                    if appState.instrumentProfile.family == .synthLead || appState.isSoloModeActive {
-                        SmartSoloHUDView(telemetry: appState.smartSoloEngine.telemetry, chord: appState.currentChord)
-                            .transition(.opacity)
-                    }
-
-                    // Contextual Hint (when active)
-                    ContextualHintSlot()
-
-                    // Arcade Frets lane (hidden Guitar Hero mode)
-                    if appState.isArcadeModeEnabled {
-                        ArcadeLaneView()
-                            .frame(height: arcadeLaneH)
-                            .transition(.opacity)
-                    }
-
-                    // Harmonic Wheel - chord selection via stick
-                    HarmonicWheelView()
-                        .frame(minHeight: wheelMinH, maxHeight: .infinity)
-                        .padding(.vertical, isCompactH ? 2 : 4)
-
-                    // Tabbed: Chords | Progression | Suggestions
-                    HarmonicTabbedWorkspace(
-                        tab: $harmonicWorkspaceTab,
-                        activeProgression: $activeProgression,
-                        selectedBlockIndex: $selectedBlockIndex,
-                        isPlayingProgression: $isPlayingProgression,
-                        diatonicChords: diatonicChords,
-                        currentOrSelectedChord: currentOrSelectedChord,
-                        harmonicSuggestions: harmonicSuggestions,
-                        onAuditionChord: auditionChord,
-                        onSendToSequencer: sendProgressionToSequencer
-                    )
-                    .frame(minHeight: tabMinH, maxHeight: .infinity)
-
-                    // Active Notes
-                    ActiveNotesView()
+                    .padding(colPadding)
+                    .frame(width: leftWidth)
+                    .animation(XTheme.snappy, value: appState.showHarmonicTabSection)
+                    .animation(.easeInOut(duration: 0.25), value: appState.multiJamManager.isSessionActive)
+                    .animation(.easeInOut(duration: 0.25), value: appState.isSoloModeActive)
+                    .animation(.easeInOut(duration: 0.25), value: appState.isArcadeModeEnabled)
                 }
-                .padding(colPadding)
-                .frame(width: leftWidth)
-                .animation(.easeInOut(duration: 0.25), value: appState.multiJamManager.isSessionActive)
-                .animation(.easeInOut(duration: 0.25), value: appState.isSoloModeActive)
-                .animation(.easeInOut(duration: 0.25), value: appState.isArcadeModeEnabled)
-                
-                Divider().background(XTheme.border)
-                
-                // RIGHT COLUMN: Controller & Performance Workspace - Primary focus
-                VStack(spacing: colSpacing) {
-                    // Controller Visualizer - Prominent
-                    ControllerVisualizerView()
-                        .frame(height: controllerH)
 
-                    // Performance Quick Controls
-                    PerformanceQuickControlsView()
-                        .frame(height: quickControlsH)
-
-                    // Real-time Performance Monitor
-                    PerformanceMonitorView()
-                        .frame(height: perfMonitorH)
-
-                    // Tabbed: Performance | Synth | FX
-                    DSPTabbedWorkspace(
-                        tab: $dspWorkspaceTab,
-                        cutoff: $filterCutoff,
-                        resonance: $filterResonance,
-                        drive: $saturation,
-                        reverb: $reverbMix
+                // Vertical column splitter between left and right panes
+                if hasLeft && hasRight {
+                    VerticalSplitterHandle(
+                        ratio: Binding(
+                            get: { appState.playSplitRatio },
+                            set: { appState.playSplitRatio = $0 }
+                        ),
+                        containerWidth: geo.size.width,
+                        defaultRatio: 0.38
                     )
-                    .frame(minHeight: dspTabMinH, maxHeight: .infinity)
-
-                    // Strum Indicator & MIDI Activity
-                    HStack(spacing: 8) {
-                        StrumIndicatorView()
-                        MIDIActivityView()
-                    }
-                    .frame(height: strumMidiH)
                 }
-                .padding(colPadding)
-                .frame(width: rightWidth)
+
+                // RIGHT COLUMN: Controller & Performance Workspace
+                if hasRight {
+                    VStack(spacing: colSpacing) {
+                        // Section Header / Quick View Toggles Bar
+                        HStack {
+                            Spacer()
+                            ViewLayoutMenuButton()
+                        }
+                        .frame(height: 20)
+
+                        // Controller Visualizer - Prominent & dynamically scaled
+                        if appState.showControllerVisualizer {
+                            ControllerVisualizerView()
+                                .frame(minHeight: isCompactH ? 190 : 230, maxHeight: .infinity)
+                        }
+
+                        // Splitter between Controller HUD and lower DSP section
+                        if appState.showControllerVisualizer && (appState.showDSPWorkspace || appState.showPerformanceMonitor) {
+                            HorizontalSplitterHandle(ratio: Binding(
+                                get: { appState.rightVerticalSplitRatio },
+                                set: { appState.rightVerticalSplitRatio = $0 }
+                            ), defaultRatio: 0.48)
+                        }
+
+                        // Performance Quick Controls
+                        if appState.showPerformanceQuickControls {
+                            PerformanceQuickControlsView()
+                                .frame(height: quickControlsH)
+                        }
+
+                        // Real-time Performance Monitor
+                        if appState.showPerformanceMonitor {
+                            PerformanceMonitorView()
+                                .frame(height: perfMonitorH)
+                        }
+
+                        // Tabbed: Performance | Synth | FX | Spatial 3D
+                        if appState.showDSPWorkspace {
+                            DSPTabbedWorkspace(
+                                tab: $dspWorkspaceTab,
+                                cutoff: $filterCutoff,
+                                resonance: $filterResonance,
+                                drive: $saturation,
+                                reverb: $reverbMix
+                            )
+                            .frame(minHeight: 110, maxHeight: .infinity)
+                        }
+
+                        // Strum Indicator & MIDI Activity
+                        if appState.showStrumMidiBar {
+                            HStack(spacing: 8) {
+                                StrumIndicatorView()
+                                MIDIActivityView()
+                            }
+                            .frame(height: strumMidiH)
+                        }
+                    }
+                    .padding(colPadding)
+                    .frame(width: rightWidth)
+                    .animation(XTheme.snappy, value: appState.showControllerVisualizer)
+                    .animation(XTheme.snappy, value: appState.showDSPWorkspace)
+                    .animation(XTheme.snappy, value: appState.showPerformanceMonitor)
+                    .animation(XTheme.snappy, value: appState.showPerformanceQuickControls)
+                    .animation(XTheme.snappy, value: appState.showStrumMidiBar)
+                }
             }
             .environment(\.viewportMetrics, metrics)
         }
@@ -223,22 +282,204 @@ public struct PlayView: View {
     }
 }
 
-// MARK: - Contextual Hint Slot
+// MARK: - Draggable Splitter Components
 
-private struct ContextualHintSlot: View {
-    @Environment(AppState.self) private var appState
+struct VerticalSplitterHandle: View {
+    @Binding var ratio: CGFloat
+    let containerWidth: CGFloat
+    var defaultRatio: CGFloat = 0.38
+    
+    @State private var isHovering: Bool = false
+    @State private var isDragging: Bool = false
+    @State private var dragStartRatio: CGFloat = 0.38
+    
     var body: some View {
-        if let hint = appState.contextualHint, !appState.activeNotes.isEmpty {
-            HStack {
-                TechniqueHintBanner(text: hint)
-                Spacer()
-            }
-            .frame(height: 32)
-            .transition(.asymmetric(
-                insertion: .opacity.combined(with: .move(edge: .top)),
-                removal:   .opacity
-            ))
+        ZStack {
+            // Invisible wider hit target
+            Rectangle()
+                .fill(Color.clear)
+                .frame(width: 14)
+                .contentShape(Rectangle())
+
+            // Visible divider line
+            Rectangle()
+                .fill(isDragging ? XTheme.primary : (isHovering ? XTheme.primary.opacity(0.65) : XTheme.border))
+                .frame(width: 1)
+
+            // Centered tactile grip handle
+            RoundedRectangle(cornerRadius: 2)
+                .fill(isDragging ? XTheme.primary : (isHovering ? XTheme.primary.opacity(0.8) : XTheme.surfaceElevated))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 2)
+                        .stroke(isDragging ? XTheme.primary : (isHovering ? XTheme.primary.opacity(0.5) : XTheme.border), lineWidth: 1)
+                )
+                .frame(width: 5, height: 32)
+                .shadow(color: isHovering || isDragging ? XTheme.primary.opacity(0.35) : Color.clear, radius: 4)
         }
+        .frame(width: 8)
+        .onHover { hovering in
+            isHovering = hovering
+            if hovering {
+                NSCursor.resizeLeftRight.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .gesture(
+            DragGesture(minimumDistance: 1)
+                .onChanged { value in
+                    if !isDragging {
+                        isDragging = true
+                        dragStartRatio = ratio
+                    }
+                    guard containerWidth > 0 else { return }
+                    let deltaRatio = value.translation.width / containerWidth
+                    let newRatio = dragStartRatio + deltaRatio
+                    ratio = max(0.22, min(0.78, newRatio))
+                }
+                .onEnded { _ in
+                    isDragging = false
+                }
+        )
+        .onTapGesture(count: 2) {
+            withAnimation(XTheme.snappy) {
+                ratio = defaultRatio
+            }
+        }
+        .help("Drag to resize columns (Double-click to reset)")
+    }
+}
+
+struct HorizontalSplitterHandle: View {
+    @Binding var ratio: CGFloat
+    var defaultRatio: CGFloat = 0.50
+    
+    @State private var isHovering: Bool = false
+    @State private var isDragging: Bool = false
+    @State private var dragStartRatio: CGFloat = 0.50
+    
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                // Invisible taller hit target
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(height: 12)
+                    .contentShape(Rectangle())
+
+                // Visible divider line
+                Rectangle()
+                    .fill(isDragging ? XTheme.primary : (isHovering ? XTheme.primary.opacity(0.65) : XTheme.border.opacity(0.6)))
+                    .frame(height: 1)
+
+                // Centered tactile grip handle
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(isDragging ? XTheme.primary : (isHovering ? XTheme.primary.opacity(0.8) : XTheme.surfaceElevated))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 2)
+                            .stroke(isDragging ? XTheme.primary : (isHovering ? XTheme.primary.opacity(0.5) : XTheme.border), lineWidth: 1)
+                    )
+                    .frame(width: 32, height: 5)
+                    .shadow(color: isHovering || isDragging ? XTheme.primary.opacity(0.35) : Color.clear, radius: 4)
+            }
+            .frame(maxWidth: .infinity, maxHeight: 8)
+            .onHover { hovering in
+                isHovering = hovering
+                if hovering {
+                    NSCursor.resizeUpDown.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { value in
+                        if !isDragging {
+                            isDragging = true
+                            dragStartRatio = ratio
+                        }
+                        let totalHeight = geo.size.height > 0 ? geo.size.height : 400
+                        let deltaRatio = value.translation.height / totalHeight
+                        let newRatio = dragStartRatio + deltaRatio
+                        ratio = max(0.20, min(0.80, newRatio))
+                    }
+                    .onEnded { _ in
+                        isDragging = false
+                    }
+            )
+            .onTapGesture(count: 2) {
+                withAnimation(XTheme.snappy) {
+                    ratio = defaultRatio
+                }
+            }
+            .help("Drag to resize section (Double-click to reset)")
+        }
+        .frame(height: 8)
+    }
+}
+
+// MARK: - View Layout Menu Button
+
+struct ViewLayoutMenuButton: View {
+    @Environment(AppState.self) private var appState
+    
+    var body: some View {
+        Menu {
+            Section("Panels & Sections") {
+                Toggle("Harmonic Wheel & Theory", isOn: Binding(
+                    get: { appState.showHarmonicPanel },
+                    set: { appState.showHarmonicPanel = $0 }
+                ))
+                Toggle("Harmonic Progression Tabs", isOn: Binding(
+                    get: { appState.showHarmonicTabSection },
+                    set: { appState.showHarmonicTabSection = $0 }
+                ))
+                Toggle("Controller HUD Visualizer", isOn: Binding(
+                    get: { appState.showControllerVisualizer },
+                    set: { appState.showControllerVisualizer = $0 }
+                ))
+                Toggle("Performance Quick Controls", isOn: Binding(
+                    get: { appState.showPerformanceQuickControls },
+                    set: { appState.showPerformanceQuickControls = $0 }
+                ))
+                Toggle("Performance Monitor & Lanes", isOn: Binding(
+                    get: { appState.showPerformanceMonitor },
+                    set: { appState.showPerformanceMonitor = $0 }
+                ))
+                Toggle("DSP & Synth Workspace", isOn: Binding(
+                    get: { appState.showDSPWorkspace },
+                    set: { appState.showDSPWorkspace = $0 }
+                ))
+                Toggle("Strum & MIDI Activity Bar", isOn: Binding(
+                    get: { appState.showStrumMidiBar },
+                    set: { appState.showStrumMidiBar = $0 }
+                ))
+            }
+            
+            Divider()
+            
+            Button("Reset Workspace Layout") {
+                withAnimation(XTheme.snappy) {
+                    appState.resetPlayLayout()
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "rectangle.split.2x1")
+                    .font(.system(size: 10, weight: .semibold))
+                Text("View")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            }
+            .foregroundColor(XTheme.textSecondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(XTheme.surface.opacity(0.5))
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(XTheme.border, lineWidth: 1))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Configure visible workspace sections and layout splitters")
     }
 }
 
@@ -253,19 +494,16 @@ struct EnhancedChordDisplayView: View {
     
     var body: some View {
         let currentName = appState.currentChord?.displayName ?? "-"
-        let chordChanged = previousChordName != currentName && previousChordName != nil
-        let displayName = chordChanged && !reduceMotion ? (previousChordName ?? "-") : currentName
         let isCompact = viewport.isCompactHeight
         
         HStack(spacing: isCompact ? 10 : 16) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(displayName)
+                Text(currentName)
                     .font(.system(size: isCompact ? 26 : 34, weight: .bold, design: .rounded))
                     .foregroundColor(XTheme.textPrimary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .frame(height: isCompact ? 30 : 38)
-                    .animation(reduceMotion ? nil : .spring(response: 0.2, dampingFraction: 0.75), value: currentName)
                     .overlay {
                         if chordFlash && !reduceMotion {
                             RoundedRectangle(cornerRadius: 4)
@@ -276,7 +514,10 @@ struct EnhancedChordDisplayView: View {
                 if let chord = appState.currentChord {
                     HStack(spacing: 6) {
                         if let roman = chord.romanNumeral(in: appState.currentKey, scale: appState.currentScale) {
-                            Text(roman).font(.system(size: isCompact ? 13 : 15, weight: .semibold, design: .monospaced)).foregroundColor(XTheme.primary)
+                            Text(roman)
+                                .font(.system(size: isCompact ? 13 : 15, weight: .semibold, design: .monospaced))
+                                .monospacedDigit()
+                                .foregroundColor(XTheme.primary)
                         }
                         TensionBadge(tension: chord.tension(in: appState.currentKey, scale: appState.currentScale))
                     }
@@ -287,8 +528,29 @@ struct EnhancedChordDisplayView: View {
             }
             Spacer()
             VStack(alignment: .trailing, spacing: isCompact ? 2 : 4) {
-                ActiveTechniqueStatusView(compact: isCompact)
-                    .frame(height: isCompact ? 20 : 24)
+                HStack(spacing: 6) {
+                    if let hint = appState.contextualHint, !appState.activeNotes.isEmpty {
+                        HStack(spacing: 4) {
+                            Image(systemName: "hand.tap.fill")
+                                .font(.system(size: isCompact ? 8 : 9))
+                                .foregroundColor(XTheme.expression)
+                            Text(hint)
+                                .font(.system(size: isCompact ? 9 : 10, weight: .semibold, design: .rounded))
+                                .foregroundColor(XTheme.textPrimary)
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule()
+                                .fill(XTheme.expression.opacity(0.12))
+                                .overlay(Capsule().stroke(XTheme.expression.opacity(0.32), lineWidth: 1))
+                        )
+                        .transition(.opacity)
+                    }
+                    ActiveTechniqueStatusView(compact: isCompact)
+                }
+                .frame(height: isCompact ? 20 : 24)
                 HStack(spacing: 4) {
                     Text(appState.currentKey.displayName)
                         .font(.system(size: isCompact ? 15 : 18, weight: .bold, design: .rounded))
@@ -1053,6 +1315,8 @@ private struct ExpressionBar: View {
             .frame(height: 14)
             Text(formatValue())
                 .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .monospacedDigit()
+                .frame(minWidth: 44, alignment: .center)
                 .foregroundColor(XTheme.textSecondary)
         }
         .frame(minWidth: 50)
@@ -1132,6 +1396,8 @@ struct MIDIActivityView: View {
                 // Note count
                 Text("\(appState.activeNotes.count)")
                     .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .frame(width: 18, alignment: .center)
                     .foregroundColor(appState.activeNotes.isEmpty ? XTheme.textTertiary : XTheme.primary)
                     .contentTransition(.numericText())
                 

@@ -113,6 +113,93 @@ public final class AppState: @unchecked Sendable {
     /// Help panel visibility
     public var showHelpPanel: Bool = false
 
+    // MARK: - Workspace Layout & Section Visibility
+
+    /// Horizontal split ratio between Left (Harmonic) and Right (Controller/DSP) columns.
+    public var playSplitRatio: CGFloat = {
+        let stored = UserDefaults.standard.double(forKey: "xpi_play_split_ratio")
+        return stored > 0.15 && stored < 0.85 ? CGFloat(stored) : 0.38
+    }() {
+        didSet {
+            UserDefaults.standard.set(Double(playSplitRatio), forKey: "xpi_play_split_ratio")
+        }
+    }
+
+    /// Vertical split ratio inside Left Column between Harmonic Wheel and Tabbed Area.
+    public var leftVerticalSplitRatio: CGFloat = {
+        let stored = UserDefaults.standard.double(forKey: "xpi_left_vsplit_ratio")
+        return stored > 0.20 && stored < 0.85 ? CGFloat(stored) : 0.58
+    }() {
+        didSet {
+            UserDefaults.standard.set(Double(leftVerticalSplitRatio), forKey: "xpi_left_vsplit_ratio")
+        }
+    }
+
+    /// Vertical split ratio inside Right Column between Controller HUD and DSP Workspace.
+    public var rightVerticalSplitRatio: CGFloat = {
+        let stored = UserDefaults.standard.double(forKey: "xpi_right_vsplit_ratio")
+        return stored > 0.20 && stored < 0.85 ? CGFloat(stored) : 0.48
+    }() {
+        didSet {
+            UserDefaults.standard.set(Double(rightVerticalSplitRatio), forKey: "xpi_right_vsplit_ratio")
+        }
+    }
+
+    public var showHarmonicPanel: Bool = {
+        UserDefaults.standard.object(forKey: "xpi_show_harmonic_panel") != nil ? UserDefaults.standard.bool(forKey: "xpi_show_harmonic_panel") : true
+    }() {
+        didSet { UserDefaults.standard.set(showHarmonicPanel, forKey: "xpi_show_harmonic_panel") }
+    }
+
+    public var showControllerVisualizer: Bool = {
+        UserDefaults.standard.object(forKey: "xpi_show_controller_viz") != nil ? UserDefaults.standard.bool(forKey: "xpi_show_controller_viz") : true
+    }() {
+        didSet { UserDefaults.standard.set(showControllerVisualizer, forKey: "xpi_show_controller_viz") }
+    }
+
+    public var showPerformanceQuickControls: Bool = {
+        UserDefaults.standard.object(forKey: "xpi_show_quick_controls") != nil ? UserDefaults.standard.bool(forKey: "xpi_show_quick_controls") : true
+    }() {
+        didSet { UserDefaults.standard.set(showPerformanceQuickControls, forKey: "xpi_show_quick_controls") }
+    }
+
+    public var showPerformanceMonitor: Bool = {
+        UserDefaults.standard.object(forKey: "xpi_show_perf_monitor") != nil ? UserDefaults.standard.bool(forKey: "xpi_show_perf_monitor") : true
+    }() {
+        didSet { UserDefaults.standard.set(showPerformanceMonitor, forKey: "xpi_show_perf_monitor") }
+    }
+
+    public var showDSPWorkspace: Bool = {
+        UserDefaults.standard.object(forKey: "xpi_show_dsp_workspace") != nil ? UserDefaults.standard.bool(forKey: "xpi_show_dsp_workspace") : true
+    }() {
+        didSet { UserDefaults.standard.set(showDSPWorkspace, forKey: "xpi_show_dsp_workspace") }
+    }
+
+    public var showStrumMidiBar: Bool = {
+        UserDefaults.standard.object(forKey: "xpi_show_strum_midi_bar") != nil ? UserDefaults.standard.bool(forKey: "xpi_show_strum_midi_bar") : true
+    }() {
+        didSet { UserDefaults.standard.set(showStrumMidiBar, forKey: "xpi_show_strum_midi_bar") }
+    }
+
+    public var showHarmonicTabSection: Bool = {
+        UserDefaults.standard.object(forKey: "xpi_show_harmonic_tabs") != nil ? UserDefaults.standard.bool(forKey: "xpi_show_harmonic_tabs") : true
+    }() {
+        didSet { UserDefaults.standard.set(showHarmonicTabSection, forKey: "xpi_show_harmonic_tabs") }
+    }
+
+    public func resetPlayLayout() {
+        playSplitRatio = 0.38
+        leftVerticalSplitRatio = 0.58
+        rightVerticalSplitRatio = 0.48
+        showHarmonicPanel = true
+        showControllerVisualizer = true
+        showPerformanceQuickControls = true
+        showPerformanceMonitor = true
+        showDSPWorkspace = true
+        showStrumMidiBar = true
+        showHarmonicTabSection = true
+    }
+
     // MARK: Learn Hub — guided interactive tutorials
 
     /// Live engine validating controller input against the active mission steps.

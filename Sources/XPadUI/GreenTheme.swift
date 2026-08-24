@@ -146,6 +146,11 @@ public struct XTheme {
     public static let fontMonoSmall = Font.system(size: 11, weight: .semibold, design: .monospaced)
     public static let fontMonoMicro = Font.system(size: 9, weight: .bold, design: .monospaced)
     public static let fontMonoTiny = Font.system(size: 8, weight: .bold, design: .monospaced)
+
+    /// Tabular / monospaced digit typography builder for numeric readouts (preventing layout jitter)
+    public static func fontMonoDigits(size: CGFloat, weight: Font.Weight = .semibold) -> Font {
+        Font.system(size: size, weight: weight, design: .monospaced)
+    }
     
     // MARK: - Spacing System (4pt base)
     
@@ -656,5 +661,20 @@ public struct XShimmerModifier: ViewModifier {
 public extension View {
     func xShimmer(isActive: Bool, color: Color = XTheme.brand, period: Double = 2.4) -> some View {
         modifier(XShimmerModifier(isActive: isActive, color: color, period: period))
+    }
+
+    /// Applies monospaced digit formatting and line limit to eliminate layout jitter on rapidly changing numbers
+    func xStableNumeric() -> some View {
+        self
+            .monospacedDigit()
+            .lineLimit(1)
+    }
+
+    /// Tabular figure container ensuring a minimum width so digit width fluctuations never shift surrounding views
+    func xTabular(minWidth: CGFloat, alignment: Alignment = .trailing) -> some View {
+        self
+            .monospacedDigit()
+            .lineLimit(1)
+            .frame(minWidth: minWidth, alignment: alignment)
     }
 }

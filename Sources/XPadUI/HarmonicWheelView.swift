@@ -213,8 +213,6 @@ struct HarmonicWheelView: View {
                 .frame(width: dotSize, height: dotSize)
                 .xGlow(isActive: true, color: XTheme.accent)
                 .position(x: x, y: y)
-                .animation(.linear(duration: 0.05), value: x)
-                .animation(.linear(duration: 0.05), value: y)
         }
     }
 }

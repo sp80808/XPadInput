@@ -753,18 +753,31 @@ private struct TactileStickView: View {
                 transaction.animation = nil
             }
 
-            Text(role)
-                .font(.system(size: scale == .expanded ? 11 : 9, weight: .semibold))
-                .foregroundStyle(radius > 0.05 ? tint : XTheme.textTertiary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.68)
-                .frame(width: diameter)
-
-            if label == "R" {
-                Text(velocity == 0 ? "Awaiting gesture" : "Last \(direction.rawValue) · \(velocity)")
-                    .font(.system(size: scale == .expanded ? 9 : 8, weight: .medium, design: .monospaced))
-                    .foregroundStyle(velocity > 0 ? XTheme.textSecondary : XTheme.textTertiary)
+            VStack(spacing: 2) {
+                Text(role)
+                    .font(.system(size: scale == .expanded ? 11 : 9, weight: .semibold))
+                    .foregroundStyle(radius > 0.05 ? tint : XTheme.textTertiary)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.70)
+                    .frame(width: max(diameter + 16, 76), height: 14)
+
+                if label == "R" {
+                    Text(velocity == 0 ? "Awaiting gesture" : "Last \(direction.rawValue) · \(velocity)")
+                        .font(.system(size: scale == .expanded ? 9 : 8, weight: .medium, design: .monospaced))
+                        .monospacedDigit()
+                        .foregroundStyle(velocity > 0 ? XTheme.textSecondary : XTheme.textTertiary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.70)
+                        .frame(width: max(diameter + 16, 88), height: 12)
+                } else {
+                    Text(state.isInDeadzone ? "Centered" : "\(Int(radius * 100))%")
+                        .font(.system(size: scale == .expanded ? 9 : 8, weight: .medium, design: .monospaced))
+                        .monospacedDigit()
+                        .foregroundStyle(radius > 0.05 ? tint.opacity(0.8) : XTheme.textTertiary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.70)
+                        .frame(width: max(diameter + 16, 76), height: 12)
+                }
             }
         }
         .accessibilityElement(children: .ignore)

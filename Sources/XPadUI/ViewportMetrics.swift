@@ -81,6 +81,29 @@ public struct ViewportMetrics: Sendable, Equatable {
     public var isCompactHeight: Bool { heightClass == .compact }
     public var isCompact: Bool { isCompactWidth || isCompactHeight }
     public var isExpanded: Bool { widthClass == .expanded && heightClass == .expanded }
+
+    /// Proportionally scales a baseline point dimension, clamped to safe readability bounds.
+    public func scaled(_ value: CGFloat, minScale: CGFloat = 0.80, maxScale: CGFloat = 1.30) -> CGFloat {
+        let clampedFactor = max(minScale, min(maxScale, scaleFactor))
+        return (value * clampedFactor).rounded()
+    }
+
+    /// Selects appropriate dimension depending on viewport height/width class.
+    public func select<T>(compact: T, regular: T, expanded: T) -> T {
+        if isCompact { return compact }
+        if isExpanded { return expanded }
+        return regular
+    }
+
+    /// Computes safe dynamic height within minimum and maximum boundaries.
+    public func dynamicHeight(compact: CGFloat, regular: CGFloat, expanded: CGFloat) -> CGFloat {
+        select(compact: compact, regular: regular, expanded: expanded)
+    }
+
+    /// Computes safe dynamic padding within minimum and maximum boundaries.
+    public func dynamicPadding(compact: CGFloat = 6, regular: CGFloat = 10, expanded: CGFloat = 14) -> CGFloat {
+        select(compact: compact, regular: regular, expanded: expanded)
+    }
 }
 
 // MARK: - SwiftUI Environment Key

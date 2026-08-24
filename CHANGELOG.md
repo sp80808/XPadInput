@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.0.05] - 2026-08-24
+
+### Added
+- **Interactive Guided Tutorials & Learn Hub (`TutorialEngine.swift`, `LearnHubView.swift`, `MainAppView.swift`)**:
+  - `TutorialEngine` evaluates real-time gamepad input against structured lesson milestones and scheme-resolved physical control hints.
+  - Interactive overlay HUD (`TutorialOverlayView`) with step-by-step progress tracking, live gesture validation, and celebratory completion animations.
+  - `LearnHubView` modal catalog accessible from the Library workspace, Help menu, and onboarding sequence with persistent mission completion tracking (`TutorialMissionStore`).
+- **Drone Pad Play Mode (`DroneBedEngine.swift`, `AppState.swift`, `WorkspaceNavigation.swift`)**:
+  - Dedicated `.drone` instrument play mode sustaining harmonic chord beds indefinitely without requiring active strum gating.
+  - Delta voice-morphing algorithm diffs current vs next chord voicings so common tones sustain seamlessly while departing tones release and entering tones attack.
+  - Strum trigger support for dynamic accent rearticulation without interrupting held sustain.
+- **Ways to Play Gallery (`WaysToPlayView.swift`, `LibraryWorkspaceView.swift`)**:
+  - One-tap control scheme switcher in the Library workspace featuring all 16 built-in presets (Performance, Classic, Low-Fatigue, Left-Handed, Drummer, Bass, Ambient, Theremin, Turntablist, Fight Stick, Flight Stick, Racing Wheel, Sound Voltex, Beatmania IIDX, Guitar Hero, First Timer).
+  - Inline cheat-sheet displaying the three primary bindings for each scheme upon activation.
+- **Arpeggiator Integration & Live Mode Switching (`AppState.swift`, `Arpeggiator.swift`)**:
+  - Complete integration of multi-pattern arpeggiator engine into `AppState` with tempo-synced gate timing and octave registrations.
+- **MIDI Learn & Physical Input Expansion (`MapWorkspaceView.swift`, `PhysicalControlInput`)**:
+  - MIDI Learn tab in Map workspace for incoming event monitoring and rapid parameter mapping.
+  - Extended `PhysicalControlInput` supporting MIDI note, CC, pitch bend, and channel pressure event types.
+- **Exhaustive Automated Test Suite Expansion**:
+  - 183 automated unit and integration tests (100% pass rate) covering Drone Bed lifecycle, Tutorial Engine gesture validation, Arpeggiator stepping, MIDI-CI MPE profile negotiation, and 16 hardware mapping presets.
+
+### Fixed
+- **SMFExporter**: Added stable indexed sorting for equal-tick events and 28-bit Variable Length Quantity (VLQ) clamping.
+- **Concurrency & Lock Safety**: Replaced manual lock unwinding with scoped `defer { lock.unlock() }` across `AudioEngine`, `SpatialAudioEngine`, `VirtualAudioDriver`, `MIDICISession`, `MIDIEngine`, and `MPEManager`.
+- **Pipeline State Recovery**: Added `reset()` methods on `AnalogControlPipeline`, `StickProcessor`, and `TriggerProcessor` for clean state recovery on controller reconnection or calibration changes.
+
+---
+
 ## [0.0.04] - 2026-08-22
 
 ### Added

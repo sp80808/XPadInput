@@ -61,7 +61,6 @@ public struct AnalogStickHUD: View {
                 VelocityPulse(color: color, velocity: state.movementVelocity)
                     .frame(width: 24, height: 24)
                     .offset(x: CGFloat(state.x) * 50, y: CGFloat(-state.y) * 50)
-                    .id(state.movementVelocity)  // re-trigger onAppear each time velocity changes
             }
             
             Text(label)
@@ -133,29 +132,16 @@ public struct VelocityPulse: View {
     public let color: Color
     public let velocity: Float
     
-    @State private var scale: CGFloat = 1.0
-    @State private var opacity: Double = 0.5
-    
     public init(color: Color, velocity: Float) {
         self.color = color
         self.velocity = velocity
     }
     
     public var body: some View {
+        let intensity = min(1.0, max(0.0, CGFloat(velocity / 8.0)))
         Circle()
-            .stroke(color, lineWidth: 2)
-            .scaleEffect(scale)
-            .opacity(opacity)
-            .onAppear {
-                // Reset then animate — .id(velocity) on parent ensures re-trigger each appearance
-                scale   = 1.0
-                opacity = 0.5
-                let intensity = Double(min(1.0, velocity / 10.0))
-                withAnimation(.easeOut(duration: 0.3 * (1.0 - intensity))) {
-                    scale   = 1.0 + CGFloat(intensity) * 1.5
-                    opacity = 0.0
-                }
-            }
+            .stroke(color.opacity(Double(intensity) * 0.65), lineWidth: 1.5)
+            .scaleEffect(1.0 + intensity * 0.75)
     }
 }
 

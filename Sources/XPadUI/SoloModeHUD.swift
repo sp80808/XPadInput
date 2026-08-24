@@ -77,8 +77,6 @@ public struct SmartSoloHUDView: View {
                             x: stickRadius * cos(angle),
                             y: -stickRadius * sin(angle)
                         )
-                        .animation(reduceMotion ? nil : .spring(response: 0.12, dampingFraction: 0.75), value: telemetry.stickRadius)
-                        .animation(reduceMotion ? nil : .spring(response: 0.12, dampingFraction: 0.75), value: telemetry.stickAngle)
                 }
                 .frame(width: 52, height: 52)
 
@@ -94,6 +92,7 @@ public struct SmartSoloHUDView: View {
                                 .xRipple(trigger: target.targetNote.pitchClass.displayName, color: .orange, size: 36)
                             Text("Octave \(target.targetNote.octave)")
                                 .font(.caption2)
+                                .monospacedDigit()
                                 .foregroundStyle(XTheme.textTertiary)
                         }
                         Text(target.roleLabel)

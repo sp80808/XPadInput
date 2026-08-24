@@ -18,17 +18,21 @@
 
 Pre-built native macOS universal releases are packaged directly via GitHub Actions CI.
 
-### Alpha 0.0.04 (CI-Validated Latest)
-Validated release build incorporating dynamic animated micro-interactions, spring physics, live visualizer radar scanner, matched-geometry tab capsules, diatonic consonant chord pitch bending, Universal MIDI Packet (UMP) decoding, accurate MIDI Passthru routing, enhanced DualSense/CoreHaptics feedback, and macOS Force Touch trackpad tactile support:
-- **Recommended:** [Download XPadInput-0.0.04.dmg](https://github.com/sp80808/XPadInput/releases)
-- **Fallback ZIP:** [Download XPadInput-0.0.04.zip](https://github.com/sp80808/XPadInput/releases)
+### Alpha 0.0.05 (CI-Validated Latest)
+Validated release build introducing real-time interactive guided tutorials (Learn Hub), continuous harmonic drone pad play mode with delta-morphing sustain, the 16-scheme "Ways to Play" quick switcher gallery, integrated arpeggiator engine, MIDI Learn in Map workspace, and strengthened concurrency guarantees:
+- **Recommended:** [Download XPadInput-0.0.05.dmg](https://github.com/sp80808/XPadInput/releases)
+- **Fallback ZIP:** [Download XPadInput-0.0.05.zip](https://github.com/sp80808/XPadInput/releases)
 - **Full Release Notes:** See [CHANGELOG.md](CHANGELOG.md)
 
 SHA-256:
 ```text
-b6107d03977c5e5cabc7b43662d1d967339034da241c7a97411ca7b107b2164f  XPadInput-0.0.04.dmg
-35929c2490a7eba8c821c323f9c7311be589684bab24fe27a7e8944f56411f67  XPadInput-0.0.04.zip
+481437081014a218e4e9fe1fdf73e5af137284d2fe987fa55e9b41a6f36e3e34  XPadInput-0.0.05.dmg
+344f09e3c0758bcee354c8d65fa1b784a1b65f1ad804a7b5820188a25dba4ef8  XPadInput-0.0.05.zip
 ```
+
+### Alpha 0.0.04
+- [Download XPadInput-0.0.04.dmg](https://github.com/sp80808/XPadInput/releases)
+- [Download XPadInput-0.0.04.zip](https://github.com/sp80808/XPadInput/releases)
 
 ### Alpha 0.0.03
 - [Download XPadInput-0.0.03.dmg](https://github.com/sp80808/XPadInput/releases)
