@@ -45,6 +45,14 @@ public struct OnboardingView: View {
             accent: XTheme.colourful
         ),
         .init(
+            icon: "puzzlepiece.extension.fill",
+            title: "Install AU / VST3 Plugins",
+            subtitle: "Ready for your DAW",
+            body: "XPadInput can automatically place its Audio Unit and VST3 plugins into your system folders so Logic, Ableton, and other hosts discover them immediately.",
+            hint: "Click the install button below, or skip and do this later.",
+            accent: XTheme.primary
+        ),
+        .init(
             icon: "pianokeys",
             title: "Connect Your DAW",
             subtitle: "Virtual MIDI output ready",
@@ -103,6 +111,36 @@ public struct OnboardingView: View {
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: 440)
+
+                    if step.title == "Install AU / VST3 Plugins" {
+                        VStack(spacing: 8) {
+                            Button(action: {
+                                appState.installPlugins()
+                            }) {
+                                HStack {
+                                    if appState.pluginInstallStatus == .installed {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(.green)
+                                        Text("Plugins Installed")
+                                    } else {
+                                        Image(systemName: "arrow.down.app.fill")
+                                        Text("Auto-Install Plugins")
+                                    }
+                                }
+                            }
+                            .buttonStyle(OnboardingSecondaryButtonStyle())
+                            .disabled(appState.pluginInstallStatus == .installed)
+
+                            if case .failed(let errorMsg) = appState.pluginInstallStatus {
+                                Text(errorMsg)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.red)
+                                    .multilineTextAlignment(.center)
+                                    .frame(maxWidth: 400)
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
 
                     // Hint pill
                     Label(step.hint, systemImage: "lightbulb.fill")

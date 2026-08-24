@@ -208,7 +208,7 @@ struct TransportBar: View {
                 isActive: appState.isRecording,
                 activeColor: XTheme.recording
             ) {
-                state.isRecording.toggle()
+                appState.toggleRecording()
             }
             .xPulse(isActive: appState.isRecording, color: XTheme.recording, speed: 0.75, rings: 2)
             

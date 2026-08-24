@@ -27,6 +27,8 @@ public final class PracticeEngine: ObservableObject {
     private var challengeTimer: Timer?
     private var challengeRemainingTime: TimeInterval = 0
     private var sessionTimer: Timer?
+    private var advanceWorkItem: DispatchWorkItem?
+    private var hintWorkItem: DispatchWorkItem?
     private let evaluationTolerance: Double = 0.8 // 80% match required for correctness
     
     // MARK: - Feedback Types
@@ -44,6 +46,7 @@ public final class PracticeEngine: ObservableObject {
     
     // MARK: - Lesson Management
     public func startLesson(_ lesson: PracticeLesson) {
+        cancelPendingTimers()
         currentLesson = lesson
         currentStepIndex = 0
         sessionResults = []
@@ -59,6 +62,7 @@ public final class PracticeEngine: ObservableObject {
     }
     
     public func startChallenge(_ challenge: PracticeChallenge) {
+        cancelPendingTimers()
         currentChallenge = challenge
         currentLesson = nil
         currentStepIndex = 0
@@ -82,6 +86,10 @@ public final class PracticeEngine: ObservableObject {
     
     public func pausePractice() {
         isPaused = true
+        advanceWorkItem?.cancel()
+        advanceWorkItem = nil
+        hintWorkItem?.cancel()
+        hintWorkItem = nil
         sessionTimer?.invalidate()
         challengeTimer?.invalidate()
         feedbackMessage = "Practice paused"
@@ -103,10 +111,9 @@ public final class PracticeEngine: ObservableObject {
     }
     
     public func stopPractice() {
+        cancelPendingTimers()
         isPracticeActive = false
         isPaused = false
-        sessionTimer?.invalidate()
-        challengeTimer?.invalidate()
         stepStartTime = nil
         challengeRemainingTime = 0
         
@@ -129,6 +136,7 @@ public final class PracticeEngine: ObservableObject {
     }
     
     public func resetPractice() {
+        cancelPendingTimers()
         currentLesson = nil
         currentChallenge = nil
         currentStepIndex = 0
@@ -143,13 +151,26 @@ public final class PracticeEngine: ObservableObject {
         elapsedTime = 0
         stepStartTime = nil
         challengeRemainingTime = 0
-        
+    }
+    
+    private func cancelPendingTimers() {
+        advanceWorkItem?.cancel()
+        advanceWorkItem = nil
+        hintWorkItem?.cancel()
+        hintWorkItem = nil
         sessionTimer?.invalidate()
+        sessionTimer = nil
         challengeTimer?.invalidate()
+        challengeTimer = nil
     }
     
     // MARK: - Step Management
     private func beginCurrentStep() {
+        advanceWorkItem?.cancel()
+        advanceWorkItem = nil
+        hintWorkItem?.cancel()
+        hintWorkItem = nil
+        
         guard let lesson = currentLesson,
               currentStepIndex < lesson.steps.count else {
             completeLesson()
@@ -162,18 +183,24 @@ public final class PracticeEngine: ObservableObject {
         feedbackType = .neutral
         
         if let hint = step.hint {
-            // Show hint after a delay if user hasn't responded
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            let stepId = step.id
+            let workItem = DispatchWorkItem { [weak self] in
                 guard let self = self,
-                      self.currentStepIndex == lesson.steps.firstIndex(where: { $0.id == step.id }),
+                      self.isPracticeActive,
+                      self.currentStepIndex < lesson.steps.count,
+                      lesson.steps[self.currentStepIndex].id == stepId,
                       self.currentResult == nil else { return }
                 self.feedbackMessage = hint
                 self.feedbackType = .hint
             }
+            hintWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0, execute: workItem)
         }
     }
     
     public func advanceToNextStep() {
+        advanceWorkItem?.cancel()
+        advanceWorkItem = nil
         guard let lesson = currentLesson else { return }
         
         currentStepIndex += 1
@@ -186,6 +213,8 @@ public final class PracticeEngine: ObservableObject {
     }
     
     public func goToStep(_ index: Int) {
+        advanceWorkItem?.cancel()
+        advanceWorkItem = nil
         guard let lesson = currentLesson,
               index >= 0 && index < lesson.steps.count else { return }
         
@@ -233,10 +262,13 @@ public final class PracticeEngine: ObservableObject {
     // MARK: - Chord Evaluation
     public func evaluateChordInput(_ chord: Chord) {
         guard isPracticeActive, !isPaused else { return }
+        guard advanceWorkItem == nil else { return }
         guard let lesson = currentLesson,
               currentStepIndex < lesson.steps.count else { return }
         
-        let step = lesson.steps[currentStepIndex]
+        let stepIndex = currentStepIndex
+        let lessonId = lesson.id
+        let step = lesson.steps[stepIndex]
         let responseTime = stepStartTime.map { Date().timeIntervalSince($0) } ?? 0
         
         // Evaluate chord correctness
@@ -271,17 +303,21 @@ public final class PracticeEngine: ObservableObject {
                 feedbackMessage = "Correct chord, but try to respond faster."
                 feedbackType = .correct
             }
+            
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self = self,
+                      self.isPracticeActive,
+                      self.currentLesson?.id == lessonId,
+                      self.currentStepIndex == stepIndex else { return }
+                self.advanceWorkItem = nil
+                self.advanceToNextStep()
+            }
+            advanceWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5, execute: workItem)
         } else {
             let suggestion = generateIncorrectChordSuggestion(played: chord, expected: step.expectedChord)
             feedbackMessage = "Not quite. \(suggestion)"
             feedbackType = .incorrect
-        }
-        
-        // Auto-advance if correct, otherwise let user try again
-        if isCorrect {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.advanceToNextStep()
-            }
         }
     }
     

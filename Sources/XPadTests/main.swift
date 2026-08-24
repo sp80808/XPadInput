@@ -8,6 +8,7 @@ import XPadController
 import XPadMIDI
 import XPadAudio
 import XPadSequencer
+import XPadPractice
 import XPadUI
 
 @MainActor
@@ -251,6 +252,14 @@ final class TestRunner {
                 let topSector = wheel.sector(forAngle: -.pi / 2.0, layer: .diatonic)
                 assertNotNil(topSector)
                 assertEqual(topSector?.romanNumeral, "I")
+
+                // Pentatonic & Blues Scales without crash
+                let pentatonicWheel = HarmonicWheel(scale: Scale(root: .c, type: .pentatonicMajor))
+                assertFalse(pentatonicWheel.sectorsByLayer.isEmpty)
+                let minorPentWheel = HarmonicWheel(scale: Scale(root: .a, type: .pentatonicMinor))
+                assertFalse(minorPentWheel.sectorsByLayer.isEmpty)
+                let bluesWheel = HarmonicWheel(scale: Scale(root: .c, type: .blues))
+                assertFalse(bluesWheel.sectorsByLayer.isEmpty)
             }
 
             test("Voice Leading Optimization & Minimal Motion") {
@@ -307,6 +316,12 @@ final class TestRunner {
                 assertTrue(presets.count >= 3)
                 let mutated = presets[0].mutated(complexity: 0.5, preserveRoots: true)
                 assertEqual(mutated.blocks.count, presets[0].blocks.count)
+
+                let minorScale = Scale(root: .a, type: .naturalMinor)
+                assertTrue(minorScale.isMinor)
+                let minorPresets = Progression.factoryPresets(for: minorScale)
+                assertTrue(minorPresets.count >= 2)
+                assertEqual(minorPresets[0].name, "Neo Soul Groove (i - iv - VII - III)")
             }
         }
 
@@ -1115,6 +1130,21 @@ final class TestRunner {
                 let header = Array(data[0..<4])
                 assertEqual(header, [0x4D, 0x54, 0x68, 0x64]) // "MThd"
             }
+
+            test("SMFExporter VLQ Clamping and Stable Event Ordering") {
+                let exporter = SMFExporter()
+                let vlqSmall = exporter.encodeVariableLength(0)
+                assertEqual(vlqSmall, [0x00])
+                let vlq127 = exporter.encodeVariableLength(127)
+                assertEqual(vlq127, [0x7F])
+                let vlq128 = exporter.encodeVariableLength(128)
+                assertEqual(vlq128, [0x81, 0x00])
+
+                // Clamped at 28-bit 0x0FFFFFFF
+                let vlqMax = exporter.encodeVariableLength(0xFFFFFFFF_FFFFFFFF)
+                assertEqual(vlqMax.count, 4)
+                assertEqual(vlqMax, [0xFF, 0xFF, 0xFF, 0x7F])
+            }
         }
 
         // MARK: - Audio Tests
@@ -1482,8 +1512,46 @@ final class TestRunner {
                 assertEqual(sequencer.recordedEvents[0].note, 60)
                 assertEqual(sequencer.recordedEvents[0].durationTicks, 480)
 
+                // Recording across loop wrap (e.g. noteOn at tick 3800, loop ends at 3840, noteOff at tick 100)
+                sequencer.transport.isRecording = true
+                sequencer.transport.loopStartTick = 0
+                sequencer.transport.loopEndTick = 3840
+                sequencer.transport.loopEnabled = true
+                sequencer.transport.currentTick = 3800
+                sequencer.recordNoteOn(note: 64, velocity: 100)
+                sequencer.transport.currentTick = 100
+                sequencer.recordNoteOff(note: 64)
+
+                assertEqual(sequencer.recordedEvents.count, 2)
+                assertEqual(sequencer.recordedEvents[1].note, 64)
+                assertEqual(sequencer.recordedEvents[1].durationTicks, (3840 - 3800) + 100)
+
+                // Mid-playback BPM changes
+                sequencer.setBPM(140.0)
+                assertEqual(sequencer.transport.bpm, 140.0)
+
                 sequencer.stop()
                 assertFalse(sequencer.transport.isPlaying)
+            }
+
+            test("Performance Recording Pipeline captures live notes into Sequencer") {
+                let appState = AppState()
+                appState.toggleRecording()
+                assertTrue(appState.isRecording)
+                assertTrue(appState.sequencer.transport.isRecording)
+
+                appState.sequencer.transport.currentTick = 0
+                appState.handleFaceButtonEvent(role: .root, isPressed: true, velocity: 110)
+                appState.sequencer.transport.currentTick = 480
+                appState.handleFaceButtonEvent(role: .root, isPressed: false, velocity: 0)
+
+                assertFalse(appState.sequencer.recordedEvents.isEmpty)
+                let recorded = appState.sequencer.recordedEvents[0]
+                assertEqual(recorded.startTick, 0)
+                assertEqual(recorded.durationTicks, 480)
+
+                appState.toggleRecording()
+                assertFalse(appState.isRecording)
             }
         }
 
@@ -1895,6 +1963,12 @@ final class TestRunner {
                 let release = engine.process(stick: StickCoordinates(x: 0, y: 0), movementVelocity: 0, context: ctx, timestamp: 1.20)
                 assertTrue(release.noteOff != nil)
                 assertFalse(engine.telemetry.isActive)
+
+                // Sweep across +/- pi boundary smoothly without retriggering as a violent flick
+                _ = engine.process(stick: StickCoordinates(x: -0.8, y: 0.05), movementVelocity: 1.0, context: ctx, timestamp: 1.30)
+                let sweep = engine.process(stick: StickCoordinates(x: -0.8, y: -0.05), movementVelocity: 1.0, context: ctx, timestamp: 1.50)
+                // Small angular movement across boundary should not trigger a new strike
+                assertTrue(sweep.noteOn == nil)
             }
         }
 
@@ -2129,7 +2203,7 @@ final class TestRunner {
                 assertEqual(leftHanded.id, "xpi_left_handed")
                 assertEqual(leftHanded.bindings[.harmonyNavigate2D]?.input, .rightStick2D)
                 assertEqual(leftHanded.bindings[.primaryExcitation]?.input, .leftStickY)
-                assertEqual(ControlSchemePreset.allBuiltIn.count, 6)
+                assertEqual(ControlSchemePreset.allBuiltIn.count, 10)
             }
 
             test("Semantic musical action categories and compatibility") {
@@ -2272,6 +2346,24 @@ final class TestRunner {
                 assertEqual(wizard.currentStep, .completed)
                 assertTrue(result.leftStick.restCenterX > 0.01)
                 assertTrue(result.leftStick.maxRadius >= 0.85)
+
+                // Premature finish from idle does NOT impose 85% ceiling
+                let freshWizard = CalibrationWizard()
+                let idleResult = freshWizard.finish()
+                assertEqual(idleResult.leftStick.maxRadius, 1.0)
+                assertEqual(idleResult.rightStick.maxRadius, 1.0)
+
+                // Validation & repair of corrupt / NaN calibration
+                var corruptStick = StickCalibration(
+                    restCenterX: Float.nan,
+                    driftRadius: -0.5,
+                    maxRadius: Float.nan
+                )
+                corruptStick.validateAndRepair()
+                assertTrue(corruptStick.isValid)
+                assertEqual(corruptStick.restCenterX, 0.0)
+                assertEqual(corruptStick.maxRadius, 1.0)
+                assertTrue(corruptStick.driftRadius > 0.0)
             }
 
             test("Control scheme remapping conflict detection") {
@@ -2938,25 +3030,25 @@ final class TestRunner {
             test("Classifies Raphnet Guitar Hero adapter to .guitarHero") {
                 let kind = ControllerKind.identify(vendorName: "Raphnet Technologies", productCategory: "Wii Classic / Guitar Adapter")
                 assertEqual(kind, .guitarHero)
-                assertEqual(kind.suggestedSchemeID, "xpi_guitar_hero")
+                assertEqual(kind.suggestedSchemeID, "xpi_rhythm_pad")
             }
 
             test("Classifies Sound Voltex Faucetwo / Yuancon to .soundVoltex") {
                 let kind = ControllerKind.identify(vendorName: "Gamo2", productCategory: "FAUCETWO SDVX Controller")
                 assertEqual(kind, .soundVoltex)
-                assertEqual(kind.suggestedSchemeID, "xpi_sound_voltex")
+                assertEqual(kind.suggestedSchemeID, "xpi_rhythm_pad")
             }
 
             test("Classifies Beatmania IIDX DJ DAO Phoenixwan to .beatmaniaIIDX") {
                 let kind = ControllerKind.identify(vendorName: "DJ DAO", productCategory: "PHOENIXWAN IIDX Turntable")
                 assertEqual(kind, .beatmaniaIIDX)
-                assertEqual(kind.suggestedSchemeID, "xpi_beatmania")
+                assertEqual(kind.suggestedSchemeID, "xpi_rhythm_pad")
             }
 
             test("Classifies Thrustmaster HOTAS to .flightStick") {
                 let kind = ControllerKind.identify(vendorName: "Thrustmaster", productCategory: "T.16000M Flight Stick & Throttle")
                 assertEqual(kind, .flightStick)
-                assertEqual(kind.suggestedSchemeID, "xpi_flight_stick")
+                assertEqual(kind.suggestedSchemeID, "xpi_flight_deck")
             }
 
             test("Classifies Logitech G29 Racing Wheel to .racingWheel") {
@@ -2968,7 +3060,7 @@ final class TestRunner {
             test("Classifies Hori Fighting Stick to .fightStick") {
                 let kind = ControllerKind.identify(vendorName: "HORI", productCategory: "Fighting Stick Alpha / Leverless")
                 assertEqual(kind, .fightStick)
-                assertEqual(kind.suggestedSchemeID, "xpi_fight_stick")
+                assertEqual(kind.suggestedSchemeID, "xpi_arcade_stick")
             }
 
             test("ControlSchemePreset.allBuiltIn contains 10 presets with unique IDs and valid bindings") {
@@ -2980,6 +3072,74 @@ final class TestRunner {
                     assertTrue(!preset.name.isEmpty)
                     assertTrue(!preset.bindings.isEmpty)
                 }
+            }
+        }
+
+        // ==================================================
+        // SUITE: XPadPractice: Lessons, Challenges & Progress Tracker
+        // ==================================================
+        suite("XPadPractice: Lessons, Challenges & Progress Tracker") {
+            test("Factory preset lessons have deterministic IDs across calls") {
+                let presets1 = PracticeLesson.factoryPresets()
+                let presets2 = PracticeLesson.factoryPresets()
+                assertEqual(presets1.count, 6)
+                assertEqual(presets2.count, 6)
+                for i in 0..<presets1.count {
+                    assertEqual(presets1[i].id, presets2[i].id)
+                    assertEqual(presets1[i].steps.count, presets2[i].steps.count)
+                    for s in 0..<presets1[i].steps.count {
+                        assertEqual(presets1[i].steps[s].id, presets2[i].steps[s].id)
+                    }
+                }
+            }
+
+            test("Factory preset challenges have deterministic IDs") {
+                let c1 = PracticeChallenge.factoryPresets()
+                let c2 = PracticeChallenge.factoryPresets()
+                assertEqual(c1.count, 3)
+                assertEqual(c2.count, 3)
+                for i in 0..<c1.count {
+                    assertEqual(c1[i].id, c2[i].id)
+                }
+            }
+
+            test("Progress tracker records session and updates mastery") {
+                let tracker = ProgressTracker.shared
+                tracker.resetProgress()
+                let lesson = PracticeLesson.factoryPresets()[0]
+                let sessionResult = PracticeSessionResult(
+                    lessonId: lesson.id,
+                    startTime: Date().addingTimeInterval(-30),
+                    endTime: Date(),
+                    stepResults: [],
+                    overallAccuracy: 0.95,
+                    averageResponseTime: 0.8,
+                    completed: true
+                )
+                tracker.recordSession(sessionResult)
+                let mastery = tracker.getLessonMastery(for: lesson.id)
+                assertNotNil(mastery)
+                assertEqual(mastery?.attemptCount, 1)
+                assertEqual(mastery?.completedCount, 1)
+            }
+
+            test("PracticeEngine auto-advance is cleanly cancellable and debounces duplicate inputs") {
+                let engine = PracticeEngine()
+                let lesson = PracticeLesson.factoryPresets()[0]
+                engine.startLesson(lesson)
+                assertEqual(engine.currentStepIndex, 0)
+
+                // First correct input
+                engine.evaluateChordInput(lesson.steps[0].expectedChord)
+                assertEqual(engine.sessionResults.count, 1)
+
+                // Rapid duplicate input during 0.5s auto-advance window is ignored
+                engine.evaluateChordInput(lesson.steps[0].expectedChord)
+                assertEqual(engine.sessionResults.count, 1)
+
+                // Stop immediately cancels pending advance
+                engine.stopPractice()
+                assertFalse(engine.isPracticeActive)
             }
         }
 

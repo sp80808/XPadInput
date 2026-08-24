@@ -42,7 +42,7 @@ public enum ControllerVendorDatabase {
         // MARK: Niche — Flight
 
         VendorRule(keywords: ["hotas", "t.flight", "warthog", "extreme 3d", "x52", "x56",
-                              "vkb", "vpc", "ch products", "flightstick", "yoke"],
+                              "vkb", "vpc", "ch products", "flightstick", "flight stick", "flight", "throttle", "yoke"],
                    kind: .flightStick),
 
         // MARK: Niche — Racing

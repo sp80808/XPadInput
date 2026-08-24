@@ -50,7 +50,7 @@ public struct HarmonicWheel: Codable, Sendable {
         // 1. DIATONIC LAYER
         var diatonicSectors: [WheelSector] = []
         let pcs = scale.pitchClasses
-        let isMinor = scale.type == .naturalMinor || scale.type == .harmonicMinor || scale.type == .melodicMinor
+        let isMinor = scale.isMinor
 
         let diatonicQualitiesMajor: [(ChordQuality, String, String)] = [
             (.major, "I", "Tonic"),
@@ -152,14 +152,25 @@ public struct HarmonicWheel: Codable, Sendable {
 
         // 4. TENSION & SECONDARY DOMINANTS
         var tensionSectors: [WheelSector] = []
-        let secondaryDominants: [(PitchClass, ChordQuality, String, String)] = [
-            (pcs[0].transposed(by: 7), .dominant7, "V7", "Dominant"),
-            (pcs[1].transposed(by: 7), .dominant7, "V7/ii", "Secondary Dominant to ii"),
-            (pcs[3].transposed(by: 7), .dominant7, "V7/IV", "Secondary Dominant to IV"),
-            (pcs[4].transposed(by: 7), .dominant7, "V7/V", "Secondary Dominant to V"),
-            (pcs[5].transposed(by: 7), .dominant7, "V7/vi", "Secondary Dominant to vi"),
-            (pcs[0].transposed(by: 1), .dominant7, "subV7", "Tritone Substitution")
-        ]
+        var secondaryDominants: [(PitchClass, ChordQuality, String, String)] = []
+        if pcs.indices.contains(0) {
+            secondaryDominants.append((pcs[0].transposed(by: 7), .dominant7, "V7", "Dominant"))
+        }
+        if pcs.indices.contains(1) {
+            secondaryDominants.append((pcs[1].transposed(by: 7), .dominant7, "V7/ii", "Secondary Dominant to ii"))
+        }
+        if pcs.indices.contains(3) {
+            secondaryDominants.append((pcs[3].transposed(by: 7), .dominant7, "V7/IV", "Secondary Dominant to IV"))
+        }
+        if pcs.indices.contains(4) {
+            secondaryDominants.append((pcs[4].transposed(by: 7), .dominant7, "V7/V", "Secondary Dominant to V"))
+        }
+        if pcs.indices.contains(5) {
+            secondaryDominants.append((pcs[5].transposed(by: 7), .dominant7, "V7/vi", "Secondary Dominant to vi"))
+        }
+        if pcs.indices.contains(0) {
+            secondaryDominants.append((pcs[0].transposed(by: 1), .dominant7, "subV7", "Tritone Substitution"))
+        }
 
         for (i, spec) in secondaryDominants.enumerated() {
             let angle = (Double(i) / Double(secondaryDominants.count)) * 2.0 * .pi - (.pi / 2.0)

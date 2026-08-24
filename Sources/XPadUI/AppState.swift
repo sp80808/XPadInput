@@ -54,10 +54,26 @@ public final class AppState: @unchecked Sendable {
     public var currentKey: PitchClass = .d
     public var currentScale: Scale = .naturalMinor
     public var currentTemperament: MicrotonalTemperament = .equalTemperament
-    public var bpm: Double = 120
-    public var isPlaying: Bool = false
+    public var isPlaying: Bool = false {
+        didSet {
+            if isPlaying {
+                sequencer.play()
+            } else {
+                sequencer.stop()
+            }
+        }
+    }
     public var isRecording: Bool = false
-    public var isLooping: Bool = false
+    public var bpm: Double = 120.0 {
+        didSet {
+            sequencer.transport.bpm = bpm
+        }
+    }
+    public var isLooping: Bool = false {
+        didSet {
+            sequencer.transport.loopEnabled = isLooping
+        }
+    }
     public var metronomeEnabled: Bool = false
 
     public var diatonicChords: [Chord] = []
@@ -82,6 +98,12 @@ public final class AppState: @unchecked Sendable {
 
     /// Onboarding — set false once the user completes or dismisses the tutorial.
     public var showOnboarding: Bool = !UserDefaults.standard.bool(forKey: "xpi_onboarding_complete")
+
+    public var pluginInstallStatus: PluginInstaller.Status = PluginInstaller.shared.status
+
+    public func installPlugins() {
+        pluginInstallStatus = PluginInstaller.shared.install()
+    }
 
     public func completeOnboarding() {
         UserDefaults.standard.set(true, forKey: "xpi_onboarding_complete")
@@ -124,6 +146,21 @@ public final class AppState: @unchecked Sendable {
         }
     }
 
+    public func toggleRecording() {
+        isRecording.toggle()
+        sequencer.transport.isRecording = isRecording
+        if isRecording {
+            sequencer.transport.currentTick = 0
+            if !sequencer.transport.isPlaying {
+                sequencer.play()
+            }
+            techniqueRecorder.start()
+        } else {
+            _ = techniqueRecorder.stop()
+            sequencer.stop()
+        }
+    }
+
     public var instrumentProfile: InstrumentProfile = .guitar
     public var destinationProfile: DestinationCapabilityProfile = .internalSynth
     public var hostSelection: DAWHostKind = .autoDetect
@@ -139,7 +176,9 @@ public final class AppState: @unchecked Sendable {
     public var performancePreset: PerformancePreset = .guitarCleanExpressive
     public var lastFrame: PerformanceFrame?
     public var lastMIDITranslation: MIDITranslationResult?
-    public var currentTick: UInt64 = 0
+    public var currentTick: UInt64 {
+        sequencer.transport.currentTick
+    }
     public var chordGateConfiguration = ChordGateConfiguration(mode: .timed, timedDuration: 0.85)
     public var duoPerformanceMode: DuoPerformanceMode = .instrumentOnly
     public var lastDrumHit: DuoDrumHit?
@@ -953,6 +992,17 @@ public final class AppState: @unchecked Sendable {
         }
     }
 
+    public func handleFaceButtonEvent(role: ChordToneRole, isPressed: Bool, velocity: UInt8 = 100) {
+        let chord = currentChord ?? diatonicChords.first ?? Chord(root: currentKey, quality: .major)
+        let targeter = ContextualPitchTargeter()
+        let note = targeter.note(for: role, chord: chord, previous: heldFaceNotes[role], baseOctave: performanceRegisters.faceButtonOctave)
+        if isPressed {
+            startFaceNote(FaceButtonNoteEvent(role: role, note: note, isOn: true, technique: .normal, velocity: velocity))
+        } else {
+            stopFaceNote(for: role)
+        }
+    }
+
     private func handleFaceEvents(_ events: [FaceButtonNoteEvent]) {
         for event in events {
             if event.isOn {
@@ -998,6 +1048,7 @@ public final class AppState: @unchecked Sendable {
                 ),
                 tick: currentTick
             )
+            sequencer.recordNoteOn(note: event.note.midiNote, velocity: event.velocity)
         }
     }
 
@@ -1015,6 +1066,7 @@ public final class AppState: @unchecked Sendable {
 
         if recordsEvent, isRecording {
             techniqueRecorder.recordNoteOff(note: held.midiNote, tick: currentTick)
+            sequencer.recordNoteOff(note: held.midiNote)
         }
     }
 
@@ -1352,6 +1404,9 @@ public final class AppState: @unchecked Sendable {
         if !audioEngine.isMuted {
             audioEngine.noteOn(note: note.midiNote, velocity: velocity, technique: technique)
         }
+        if isRecording {
+            sequencer.recordNoteOn(note: note.midiNote, velocity: velocity)
+        }
         controllerManager.coreHapticsEngine.playNotePluck(velocity: velocity)
         lastMIDITranslation = midiTranslator.translate(
             InstrumentPerformanceEvent(note: note, phase: .began, technique: technique, velocity: velocity),
@@ -1368,6 +1423,9 @@ public final class AppState: @unchecked Sendable {
         if !audioEngine.isMuted {
             audioEngine.noteOff(note: note.midiNote)
             audioEngine.setPitchBend(for: note.midiNote, semitones: 0)
+        }
+        if isRecording {
+            sequencer.recordNoteOff(note: note.midiNote)
         }
         activeNotes.removeAll { $0.midiNote == note.midiNote }
         if activeNotes.isEmpty {
@@ -1444,6 +1502,9 @@ public final class AppState: @unchecked Sendable {
                 note: hit.voice.generalMIDINote,
                 velocity: hit.velocity
             )
+            if isRecording {
+                sequencer.recordNoteOn(note: hit.voice.generalMIDINote, velocity: hit.velocity)
+            }
             lastDrumHit = hit
 
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
@@ -1452,11 +1513,19 @@ public final class AppState: @unchecked Sendable {
                     channel: self?.midiChannel(.drums) ?? 9,
                     note: hit.voice.generalMIDINote
                 )
+                if self?.isRecording == true {
+                    self?.sequencer.recordNoteOff(note: hit.voice.generalMIDINote)
+                }
             }
         }
     }
 
     public func stopActiveNotes() {
+        if isRecording {
+            for note in activeNotes {
+                sequencer.recordNoteOff(note: note.midiNote)
+            }
+        }
         chordGateReleaseWorkItem?.cancel()
         chordGateReleaseWorkItem = nil
         cancelPendingStrumNotes()

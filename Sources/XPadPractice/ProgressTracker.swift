@@ -18,6 +18,7 @@ public final class ProgressTracker: ObservableObject {
     // MARK: - Private State
     private let userDefaultsKey = "com.xpadinput.progresstracker"
     private let maxHistoryCount = 100
+    private let maxMasteryCount = 100
     
     // MARK: - Initialization
     private init() {
@@ -38,6 +39,18 @@ public final class ProgressTracker: ObservableObject {
         
         // Update lesson mastery
         updateLessonMastery(for: result.lessonId, with: result)
+        
+        // Keep lessonMastery bounded
+        if lessonMastery.count > maxMasteryCount {
+            let factoryIds = Set(PracticeLesson.factoryPresets().map { $0.id })
+            let sortedEntries = lessonMastery.sorted { (lhs, rhs) in
+                let lhsIsFactory = factoryIds.contains(lhs.key)
+                let rhsIsFactory = factoryIds.contains(rhs.key)
+                if lhsIsFactory != rhsIsFactory { return lhsIsFactory }
+                return lhs.value.attemptCount > rhs.value.attemptCount
+            }
+            lessonMastery = Dictionary(uniqueKeysWithValues: sortedEntries.prefix(maxMasteryCount).map { ($0.key, $0.value) })
+        }
         
         // Update streak and weekly practice
         updateStreak(result.endTime)

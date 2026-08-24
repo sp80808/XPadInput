@@ -64,7 +64,7 @@ public struct ModulationEngine: Sendable {
         let targetDominant = targetRoot.transposed(by: 7)
         let targetSupertonic = targetRoot.transposed(by: 2)
 
-        let isMinor = targetScale.id.contains("minor")
+        let isMinor = targetScale.isMinor
         let iiVPath = ModulationPath(
             sourceRoot: sourceRoot,
             sourceScale: sourceScale,

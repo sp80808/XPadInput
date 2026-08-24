@@ -52,6 +52,15 @@ public enum ScaleType: String, CaseIterable, Identifiable, Codable, Sendable {
         case .chromatic: return "Chromatic"
         }
     }
+
+    public var isMinor: Bool {
+        switch self {
+        case .naturalMinor, .harmonicMinor, .melodicMinor, .dorian, .phrygian, .locrian, .pentatonicMinor, .blues:
+            return true
+        case .major, .lydian, .mixolydian, .pentatonicMajor, .chromatic:
+            return false
+        }
+    }
 }
 
 /// Represents a musical scale/mode with its root and interval pattern.
@@ -88,6 +97,10 @@ public struct Scale: Hashable, Codable, Sendable, Identifiable {
 
     public var shortDisplayName: String {
         type.shortName
+    }
+
+    public var isMinor: Bool {
+        type.isMinor || intervals.contains(3)
     }
 
     public func pitchClasses(root: PitchClass) -> [PitchClass] {

@@ -97,15 +97,22 @@ public struct SMFExporter: Sendable {
             UInt8((usPerQuarter >> 8) & 0xFF),
             UInt8(usPerQuarter & 0xFF)
         ]
-        var trackEvents: [(tick: UInt64, bytes: [UInt8])] = [
-            (tick: 0, bytes: tempoBytes)
+        var indexedEvents: [(order: Int, tick: UInt64, bytes: [UInt8])] = [
+            (order: 0, tick: 0, bytes: tempoBytes)
         ]
-        trackEvents.append(contentsOf: events)
-        trackEvents.sort { $0.tick < $1.tick }
+        for (idx, event) in events.enumerated() {
+            indexedEvents.append((order: idx + 1, tick: event.tick, bytes: event.bytes))
+        }
+        indexedEvents.sort { lhs, rhs in
+            if lhs.tick != rhs.tick {
+                return lhs.tick < rhs.tick
+            }
+            return lhs.order < rhs.order
+        }
 
         var trackData = Data()
         var lastTick: UInt64 = 0
-        for item in trackEvents {
+        for item in indexedEvents {
             let delta = item.tick >= lastTick ? item.tick - lastTick : 0
             lastTick = item.tick
             trackData.append(contentsOf: encodeVariableLength(delta))
@@ -121,8 +128,8 @@ public struct SMFExporter: Sendable {
         return midiData
     }
 
-    private func encodeVariableLength(_ value: UInt64) -> [UInt8] {
-        var v = value
+    public func encodeVariableLength(_ value: UInt64) -> [UInt8] {
+        var v = min(value, 0x0FFFFFFF)
         var buffer: [UInt8] = [UInt8(v & 0x7F)]
         while (v >> 7) > 0 {
             v >>= 7

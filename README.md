@@ -252,19 +252,19 @@ XPadInput/
 │   ├── XPadMIDITests/         # Unit tests for CoreMIDI & MPE
 │   ├── XPadAudioTests/        # Unit tests for DSP synth
 │   └── XPadSequencerTests/    # Unit tests for timeline engine
+├── docs/                      # Central documentation directory
+│   ├── README.md              # Documentation hub index
+│   ├── guides/                # Getting started, controller setup, AUv3 plugin & MPE guides
+│   ├── architecture/          # Architecture overview, tech stack & design specifications
+│   ├── hardware/              # Controller feature matrix & hardware support
+│   ├── specifications/        # MIDI/MPE specification & instrument techniques contract
+│   └── roadmap/               # Product roadmap, MIDI 2.0 specs, improvements & research
 ├── .github/workflows/         # Automated macOS CI & packaging workflow (macos-ci.yml)
 ├── .agents/skills/            # Specialized agent skills and workflow guides
 ├── AGENTS.md                  # Agent operating instructions and modular rules
 ├── CHANGELOG.md               # Version history and detailed changelogs
-├── DESIGN.md                  # Authoritative interaction, feedback, and ergonomic rules
-├── INSTRUMENT_TECHNIQUES.md   # Semantic technique and instrument-profile contract
-├── MIDI2_ROADMAP.md           # MIDI 2.0 & MIDI-CI experimental roadmap
-├── MIDI_MPE_SPEC.md           # CoreMIDI, MPE zone, expression, and fallback contract
-├── PRODUCT_RESEARCH.md        # Competitive and product research
-├── ROADMAP.md                 # 5-phase product development trajectory
 ├── SOUL.md                    # Philosophical and artistic instrument manifesto
-├── TECH_STACK.md              # Technical, mathematical & latency specifications
-└── README.md                  # Project documentation and guide
+└── README.md                  # Project documentation and entrypoint guide
 ```
 
 ---

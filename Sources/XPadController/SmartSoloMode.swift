@@ -78,7 +78,11 @@ public final class SmartSoloEngine: @unchecked Sendable {
             )
 
             let quadrant = soloTheory.polarQuadrant(for: angle)
-            let isNewStrike = previousRadius <= 0.15 || (abs(angle - previousAngle) > 0.45 && timestamp - lastStrikeTimestamp > 0.12)
+            var deltaAngle = abs(angle - previousAngle)
+            if deltaAngle > .pi {
+                deltaAngle = (2.0 * .pi) - deltaAngle
+            }
+            let isNewStrike = previousRadius <= 0.15 || (deltaAngle > 0.45 && timestamp - lastStrikeTimestamp > 0.12)
 
             telemetry = SmartSoloTelemetry(
                 isActive: true,

@@ -240,24 +240,28 @@ extension PracticeLesson {
         
         let steps = [
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0001-000000000001")!,
                 instruction: "Start on the tonic (I) chord",
                 expectedChord: Chord(root: key, quality: .major),
                 hint: "This is your home base - the most stable chord",
                 harmonicContext: "Tonic"
             ),
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0001-000000000002")!,
                 instruction: "Move to the supertonic (ii) chord",
                 expectedChord: Chord(root: key.transposed(by: 2), quality: .minor),
                 hint: "The ii chord sets up movement toward V",
                 harmonicContext: "Pre-Dominant"
             ),
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0001-000000000003")!,
                 instruction: "Resolve to the dominant (V) chord",
                 expectedChord: Chord(root: key.transposed(by: 7), quality: .major),
                 hint: "The V chord creates tension that wants to resolve",
                 harmonicContext: "Dominant"
             ),
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0001-000000000004")!,
                 instruction: "Return home to tonic (I)",
                 expectedChord: Chord(root: key, quality: .major),
                 hint: "Feel the resolution back to stability",
@@ -266,6 +270,7 @@ extension PracticeLesson {
         ]
         
         return PracticeLesson(
+            id: UUID(uuidString: "A0000000-0000-0000-0000-000000000001")!,
             title: "ii-V-I in Major",
             description: "Learn the most important chord progression in Western music. This progression creates tension and resolution that forms the backbone of countless songs.",
             category: .fundamentals,
@@ -288,24 +293,28 @@ extension PracticeLesson {
         
         let steps = [
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0002-000000000001")!,
                 instruction: "Start on the minor tonic (i)",
                 expectedChord: Chord(root: key, quality: .minor),
                 hint: "The i chord in minor has a darker quality",
                 harmonicContext: "Tonic"
             ),
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0002-000000000002")!,
                 instruction: "Move to the diminished (ii°) chord",
                 expectedChord: Chord(root: key.transposed(by: 2), quality: .diminished),
                 hint: "The ii° chord is even more tense than major ii",
                 harmonicContext: "Pre-Dominant"
             ),
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0002-000000000003")!,
                 instruction: "Go to the dominant (V) chord",
                 expectedChord: Chord(root: key.transposed(by: 7), quality: .major),
                 hint: "In minor, V is often major for stronger resolution",
                 harmonicContext: "Dominant"
             ),
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0002-000000000004")!,
                 instruction: "Resolve back to minor tonic (i)",
                 expectedChord: Chord(root: key, quality: .minor),
                 hint: "Notice the darker resolution compared to major",
@@ -314,6 +323,7 @@ extension PracticeLesson {
         ]
         
         return PracticeLesson(
+            id: UUID(uuidString: "A0000000-0000-0000-0000-000000000002")!,
             title: "ii-V-I in Minor",
             description: "Explore the minor key version of the essential ii-V-I progression. Learn how the altered chord qualities create a different emotional landscape.",
             category: .fundamentals,
@@ -336,30 +346,35 @@ extension PracticeLesson {
         
         let steps = [
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0003-000000000001")!,
                 instruction: "Start on C major (I)",
                 expectedChord: Chord(root: .c, quality: .major),
                 hint: "Begin at the top of the circle",
                 harmonicContext: "Tonic"
             ),
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0003-000000000002")!,
                 instruction: "Move down a fifth to F major (IV)",
                 expectedChord: Chord(root: .f, quality: .major),
                 hint: "Moving down a fifth is the same as up a fourth",
                 harmonicContext: "Subdominant"
             ),
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0003-000000000003")!,
                 instruction: "Continue to Bb major",
                 expectedChord: Chord(root: .aSharp, quality: .major),
                 hint: "Each step moves you further from the home key",
                 harmonicContext: "Chromatic Mediant"
             ),
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0003-000000000004")!,
                 instruction: "Move to Eb major",
                 expectedChord: Chord(root: .dSharp, quality: .major),
                 hint: "Notice how the tonal center shifts",
                 harmonicContext: "Chromatic Mediant"
             ),
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0003-000000000005")!,
                 instruction: "Return to C major (I)",
                 expectedChord: Chord(root: .c, quality: .major),
                 hint: "Complete the circle back home",
@@ -368,6 +383,7 @@ extension PracticeLesson {
         ]
         
         return PracticeLesson(
+            id: UUID(uuidString: "A0000000-0000-0000-0000-000000000003")!,
             title: "Circle of Fifths Journey",
             description: "Travel through the circle of fifths and understand how root motion by perfect fifths creates strong harmonic movement. This pattern appears throughout jazz and classical music.",
             category: .diatonicProgressions,
@@ -390,6 +406,7 @@ extension PracticeLesson {
         
         let steps = [
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0004-000000000001")!,
                 instruction: "Start with ii-V-I: Dm, G, C",
                 expectedChord: Chord(root: .c, quality: .major),
                 durationBeats: 12.0,
@@ -397,12 +414,14 @@ extension PracticeLesson {
                 harmonicContext: "Complete ii-V-I"
             ),
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0004-000000000002")!,
                 instruction: "Add the deceptive vi: Am",
                 expectedChord: Chord(root: .a, quality: .minor),
                 hint: "The vi chord creates a deceptive resolution",
                 harmonicContext: "Deceptive Resolution"
             ),
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0004-000000000003")!,
                 instruction: "Full progression: ii-V-I-vi",
                 expectedChord: Chord(root: .a, quality: .minor),
                 durationBeats: 16.0,
@@ -412,6 +431,7 @@ extension PracticeLesson {
         ]
         
         return PracticeLesson(
+            id: UUID(uuidString: "A0000000-0000-0000-0000-000000000004")!,
             title: "Jazz ii-V-I-vi Turnaround",
             description: "Master the essential jazz turnaround progression. This four-chord pattern appears in countless jazz standards and provides the foundation for improvisation.",
             category: .jazzHarmony,
@@ -434,24 +454,28 @@ extension PracticeLesson {
         
         let steps = [
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0005-000000000001")!,
                 instruction: "Start with I - V: C to G",
                 expectedChord: Chord(root: .g, quality: .major),
                 hint: "The most basic rock and pop progression",
                 harmonicContext: "I-V Movement"
             ),
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0005-000000000002")!,
                 instruction: "Add vi: Am to create I-V-vi",
                 expectedChord: Chord(root: .a, quality: .minor),
                 hint: "The vi adds emotional depth",
                 harmonicContext: "I-V-vi"
             ),
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0005-000000000003")!,
                 instruction: "Complete with IV: F for I-V-vi-IV",
                 expectedChord: Chord(root: .f, quality: .major),
                 hint: "The 'axis of awesome' progression",
                 harmonicContext: "Pop Progression"
             ),
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0005-000000000004")!,
                 instruction: "Practice the full progression repeatedly",
                 expectedChord: Chord(root: .c, quality: .major),
                 durationBeats: 16.0,
@@ -461,6 +485,7 @@ extension PracticeLesson {
         ]
         
         return PracticeLesson(
+            id: UUID(uuidString: "A0000000-0000-0000-0000-000000000005")!,
             title: "Pop Music Progressions",
             description: "Learn the most common chord progressions in popular music. The I-V-vi-IV progression appears in countless hit songs across multiple decades.",
             category: .diatonicProgressions,
@@ -483,24 +508,28 @@ extension PracticeLesson {
         
         let steps = [
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0006-000000000001")!,
                 instruction: "Play C major (I) - notice the voicing",
                 expectedChord: Chord(root: .c, quality: .major),
                 hint: "Pay attention to which notes you're actually playing",
                 harmonicContext: "Starting Voicing"
             ),
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0006-000000000002")!,
                 instruction: "Move to F major (IV) with minimal motion",
                 expectedChord: Chord(root: .f, quality: .major),
                 hint: "Try to keep common tones (C) in the same voice",
                 harmonicContext: "Voice Leading Challenge"
             ),
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0006-000000000003")!,
                 instruction: "Go to G major (V) smoothly",
                 expectedChord: Chord(root: .g, quality: .major),
                 hint: "Maintain smooth voice movement between chord changes",
                 harmonicContext: "Voice Leading Challenge"
             ),
             PracticeStep(
+                id: UUID(uuidString: "A0000000-0000-0000-0006-000000000004")!,
                 instruction: "Return to C major (I) elegantly",
                 expectedChord: Chord(root: .c, quality: .major),
                 hint: "Notice how smooth voice leading creates better musical flow",
@@ -509,6 +538,7 @@ extension PracticeLesson {
         ]
         
         return PracticeLesson(
+            id: UUID(uuidString: "A0000000-0000-0000-0000-000000000006")!,
             title: "Voice Leading Fundamentals",
             description: "Learn the art of smooth voice leading - the practice of moving individual chord voices as little as possible between harmonic changes. This creates more musical and professional-sounding progressions.",
             category: .voiceLeading,
@@ -533,6 +563,7 @@ extension PracticeChallenge {
         
         return [
             PracticeChallenge(
+                id: UUID(uuidString: "B0000000-0000-0000-0000-000000000001")!,
                 type: .guessNextChord,
                 title: "Chord Prediction",
                 description: "Guess the next chord in the progression based on harmonic context",
@@ -541,6 +572,7 @@ extension PracticeChallenge {
                 baseProgression: progression
             ),
             PracticeChallenge(
+                id: UUID(uuidString: "B0000000-0000-0000-0000-000000000002")!,
                 type: .voiceLeadingOptimization,
                 title: "Smooth Voice Leading",
                 description: "Achieve the smoothest possible voice leading between chord changes",
@@ -549,6 +581,7 @@ extension PracticeChallenge {
                 baseProgression: progression
             ),
             PracticeChallenge(
+                id: UUID(uuidString: "B0000000-0000-0000-0000-000000000003")!,
                 type: .speedAccuracy,
                 title: "Speed Round",
                 description: "Complete the progression as quickly and accurately as possible",
