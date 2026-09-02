@@ -1168,6 +1168,21 @@ public final class SynthVoice: @unchecked Sendable {
             
             var reachedReleaseEnd = false
 
+            // Precalculate unison and string increments outside the frame loop
+            let unisonDetunes: [Double] = [-0.35, -0.22, -0.10, 0.0, 0.10, 0.22, 0.35]
+            var unisonIncrements = [Double](repeating: 0.0, count: 7)
+            for vi in 0..<7 {
+                let df = frequency * (pow(2.0, unisonDetunes[vi] / 12.0) - 1.0)
+                unisonIncrements[vi] = min((frequency + df) / sampleRate, 0.49)
+            }
+
+            let stringDetunes: [Double] = [-0.08, -0.025, 0.025, 0.08]
+            var stringIncrements = [Double](repeating: 0.0, count: 4)
+            for vi in 0..<4 {
+                let df = frequency * (pow(2.0, stringDetunes[vi] / 12.0) - 1.0)
+                stringIncrements[vi] = min((frequency + df) / sampleRate, 0.49)
+            }
+
             for frame in 0..<Int(frameCount) {
                 // Envelope
                 let envValue: Double
@@ -1197,11 +1212,9 @@ public final class SynthVoice: @unchecked Sendable {
                 let first: Double
                 switch snap.oscillator1 {
                 case .unison:
-                    let unisonDetunes: [Double] = [-0.35, -0.22, -0.10, 0.0, 0.10, 0.22, 0.35]
                     var unisonMix = 0.0
                     for vi in 0..<7 {
-                        let df = frequency * (pow(2.0, unisonDetunes[vi] / 12.0) - 1.0)
-                        let inc = min((frequency + df) / sampleRate, 0.49)
+                        let inc = unisonIncrements[vi]
                         let s = (unisonPhases[vi] * 2.0 - 1.0)
                             - DSPMath.polyBLEP(phase: unisonPhases[vi], increment: inc)
                         unisonMix += s
@@ -1210,11 +1223,9 @@ public final class SynthVoice: @unchecked Sendable {
                     }
                     first = unisonMix * 0.18
                 case .strings:
-                    let stringDetunes: [Double] = [-0.08, -0.025, 0.025, 0.08]
                     var strMix = 0.0
                     for vi in 0..<4 {
-                        let df = frequency * (pow(2.0, stringDetunes[vi] / 12.0) - 1.0)
-                        let inc = min((frequency + df) / sampleRate, 0.49)
+                        let inc = stringIncrements[vi]
                         let s = (stringsPhases[vi] * 2.0 - 1.0)
                             - DSPMath.polyBLEP(phase: stringsPhases[vi], increment: inc)
                         strMix += s
