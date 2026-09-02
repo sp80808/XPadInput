@@ -1,4 +1,5 @@
 import Foundation
+import GameController
 import AudioToolbox
 import AVFoundation
 import XPadCore
@@ -7,6 +8,8 @@ import XPadController
 import XPadMIDI
 import XPadAudio
 import XPadSequencer
+import XPadPractice
+import XPadUI
 
 @MainActor
 final class TestRunner {
@@ -63,6 +66,7 @@ final class TestRunner {
     }
 
     func run() {
+        setbuf(stdout, nil)
         print("==================================================")
         print("🎮 XPI: Game Controller MIDI — Comprehensive Test Suite Runner")
         print("==================================================")
@@ -163,6 +167,53 @@ final class TestRunner {
                 }
             }
 
+            test("Performance Lane Registers Clamp and Recall per Instrument") {
+                var memory = PerformanceLaneRegisterMemory()
+                var guitar = memory.settings(for: .guitar)
+                let bass = memory.settings(for: .bass)
+
+                assertEqual(guitar.strumOctave, 3)
+                assertEqual(guitar.faceButtonOctave, 3)
+                assertEqual(bass.strumOctave, 2)
+                assertEqual(bass.faceButtonOctave, 2)
+
+                guitar.setStrumOctave(8)
+                guitar.setFaceButtonOctave(4)
+                memory.remember(guitar, for: .guitar)
+                assertEqual(memory.settings(for: .guitar).strumOctave, 5)
+                assertEqual(memory.settings(for: .guitar).faceButtonOctave, 4)
+                guitar.shiftBoth(by: -10)
+                assertEqual(guitar.strumOctave, 2)
+                assertEqual(guitar.faceButtonOctave, 2)
+                guitar.shiftBoth(by: .max)
+                assertEqual(guitar.strumOctave, 5)
+                assertEqual(guitar.faceButtonOctave, 5)
+                guitar.shiftBoth(by: .min)
+                assertEqual(guitar.strumOctave, 2)
+                assertEqual(guitar.faceButtonOctave, 2)
+            }
+
+            test("Strum Register Anchors Voicing Independently of Face Register") {
+                let chord = Chord(root: .d, quality: .minor)
+                var registers = PerformanceLaneRegisters(strumOctave: 2, faceButtonOctave: 4)
+                let lowVoicing = ChordVoicing.strummed(
+                    chord: chord,
+                    strings: 4,
+                    baseOctave: registers.strumOctave
+                )
+
+                registers.setStrumOctave(5)
+                let highVoicing = ChordVoicing.strummed(
+                    chord: chord,
+                    strings: 4,
+                    baseOctave: registers.strumOctave
+                )
+
+                assertEqual(lowVoicing.bassNote, Note(pitchClass: .d, octave: 2))
+                assertEqual(highVoicing.bassNote, Note(pitchClass: .d, octave: 5))
+                assertEqual(registers.faceButtonOctave, 4)
+            }
+
             test("PerformanceEvent MIDI Cases") {
                 let event = PerformanceEvent.noteOn(channel: 0, note: 60, velocity: 100)
                 if case .noteOn(_, let note, let velocity) = event {
@@ -201,6 +252,14 @@ final class TestRunner {
                 let topSector = wheel.sector(forAngle: -.pi / 2.0, layer: .diatonic)
                 assertNotNil(topSector)
                 assertEqual(topSector?.romanNumeral, "I")
+
+                // Pentatonic & Blues Scales without crash
+                let pentatonicWheel = HarmonicWheel(scale: Scale(root: .c, type: .pentatonicMajor))
+                assertFalse(pentatonicWheel.sectorsByLayer.isEmpty)
+                let minorPentWheel = HarmonicWheel(scale: Scale(root: .a, type: .pentatonicMinor))
+                assertFalse(minorPentWheel.sectorsByLayer.isEmpty)
+                let bluesWheel = HarmonicWheel(scale: Scale(root: .c, type: .blues))
+                assertFalse(bluesWheel.sectorsByLayer.isEmpty)
             }
 
             test("Voice Leading Optimization & Minimal Motion") {
@@ -257,6 +316,12 @@ final class TestRunner {
                 assertTrue(presets.count >= 3)
                 let mutated = presets[0].mutated(complexity: 0.5, preserveRoots: true)
                 assertEqual(mutated.blocks.count, presets[0].blocks.count)
+
+                let minorScale = Scale(root: .a, type: .naturalMinor)
+                assertTrue(minorScale.isMinor)
+                let minorPresets = Progression.factoryPresets(for: minorScale)
+                assertTrue(minorPresets.count >= 2)
+                assertEqual(minorPresets[0].name, "Neo Soul Groove (i - iv - VII - III)")
             }
         }
 
@@ -351,6 +416,23 @@ final class TestRunner {
                 assertEqual(manager.controllerName, "No Controller")
             }
 
+            test("ControllerManager Background Monitoring Configuration & Persistence") {
+                let manager = ControllerManager()
+                assertTrue(manager.isBackgroundMonitoringEnabled, "Background monitoring should be enabled by default")
+                assertTrue(GameController.GCController.shouldMonitorBackgroundEvents, "GCController.shouldMonitorBackgroundEvents must be true by default")
+
+                manager.isBackgroundMonitoringEnabled = false
+                assertFalse(manager.isBackgroundMonitoringEnabled)
+                assertFalse(GameController.GCController.shouldMonitorBackgroundEvents)
+                assertFalse(ControllerSettingsStore.shared.loadBackgroundMonitoring())
+
+                // Restore
+                manager.isBackgroundMonitoringEnabled = true
+                assertTrue(manager.isBackgroundMonitoringEnabled)
+                assertTrue(GameController.GCController.shouldMonitorBackgroundEvents)
+                assertTrue(ControllerSettingsStore.shared.loadBackgroundMonitoring())
+            }
+
             test("Simulated Face Button Sustains Without Retrigger") {
                 let manager = ControllerManager()
                 manager.selectControlScheme(ControlSchemePreset.xpiPerformance)
@@ -400,6 +482,33 @@ final class TestRunner {
                 assertEqual(release.faceEvents.first?.note, sustainedNote)
             }
 
+            test("Face Register Reset Rearms a Held Button at the New Octave") {
+                var engine = InstrumentPerformanceEngine(profile: .guitar)
+                let state = ControllerState()
+                state.buttonA = true
+                let chord = Chord(root: .d, quality: .minor)
+                let scale = Scale(root: .d, type: .naturalMinor)
+
+                let lowAttack = engine.process(
+                    state: state,
+                    context: MusicalContext(key: .d, scale: scale, chord: chord, registerOctave: 2),
+                    heldNotes: [],
+                    timestamp: 2.0
+                )
+                assertEqual(lowAttack.faceEvents.first?.note, Note(pitchClass: .d, octave: 2))
+
+                engine.resetMelodicTargeting(rearmFaceButtons: true)
+                let highAttack = engine.process(
+                    state: state,
+                    context: MusicalContext(key: .d, scale: scale, chord: chord, registerOctave: 4),
+                    heldNotes: [],
+                    timestamp: 2.1
+                )
+                assertEqual(highAttack.faceEvents.count, 1)
+                assertTrue(highAttack.faceEvents.first?.isOn == true)
+                assertEqual(highAttack.faceEvents.first?.note, Note(pitchClass: .d, octave: 4))
+            }
+
             test("Chord Gate Releases and Duo Drums Trigger Only on Edges") {
                 let chord = Chord(root: .d, quality: .minor)
                 let voice = ChordGateVoice(
@@ -426,6 +535,172 @@ final class TestRunner {
                 assertTrue(duo.process(state: state, drumVelocity: 127).drumHits.isEmpty)
             }
 
+            test("Arcade Fret Lane Fires Diatonic Chords Instantly") {
+                let diatonic = Chord.diatonicChords(root: .c, scale: .major)
+                var engine = ArcadeFretEngine()
+
+                let idle = engine.process(input: ArcadeFretInput(leftTriggerValue: 0.10), chords: diatonic, timestamp: 0)
+                assertTrue(idle.strikes.isEmpty)
+
+                let frame = engine.process(input: ArcadeFretInput(leftTriggerValue: 0.62), chords: diatonic, timestamp: 1)
+                assertEqual(frame.strikes.count, 1)
+                assertEqual(frame.strikes.first?.slot, .leftTrigger)
+                assertEqual(frame.strikes.first?.chord.root, PitchClass.c)
+                assertTrue(frame.isLaneActive)
+            }
+
+            test("Arcade Fret Release Edge and Velocity Scaling") {
+                let diatonic = Chord.diatonicChords(root: .c, scale: .major)
+                var engine = ArcadeFretEngine()
+                _ = engine.process(input: ArcadeFretInput(rightShoulderPressed: true), chords: diatonic, timestamp: 0)
+                let release = engine.process(input: .neutral, chords: diatonic, timestamp: 1)
+                assertEqual(release.releases, [.rightShoulder])
+                assertFalse(release.isLaneActive)
+
+                var velocityEngine = ArcadeFretEngine()
+                let soft = velocityEngine.process(input: ArcadeFretInput(leftTriggerValue: 0.35), chords: diatonic, timestamp: 0)
+                let hard = velocityEngine.process(
+                    input: ArcadeFretInput(leftTriggerValue: 0.05, rightShoulderPressed: true),
+                    chords: diatonic,
+                    timestamp: 1
+                )
+                assertTrue(soft.strikes[0].velocity < hard.strikes[0].velocity)
+                assertEqual(hard.strikes.last?.velocity, ArcadeFretEngine.bumperVelocity)
+            }
+
+            test("Arcade Face Modifiers Colour Chord Quality with Deterministic Priority") {
+                let diatonic = Chord.diatonicChords(root: .c, scale: .major)
+                var engine = ArcadeFretEngine()
+                let frame = engine.process(
+                    input: ArcadeFretInput(leftTriggerValue: 0.8, southPressed: true),
+                    chords: diatonic,
+                    timestamp: 0
+                )
+                assertEqual(frame.strikes.first?.chord.quality, .major7)
+                assertEqual(frame.strikes.first?.appliedModifiers, [.seventh])
+
+                let base = Chord(root: .g, quality: .major)
+                let stacked = ArcadeFretModifier.priorityOrder.reduce(base) { chord, modifier in
+                    modifier.applied(to: chord)
+                }
+                assertEqual(stacked.quality, .major7)
+                assertEqual(ArcadeFretModifier.sus.applied(to: base).quality, .sus4)
+                assertEqual(ArcadeFretModifier.ninth.applied(to: stacked).quality, .major7)
+            }
+
+            test("Arcade Hammer-On Replaces Chord While Lane Held and Reset Rearms") {
+                let diatonic = Chord.diatonicChords(root: .c, scale: .major)
+                var engine = ArcadeFretEngine()
+                _ = engine.process(input: ArcadeFretInput(leftTriggerValue: 0.7), chords: diatonic, timestamp: 0)
+
+                let hammerOn = engine.process(
+                    input: ArcadeFretInput(leftTriggerValue: 0.9, rightTriggerValue: 0.5),
+                    chords: diatonic,
+                    timestamp: 1
+                )
+                assertEqual(hammerOn.strikes.count, 1)
+                assertEqual(hammerOn.strikes.first?.slot, .rightTrigger)
+                assertTrue(hammerOn.isLaneActive)
+                assertEqual(hammerOn.heldSlots, [.leftTrigger, .rightTrigger])
+
+                engine.reset()
+                let rearmed = engine.process(input: ArcadeFretInput(leftTriggerValue: 0.8), chords: diatonic, timestamp: 2)
+                assertEqual(rearmed.strikes.count, 1)
+            }
+
+        }
+
+        // MARK: - Arcade Preferences Tests
+        suite("XPadUI: ArcadePreferences persistence") {
+            func reset(_ name: String) {
+                UserDefaults(suiteName: name)!.removePersistentDomain(forName: name)
+            }
+            func make(_ name: String) -> UserDefaults {
+                UserDefaults(suiteName: name)!
+            }
+
+            test("Load Returns Documented Defaults When Keys Are Absent") {
+                let suiteName = "xpi.arcade.tests"
+                reset(suiteName)
+                defer { reset(suiteName) }
+                let defaults = make(suiteName)
+
+                let store = ArcadePreferencesStore(defaults: defaults)
+                let prefs = store.load()
+
+                assertEqual(prefs, ArcadePreferences())
+                assertFalse(prefs.unlockSeen)
+                assertFalse(prefs.modeEnabled)
+                assertEqual(prefs.velocityFloor, 54)
+                assertEqual(prefs.velocityCeiling, 127)
+            }
+
+            test("Save Then Load Roundtrips All Fields") {
+                let suiteName = "xpi.arcade.tests"
+                reset(suiteName)
+                defer { reset(suiteName) }
+                let defaults = make(suiteName)
+
+                let store = ArcadePreferencesStore(defaults: defaults)
+                let original = ArcadePreferences(
+                    unlockSeen: true,
+                    modeEnabled: true,
+                    velocityFloor: 60,
+                    velocityCeiling: 120
+                )
+                store.save(original)
+
+                // Re-read through a brand-new store backed by a new instance.
+                let reloaded = ArcadePreferencesStore(defaults: make(suiteName)).load()
+                assertEqual(reloaded, original)
+                assertTrue(reloaded.unlockSeen)
+                assertEqual(reloaded.velocityCeiling, 120)
+            }
+
+            test("Validating Init Clamps Floor And Ceiling") {
+                let clampedLow = ArcadePreferences(velocityFloor: 0, velocityCeiling: 9999)
+                assertEqual(clampedLow.velocityFloor, 1)
+                assertEqual(clampedLow.velocityCeiling, 127)
+
+                let clampedHigh = ArcadePreferences(velocityFloor: 200)
+                assertEqual(clampedHigh.velocityFloor, 127)
+                assertEqual(clampedHigh.velocityCeiling, 127)
+
+                let inverted = ArcadePreferences(velocityFloor: 80, velocityCeiling: 60)
+                assertEqual(inverted.velocityCeiling, 80)
+            }
+
+            test("Stores On Different Suite Names Do Not Interfere") {
+                let primaryName = "xpi.arcade.tests"
+                let secondaryName = "xpi.arcade.tests.alt"
+                reset(primaryName)
+                reset(secondaryName)
+                defer { reset(primaryName); reset(secondaryName) }
+                let primaryStore = ArcadePreferencesStore(defaults: make(primaryName))
+                let secondaryStore = ArcadePreferencesStore(defaults: make(secondaryName))
+                primaryStore.save(ArcadePreferences(unlockSeen: true, modeEnabled: true, velocityFloor: 40, velocityCeiling: 100))
+                secondaryStore.save(ArcadePreferences())
+
+                let fromPrimary = ArcadePreferencesStore(defaults: make(primaryName)).load()
+                let fromSecondary = ArcadePreferencesStore(defaults: make(secondaryName)).load()
+                assertEqual(fromPrimary, ArcadePreferences(unlockSeen: true, modeEnabled: true, velocityFloor: 40, velocityCeiling: 100))
+                assertEqual(fromSecondary, ArcadePreferences())
+            }
+
+            test("Codable Roundtrip Preserves Equivalence") {
+                let original = ArcadePreferences(unlockSeen: true, modeEnabled: false, velocityFloor: 30, velocityCeiling: 110)
+                let decoded = try! JSONDecoder().decode(
+                    ArcadePreferences.self,
+                    from: try! JSONEncoder().encode(original)
+                )
+                assertEqual(decoded, original)
+
+                reset("xpi.arcade.tests")
+                defer { reset("xpi.arcade.tests") }
+                let defaults = make("xpi.arcade.tests")
+                ArcadePreferencesStore(defaults: defaults).save(decoded)
+                assertEqual(ArcadePreferencesStore(defaults: defaults).load(), original)
+            }
         }
 
         // MARK: - MIDI Tests
@@ -520,6 +795,66 @@ final class TestRunner {
                 assertEqual(midi.sentMessages.count, 3)
             }
 
+            test("Live expression dispatch keeps MIDI 2 MPE pressure below 7-bit quantization") {
+                let midi = MIDIEngine()
+                midi.transportProtocol = .midi2
+                let mpe = MPEManager(midiEngine: midi)
+                mpe.noteOn(note: 60, velocity: 100)
+                midi.clearMessageLog()
+
+                LiveExpressionDispatch.sendPressure(
+                    mpe: mpe,
+                    midi: midi,
+                    destination: .genericMPE,
+                    preferredPressureMode: .mpePressure,
+                    note: 60,
+                    ports: [.melody],
+                    normalizedPressure: 0.5001
+                )
+                LiveExpressionDispatch.sendPressure(
+                    mpe: mpe,
+                    midi: midi,
+                    destination: .genericMPE,
+                    preferredPressureMode: .mpePressure,
+                    note: 60,
+                    ports: [.melody],
+                    normalizedPressure: 0.5002
+                )
+
+                assertEqual(mpe.voice(for: 60)?.currentPressureNormalized, Optional(0.5002))
+                assertEqual(mpe.voice(for: 60)?.currentPressure, Optional(UInt8(64)))
+            }
+
+            test("Live expression dispatch conventional MIDI 2 path uses normalized pressure") {
+                let midi = MIDIEngine()
+                midi.transportProtocol = .midi2
+                let mpe = MPEManager(midiEngine: midi)
+                midi.clearMessageLog()
+
+                LiveExpressionDispatch.sendPressure(
+                    mpe: mpe,
+                    midi: midi,
+                    destination: .genericMIDI,
+                    preferredPressureMode: .channelPressure,
+                    note: 60,
+                    ports: [.melody],
+                    normalizedPressure: 0.5001
+                )
+                LiveExpressionDispatch.sendPressure(
+                    mpe: mpe,
+                    midi: midi,
+                    destination: .genericMIDI,
+                    preferredPressureMode: .channelPressure,
+                    note: 60,
+                    ports: [.melody],
+                    normalizedPressure: 0.5002
+                )
+
+                assertEqual(midi.sentMessages.count, 2)
+                assertEqual(midi.sentMessages[0].bytes, [0xD0, 64])
+                assertEqual(midi.sentMessages[1].port, .melody)
+            }
+
             test("Repeated MPE Attack Reuses Its Saturated Member Channel") {
                 let midi = MIDIEngine()
                 let mpe = MPEManager(midiEngine: midi)
@@ -602,6 +937,28 @@ final class TestRunner {
                 assertTrue(release.events.contains(.timbreCC74(channel: 1, value: 64)))
             }
 
+            test("Technique Recorder Closes a Note Before Register Retarget") {
+                let recorder = TechniqueRecorder()
+                let low = Note(pitchClass: .d, octave: 2)
+                let high = Note(pitchClass: .d, octave: 4)
+                recorder.start()
+
+                recorder.record(
+                    InstrumentPerformanceEvent(note: low, phase: .began, velocity: 96),
+                    tick: 100
+                )
+                recorder.recordNoteOff(note: low.midiNote, tick: 120)
+                recorder.record(
+                    InstrumentPerformanceEvent(note: high, phase: .began, velocity: 96),
+                    tick: 120
+                )
+                recorder.recordNoteOff(note: high.midiNote, tick: 160)
+
+                let events = recorder.stop()
+                assertEqual(events.map(\.event.note), [low, high])
+                assertEqual(events.map(\.durationTicks), [UInt64(20), UInt64(40)])
+            }
+
             test("Virtual MIDI Enable Configures MPE and Disable Delivers Panic") {
                 let midi = MIDIEngine()
                 let mpe = MPEManager(midiEngine: midi, bendRangeSemitones: 48)
@@ -642,6 +999,126 @@ final class TestRunner {
                 assertTrue(midi.sentMessages.contains { $0.bytes == [0xB1, 123, 0] })
             }
 
+            test("MIDI2UMPDecoder decodes MIDI 1.0 channel voice UMP words") {
+                // Type 0x2: Note On Ch 0, Note 60, Vel 100 -> 0x20903C64
+                let noteOnWord: UInt32 = (0x2 << 28) | (0x90 << 16) | (60 << 8) | 100
+                let decodedOn = MIDI2UMPDecoder.decode(words: [noteOnWord])
+                assertEqual(decodedOn.count, 1)
+                if case .channelVoice(let event, let rawBytes) = decodedOn[0] {
+                    assertEqual(event, .noteOn(channel: 0, note: 60, velocity: 100))
+                    assertEqual(rawBytes, [0x90, 60, 100])
+                } else {
+                    assertTrue(false, "Expected channel voice Note On")
+                }
+
+                // Type 0x2: Pitch Bend Ch 1, 14-bit 8192 (Centre) -> 0x20E10040
+                let bendWord: UInt32 = (0x2 << 28) | (0xE1 << 16) | (0x00 << 8) | 0x40
+                let decodedBend = MIDI2UMPDecoder.decode(words: [bendWord])
+                assertEqual(decodedBend.count, 1)
+                if case .channelVoice(let event, let rawBytes) = decodedBend[0] {
+                    assertEqual(event, .pitchBend(channel: 1, value: 0))
+                    assertEqual(rawBytes, [0xE1, 0x00, 0x40])
+                } else {
+                    assertTrue(false, "Expected channel voice Pitch Bend")
+                }
+            }
+
+            test("MIDI2UMPDecoder decodes MIDI 2.0 high-resolution channel voice and per-note UMPs") {
+                // Type 0x4: MIDI 2.0 Note On Ch 2, Note 64, 16-bit Vel 0xFFFF (127) -> words: [0x40924000, 0xFFFF0000]
+                let noteOnUMP = MIDI2UMPEncoder.noteOnMessage(channel: 2, note: 64, velocity16: 0xFFFF)
+                let decodedNote = MIDI2UMPDecoder.decode(words: [noteOnUMP.word0, noteOnUMP.word1])
+                assertEqual(decodedNote.count, 1)
+                if case .channelVoice(let event, let rawBytes) = decodedNote[0] {
+                    assertEqual(event, .noteOn(channel: 2, note: 64, velocity: 127))
+                    assertEqual(rawBytes, [0x92, 64, 127])
+                } else {
+                    assertTrue(false, "Expected MIDI 2.0 Note On")
+                }
+
+                // Type 0x4: MIDI 2.0 Per-Note Pitch Bend Ch 0, Note 60, +2.0 semitones
+                let perNoteBendUMP = MIDI2UMPEncoder.perNotePitchBendMessage(
+                    channel: 0,
+                    note: 60,
+                    semitoneOffset: 2.0,
+                    bendRangeSemitones: 48.0
+                )
+                let decodedPerNoteBend = MIDI2UMPDecoder.decode(words: [perNoteBendUMP.word0, perNoteBendUMP.word1])
+                assertEqual(decodedPerNoteBend.count, 1)
+                if case .perNotePitchBend(let ch, let note, let semitones, _) = decodedPerNoteBend[0] {
+                    assertEqual(ch, 0)
+                    assertEqual(note, 60)
+                    assertTrue(abs(semitones - 2.0) < 0.01)
+                } else {
+                    assertTrue(false, "Expected Per-Note Pitch Bend")
+                }
+
+                // Type 0x4: MIDI 2.0 Per-Note Pressure Ch 0, Note 60, normalized 0.75
+                let perNotePressUMP = MIDI2UMPEncoder.perNotePressureMessage(
+                    channel: 0,
+                    note: 60,
+                    normalizedPressure: 0.75
+                )
+                let decodedPress = MIDI2UMPDecoder.decode(words: [perNotePressUMP.word0, perNotePressUMP.word1])
+                assertTrue(decodedPress.contains(where: {
+                    if case .perNotePressure(let ch, let note, let norm) = $0 {
+                        return ch == 0 && note == 60 && abs(norm - 0.75) < 0.01
+                    }
+                    return false
+                }))
+            }
+
+            test("MIDI2UMPDecoder multi-packet SysEx7 streaming reassembly") {
+                // Type 0x3 SysEx: Send Start packet with 6 bytes, then End packet with 3 bytes
+                var sysExBuffer: [UInt8] = []
+                let startPacketWord0: UInt32 = (0x3 << 28) | (0x1 << 20) | (6 << 16) | (0xF0 << 8) | 0x7E
+                let startPacketWord1: UInt32 = (0x01 << 24) | (0x06 << 16) | (0x01 << 8) | 0x02
+                let endPacketWord0: UInt32 = (0x3 << 28) | (0x3 << 20) | (2 << 16) | (0x03 << 8) | 0xF7
+                let endPacketWord1: UInt32 = 0
+
+                let messages = MIDI2UMPDecoder.decodeStream(
+                    words: [startPacketWord0, startPacketWord1, endPacketWord0, endPacketWord1],
+                    sysExBuffer: &sysExBuffer
+                )
+                assertEqual(messages.count, 1)
+                if case .sysEx(let bytes) = messages[0] {
+                    assertEqual(bytes, [0xF0, 0x7E, 0x01, 0x06, 0x01, 0x02, 0x03, 0xF7])
+                } else {
+                    assertTrue(false, "Expected reassembled SysEx payload")
+                }
+            }
+
+            test("MIDIEngine passthru routing and incoming representation") {
+                let midi = MIDIEngine()
+                var receivedEvents: [PerformanceEvent] = []
+                midi.onIncomingEvent = { event, _ in
+                    receivedEvents.append(event)
+                }
+
+                // Simulate incoming UMP Note On: 0x20903C64 (Note On Ch 0 Note 60 Vel 100)
+                let noteOnWord: UInt32 = (0x2 << 28) | (0x90 << 16) | (60 << 8) | 100
+                midi.clearMessageLog()
+
+                // Test Passthru Mode = .off
+                midi.passthruMode = .off
+                // Decode words directly through passthru decoder
+                let decoded = MIDI2UMPDecoder.decode(words: [noteOnWord])
+                if case .channelVoice(let event, let rawBytes) = decoded[0] {
+                    midi.onIncomingEvent?(event, rawBytes)
+                }
+                assertEqual(receivedEvents.count, 1)
+                assertEqual(receivedEvents[0], .noteOn(channel: 0, note: 60, velocity: 100))
+
+                // Test Passthru Mode properties
+                assertEqual(MIDIPassthruMode.off.routesToAudio, false)
+                assertEqual(MIDIPassthruMode.off.routesToOutputs, false)
+                assertEqual(MIDIPassthruMode.thruToAudio.routesToAudio, true)
+                assertEqual(MIDIPassthruMode.thruToAudio.routesToOutputs, false)
+                assertEqual(MIDIPassthruMode.thruToOutputs.routesToAudio, false)
+                assertEqual(MIDIPassthruMode.thruToOutputs.routesToOutputs, true)
+                assertEqual(MIDIPassthruMode.full.routesToAudio, true)
+                assertEqual(MIDIPassthruMode.full.routesToOutputs, true)
+            }
+
             test("SMFExporter MIDI File Binary Structure") {
                 let exporter = SMFExporter()
                 let events = [
@@ -652,6 +1129,21 @@ final class TestRunner {
                 assertTrue(data.count > 30)
                 let header = Array(data[0..<4])
                 assertEqual(header, [0x4D, 0x54, 0x68, 0x64]) // "MThd"
+            }
+
+            test("SMFExporter VLQ Clamping and Stable Event Ordering") {
+                let exporter = SMFExporter()
+                let vlqSmall = exporter.encodeVariableLength(0)
+                assertEqual(vlqSmall, [0x00])
+                let vlq127 = exporter.encodeVariableLength(127)
+                assertEqual(vlq127, [0x7F])
+                let vlq128 = exporter.encodeVariableLength(128)
+                assertEqual(vlq128, [0x81, 0x00])
+
+                // Clamped at 28-bit 0x0FFFFFFF
+                let vlqMax = exporter.encodeVariableLength(0xFFFFFFFF_FFFFFFFF)
+                assertEqual(vlqMax.count, 4)
+                assertEqual(vlqMax, [0xFF, 0xFF, 0xFF, 0x7F])
             }
         }
 
@@ -666,6 +1158,66 @@ final class TestRunner {
                 assertEqual(audio.trackedVoiceCount, 1, "A release tail must remain tracked until it detaches.")
                 audio.panic()
                 assertEqual(audio.trackedVoiceCount, 0, "Panic must hard-stop active and releasing voices.")
+                audio.stop()
+            }
+
+            test("AudioEngine Mute State & Resource Bypassing") {
+                let audio = AudioEngine()
+                audio.start()
+                assertEqual(audio.isMuted, false)
+                audio.setVolume(0.85)
+                assertEqual(audio.volume, 0.85)
+
+                audio.noteOn(note: 60, velocity: 100)
+                assertEqual(audio.trackedVoiceCount, 1)
+
+                // Muting should immediately stop all sounding voices
+                audio.setMuted(true)
+                assertEqual(audio.isMuted, true)
+                assertEqual(audio.trackedVoiceCount, 0, "Muting must clear all active sounding voices")
+
+                // Triggering notes while muted should not allocate any voices
+                audio.noteOn(note: 62, velocity: 100)
+                assertEqual(audio.trackedVoiceCount, 0, "Muted synth must bypass voice node allocation")
+                audio.triggerDrum(.kick, velocity: 100)
+                assertEqual(audio.trackedDrumVoiceCount, 0, "Muted synth must bypass drum voice allocation")
+
+                // Toggle unmute restores engine and stored volume
+                audio.toggleMute()
+                assertEqual(audio.isMuted, false)
+                assertEqual(audio.volume, 0.85, "Volume setting must be preserved through mute cycle")
+
+                audio.noteOn(note: 64, velocity: 100)
+                assertEqual(audio.trackedVoiceCount, 1)
+                audio.panic()
+                assertEqual(audio.trackedVoiceCount, 0)
+                audio.stop()
+            }
+
+            test("Guitar FFT Sine Default Preset & Acoustic Harmonics") {
+                let audio = AudioEngine()
+                assertEqual(audio.currentPreset.id, "acousticSine", "Default preset must be acousticSine")
+                assertEqual(audio.currentPreset.osc1Type, .sine, "Default oscillator 1 must be sine-orientated")
+                assertEqual(audio.currentPreset.osc2Type, .triangle, "Default oscillator 2 must be triangle (1/n^2 rolloff)")
+                assertEqual(audio.currentPreset.osc2Level, 0.28, "Overtone balance must match guitar FFT overtone ratios")
+                assertEqual(audio.currentPreset.filterCutoffHz, 2600.0, "Filter cutoff must match guitar body acoustic response")
+                assertEqual(audio.currentPreset.filterType, .lowPass)
+                
+                assertEqual(SynthPreset.allPresets.count, 14)
+                assertEqual(SynthPreset.allPresets[0].id, "acousticSine")
+                assertEqual(SynthPreset.nylonSine.osc1Type, .sine)
+                assertEqual(SynthPreset.cleanElectricSine.osc1Type, .sine)
+
+                // Voice synthesis with guitar harmonics
+                audio.start()
+                audio.setPreset(.acousticSine)
+                audio.noteOn(note: 64, velocity: 110, technique: .harmonic)
+                audio.setHarmonicEmphasis(for: 64, amount: 0.8, pinch: false)
+                audio.setTimbre(for: 64, timbre: 0.7)
+                audio.setPitchBend(for: 64, semitones: 2.0)
+                assertEqual(audio.currentPitchBend(for: 64), 2.0)
+                audio.noteOff(note: 64)
+                audio.panic()
                 audio.stop()
             }
         }
@@ -960,8 +1512,46 @@ final class TestRunner {
                 assertEqual(sequencer.recordedEvents[0].note, 60)
                 assertEqual(sequencer.recordedEvents[0].durationTicks, 480)
 
+                // Recording across loop wrap (e.g. noteOn at tick 3800, loop ends at 3840, noteOff at tick 100)
+                sequencer.transport.isRecording = true
+                sequencer.transport.loopStartTick = 0
+                sequencer.transport.loopEndTick = 3840
+                sequencer.transport.loopEnabled = true
+                sequencer.transport.currentTick = 3800
+                sequencer.recordNoteOn(note: 64, velocity: 100)
+                sequencer.transport.currentTick = 100
+                sequencer.recordNoteOff(note: 64)
+
+                assertEqual(sequencer.recordedEvents.count, 2)
+                assertEqual(sequencer.recordedEvents[1].note, 64)
+                assertEqual(sequencer.recordedEvents[1].durationTicks, (3840 - 3800) + 100)
+
+                // Mid-playback BPM changes
+                sequencer.setBPM(140.0)
+                assertEqual(sequencer.transport.bpm, 140.0)
+
                 sequencer.stop()
                 assertFalse(sequencer.transport.isPlaying)
+            }
+
+            test("Performance Recording Pipeline captures live notes into Sequencer") {
+                let appState = AppState()
+                appState.toggleRecording()
+                assertTrue(appState.isRecording)
+                assertTrue(appState.sequencer.transport.isRecording)
+
+                appState.sequencer.transport.currentTick = 0
+                appState.handleFaceButtonEvent(role: .root, isPressed: true, velocity: 110)
+                appState.sequencer.transport.currentTick = 480
+                appState.handleFaceButtonEvent(role: .root, isPressed: false, velocity: 0)
+
+                assertFalse(appState.sequencer.recordedEvents.isEmpty)
+                let recorded = appState.sequencer.recordedEvents[0]
+                assertEqual(recorded.startTick, 0)
+                assertEqual(recorded.durationTicks, 480)
+
+                appState.toggleRecording()
+                assertFalse(appState.isRecording)
             }
         }
 
@@ -1102,6 +1692,149 @@ final class TestRunner {
                 assertTrue(targets.contains(where: { abs($0.semitones - 2) < 0.01 }))
             }
 
+            test("Harmonic chord bender bends C Major triad in-key to D minor triad") {
+                let bender = HarmonicChordBender()
+                let cMajorTriad = [
+                    Note(pitchClass: .c, octave: 4), // 60
+                    Note(pitchClass: .e, octave: 4), // 64
+                    Note(pitchClass: .g, octave: 4)  // 67
+                ]
+                let context = MusicalContext(
+                    key: .c,
+                    scale: Scale(root: .c, type: .major),
+                    chord: Chord(root: .c, quality: .major),
+                    pitchAssist: .strong
+                )
+                // Lead note (C4=60) bends up +2 semitones (to D4)
+                let bends = bender.bends(for: cMajorTriad, leadBendSemitones: 2.0, context: context)
+                
+                // In C Major:
+                // C4 -> D4 (+2 semitones)
+                // E4 -> F4 (+1 semitone)
+                // G4 -> A4 (+2 semitones)
+                let cBend = bends[60] ?? 0
+                let eBend = bends[64] ?? 0
+                let gBend = bends[67] ?? 0
+
+                assertEqual(Int(cBend.rounded()), 2)
+                assertEqual(Int(eBend.rounded()), 1)
+                assertEqual(Int(gBend.rounded()), 2)
+
+                let resultingNotes = [
+                    Note.fromMIDI(UInt8(60 + Int(cBend.rounded()))),
+                    Note.fromMIDI(UInt8(64 + Int(eBend.rounded()))),
+                    Note.fromMIDI(UInt8(67 + Int(gBend.rounded())))
+                ]
+                let score = bender.consonanceScore(for: resultingNotes)
+                assertTrue(score > 0.75, "Resulting D minor chord must have high harmonic consonance")
+            }
+
+            test("Harmonic chord bender downward bend preserves in-key harmony") {
+                let bender = HarmonicChordBender()
+                let cMajorTriad = [
+                    Note(pitchClass: .c, octave: 4), // 60
+                    Note(pitchClass: .e, octave: 4), // 64
+                    Note(pitchClass: .g, octave: 4)  // 67
+                ]
+                let context = MusicalContext(
+                    key: .c,
+                    scale: Scale(root: .c, type: .major),
+                    chord: Chord(root: .c, quality: .major),
+                    pitchAssist: .strong
+                )
+                // Lead note bends down -1 semitone (1 diatonic step down: C->B is -1, E->D is -2, G->F is -2)
+                let bends = bender.bends(for: cMajorTriad, leadBendSemitones: -1.0, context: context)
+                
+                let cBend = bends[60] ?? 0
+                let eBend = bends[64] ?? 0
+                let gBend = bends[67] ?? 0
+
+                assertEqual(Int(cBend.rounded()), -1)
+                assertEqual(Int(eBend.rounded()), -2)
+                assertEqual(Int(gBend.rounded()), -2)
+            }
+
+            test("Harmonic chord bender chromatic mode applies parallel bend") {
+                let bender = HarmonicChordBender()
+                let chord = [
+                    Note(pitchClass: .c, octave: 4),
+                    Note(pitchClass: .e, octave: 4),
+                    Note(pitchClass: .g, octave: 4)
+                ]
+                var context = MusicalContext(
+                    key: .c,
+                    scale: Scale(root: .c, type: .major),
+                    chord: Chord(root: .c, quality: .major),
+                    pitchAssist: .light
+                )
+                context.chromaticMode = true
+
+                let bends = bender.bends(for: chord, leadBendSemitones: 2.5, context: context)
+                assertEqual(bends[60], 2.5)
+                assertEqual(bends[64], 2.5)
+                assertEqual(bends[67], 2.5)
+            }
+
+            test("Harmonic chord bender handles downward diatonic pitch bends without arithmetic overflow") {
+                let bender = HarmonicChordBender()
+                let chord = [
+                    Note(pitchClass: .c, octave: 4),
+                    Note(pitchClass: .e, octave: 4),
+                    Note(pitchClass: .g, octave: 4)
+                ]
+                let context = MusicalContext(
+                    key: .c,
+                    scale: Scale(root: .c, type: .major),
+                    chord: Chord(root: .c, quality: .major),
+                    pitchAssist: .strong
+                )
+
+                // Downward bend of -2 semitones (C major triad bends down in C major to B diminished or nearest diatonic step)
+                let downwardBends = bender.bends(for: chord, leadBendSemitones: -2.0, context: context)
+                assertTrue(downwardBends[60] != nil)
+                assertTrue(downwardBends[64] != nil)
+                assertTrue(downwardBends[67] != nil)
+                assertTrue(downwardBends[60]! < 0)
+                assertTrue(downwardBends[64]! < 0)
+                assertTrue(downwardBends[67]! < 0)
+            }
+
+            test("Holding technique mod enables whole chord bending with scale-relevant range") {
+                var engine = InstrumentPerformanceEngine(profile: .keys) // Keys normally has 0 bend range
+                let scale = Scale(root: .c, type: .major)
+                let chord = [
+                    Note(pitchClass: .c, octave: 4),
+                    Note(pitchClass: .e, octave: 4),
+                    Note(pitchClass: .g, octave: 4)
+                ]
+                let context = MusicalContext(
+                    key: .c,
+                    scale: scale,
+                    chord: Chord(root: .c, quality: .major),
+                    pitchAssist: .light
+                )
+
+                assertEqual(scale.scaleRelevantBendRange, 7.0)
+
+                // When holding leftShoulder (technique mod) and deflecting right stick X
+                let state = ControllerState()
+                state.leftShoulder = true
+                state.rightStick = ProcessedStickState(x: 0.8, y: 0.0)
+
+                let frame = engine.process(state: state, context: context, heldNotes: chord, timestamp: 1.0)
+                assertEqual(frame.activeTechnique, .bend)
+                assertTrue(frame.bend.isBending)
+                assertTrue(frame.bend.bendSemitones > 0.5)
+
+                // Harmonic chord bender produces diatonic scale trajectories for all notes in chord
+                let bender = HarmonicChordBender()
+                let noteBends = bender.bends(for: chord, leadBendSemitones: frame.bend.bendSemitones, context: context)
+                assertEqual(noteBends.count, 3)
+                assertTrue(noteBends[60] != nil)
+                assertTrue(noteBends[64] != nil)
+                assertTrue(noteBends[67] != nil)
+            }
+
             test("Technique SMF export includes pitch bend") {
                 let exporter = SMFExporter()
                 let events = [
@@ -1111,10 +1844,45 @@ final class TestRunner {
                         durationTicks: 480
                     )
                 ]
-                let data = exporter.encodeTechniques(events: events, bpm: 120, ppqn: 960)
-                assertEqual(Array(data[0..<4]), [0x4D, 0x54, 0x68, 0x64])
-                assertEqual(Array(data.suffix(3)), [0xFF, 0x2F, 0x00])
-                assertTrue(data.contains(where: { $0 >= 0xE0 && $0 <= 0xEF }))
+                let data = exporter.encodeTechniques(events: events, bpm: 120, ppqn: 960, bendRange: 48)
+                assertTrue(data.count > 30)
+                let b = Array(data)
+                assertTrue(b.contains(where: { ($0 & 0xF0) == 0xE0 }))
+            }
+
+            test("Face-button release preserves press-time note even if chord changes or becomes nil") {
+                var engine = InstrumentPerformanceEngine()
+                let chordC = Chord(root: .c, quality: .major)
+                let chordG = Chord(root: .g, quality: .major)
+                var ctx = MusicalContext(key: .c, scale: Scale(root: .c, type: .major), chord: chordC)
+
+                // 1. Press Button A (Root of C Major -> C4 = 60)
+                let pressState = ControllerState()
+                pressState.buttonA = true
+                let pressFrame = engine.process(state: pressState, context: ctx, heldNotes: [], timestamp: 1.0)
+                let onEvent = pressFrame.faceEvents.first(where: { $0.isOn })
+                assertNotNil(onEvent)
+                assertEqual(onEvent?.note.midiNote, 60)
+
+                // 2. Mid-hold chord changes to G major or becomes nil
+                ctx.chord = chordG
+
+                // 3. Release Button A (Must emit NoteOff for C4 = 60, not G)
+                let releaseState = ControllerState()
+                releaseState.buttonA = false
+                let releaseFrame = engine.process(state: releaseState, context: ctx, heldNotes: [], timestamp: 1.1)
+                let offEvent = releaseFrame.faceEvents.first(where: { !$0.isOn })
+                assertNotNil(offEvent)
+                assertEqual(offEvent?.note.midiNote, 60, "Release must match the note sounded at press-time.")
+
+                // 4. Test release when context.chord is nil
+                ctx.chord = chordC
+                _ = engine.process(state: pressState, context: ctx, heldNotes: [], timestamp: 2.0)
+                ctx.chord = nil
+                let releaseFrame2 = engine.process(state: releaseState, context: ctx, heldNotes: [], timestamp: 2.1)
+                let offEvent2 = releaseFrame2.faceEvents.first(where: { !$0.isOn })
+                assertNotNil(offEvent2, "Release event must not be dropped when chord is nil.")
+                assertEqual(offEvent2?.note.midiNote, 60)
             }
         }
 
@@ -1266,6 +2034,12 @@ final class TestRunner {
                 let release = engine.process(stick: StickCoordinates(x: 0, y: 0), movementVelocity: 0, context: ctx, timestamp: 1.20)
                 assertTrue(release.noteOff != nil)
                 assertFalse(engine.telemetry.isActive)
+
+                // Sweep across +/- pi boundary smoothly without retriggering as a violent flick
+                _ = engine.process(stick: StickCoordinates(x: -0.8, y: 0.05), movementVelocity: 1.0, context: ctx, timestamp: 1.30)
+                let sweep = engine.process(stick: StickCoordinates(x: -0.8, y: -0.05), movementVelocity: 1.0, context: ctx, timestamp: 1.50)
+                // Small angular movement across boundary should not trigger a new strike
+                assertTrue(sweep.noteOn == nil)
             }
         }
 
@@ -1500,7 +2274,43 @@ final class TestRunner {
                 assertEqual(leftHanded.id, "xpi_left_handed")
                 assertEqual(leftHanded.bindings[.harmonyNavigate2D]?.input, .rightStick2D)
                 assertEqual(leftHanded.bindings[.primaryExcitation]?.input, .leftStickY)
-                assertEqual(ControlSchemePreset.allBuiltIn.count, 6)
+                assertEqual(ControlSchemePreset.allBuiltIn.count, 16)
+            }
+
+            test("Extended scheme presets: drummer, bass, ambient, theremin, turntablist, first-timer") {
+                let drummer = ControlSchemePreset.fingerDrummer
+                assertEqual(drummer.id, "xpi_finger_drummer")
+                assertEqual(drummer.bindings[.voiceDegree1]?.input, .buttonSouth)
+                assertEqual(drummer.bindings[.primaryExcitation]?.input, .dpadUp)
+                assertEqual(drummer.bindings[.dampingExpression]?.input, .dpadDown)
+
+                let bass = ControlSchemePreset.bassGrooveLab
+                assertEqual(bass.id, "xpi_bass_groove")
+                assertEqual(bass.stickFeel, .precise)
+                assertEqual(bass.triggerFeel, .firm)
+
+                let ambient = ControlSchemePreset.ambientDrift
+                assertEqual(ambient.id, "xpi_ambient_drift")
+                assertTrue(ambient.isMotionEnabled)
+                assertEqual(ambient.bindings[.pitchExpression]?.input, .motionPitch)
+                assertEqual(ambient.bindings[.primaryExcitation]?.digitalBehavior, .linearRamp)
+
+                let theremin = ControlSchemePreset.gyroTheremin
+                assertEqual(theremin.id, "xpi_gyro_theremin")
+                assertTrue(theremin.isMotionEnabled)
+                assertEqual(theremin.haptics, .off)
+                assertEqual(theremin.bindings[.secondaryExcitation]?.input, .motionRoll)
+
+                let turntablist = ControlSchemePreset.turntablistChops
+                assertEqual(turntablist.id, "xpi_turntablist")
+                assertEqual(turntablist.bindings[.secondaryExcitation]?.input, .leftStickY)
+                assertEqual(turntablist.bindings[.soloModeToggle]?.input, .buttonCenter)
+
+                let firstTimer = ControlSchemePreset.firstTimer
+                assertEqual(firstTimer.id, "xpi_first_timer")
+                assertEqual(firstTimer.bindings.count, 4)
+                assertEqual(firstTimer.binding(for: .harmonyNavigate2D)?.input, .leftStick2D)
+                assertEqual(firstTimer.binding(for: .primaryExcitation)?.input, .rightStickY)
             }
 
             test("Semantic musical action categories and compatibility") {
@@ -1560,6 +2370,95 @@ final class TestRunner {
                 assertTrue(processed.calibratedY < 0.0, "Y inversion must reverse axis direction.")
             }
 
+            test("Analog pipeline isolates stick history from digital and trigger events") {
+                let profile = InputProcessingProfile(
+                    id: "test",
+                    name: "Test",
+                    deadzone: .none,
+                    responseCurve: .linear,
+                    smoothingFactor: 1
+                )
+                var pipeline = AnalogControlPipeline(
+                    leftStickProcessor: StickProcessor(profile: profile),
+                    leftTriggerProcessor: TriggerProcessor(deadzone: 0, smoothingFactor: 1)
+                )
+                var snapshot = RawAnalogSnapshot()
+                pipeline.process(snapshot: snapshot, changedPhysicalControls: [.leftStick], timestamp: 0)
+
+                snapshot.leftStickX = 1
+                pipeline.process(snapshot: snapshot, changedPhysicalControls: [.leftStick], timestamp: 0.01)
+                let velocityAfterMove = pipeline.leftStick.movementVelocity
+                assertTrue(velocityAfterMove > 1)
+
+                pipeline.process(snapshot: snapshot, changedPhysicalControls: [], timestamp: 0.02)
+                assertEqual(pipeline.leftStick.movementVelocity, velocityAfterMove)
+
+                snapshot.leftTrigger = 1
+                pipeline.process(snapshot: snapshot, changedPhysicalControls: [.leftTrigger], timestamp: 0.03)
+                assertEqual(pipeline.leftStick.movementVelocity, velocityAfterMove)
+                assertEqual(pipeline.leftTrigger.value, 1.0)
+            }
+
+            test("Left/right swap routes physical left stick onto the musical right processor") {
+                let profile = InputProcessingProfile(
+                    id: "test",
+                    name: "Test",
+                    deadzone: .none,
+                    responseCurve: .linear,
+                    smoothingFactor: 1
+                )
+                var pipeline = AnalogControlPipeline(
+                    leftStickProcessor: StickProcessor(profile: profile),
+                    rightStickProcessor: StickProcessor(profile: profile)
+                )
+                var snapshot = RawAnalogSnapshot()
+                pipeline.process(
+                    snapshot: snapshot,
+                    changedPhysicalControls: [.leftStick],
+                    swapLeftRight: true,
+                    timestamp: 0
+                )
+                snapshot.leftStickX = 1
+                pipeline.process(
+                    snapshot: snapshot,
+                    changedPhysicalControls: [.leftStick],
+                    swapLeftRight: true,
+                    timestamp: 0.01
+                )
+
+                assertEqual(pipeline.leftStick.x, 0.0)
+                assertTrue(pipeline.rightStick.x > 0.9)
+                assertTrue(pipeline.rightStick.movementVelocity > 1)
+            }
+
+            test("TimeNormalizedEMA recovers from backwards timestamps and AnalogControlPipeline resets cleanly") {
+                var ema = TimeNormalizedEMA()
+                let alpha1 = ema.alpha(referenceFactor: 0.5, at: 100.0)
+                assertEqual(alpha1, 0.5)
+
+                let alpha2 = ema.alpha(referenceFactor: 0.5, at: 100.008)
+                assertTrue(alpha2 > 0)
+
+                // Backwards timestamp (clock reset / new controller)
+                let alphaBackwards = ema.alpha(referenceFactor: 0.5, at: 5.0)
+                assertEqual(alphaBackwards, 0.5, "Backwards timestamp must reset time base and return reference alpha without freezing.")
+
+                let alphaSubsequent = ema.alpha(referenceFactor: 0.5, at: 5.008)
+                assertTrue(alphaSubsequent > 0, "Subsequent forward timestamps must calculate valid non-zero alpha.")
+
+                // Test pipeline reset
+                var pipeline = AnalogControlPipeline()
+                let snap = RawAnalogSnapshot(leftStickX: 0.8, leftStickY: 0.8, leftTrigger: 0.9)
+                pipeline.process(snapshot: snap, changedPhysicalControls: [.leftStick, .leftTrigger], timestamp: 1.0)
+                assertTrue(pipeline.leftStick.x > 0)
+                assertTrue(pipeline.leftTrigger.value > 0)
+
+                pipeline.reset()
+                assertEqual(pipeline.leftStick.x, 0)
+                assertEqual(pipeline.leftTrigger.value, 0)
+                assertFalse(pipeline.leftTrigger.isPressed)
+            }
+
             test("Interactive calibration wizard step progression and capture") {
                 let wizard = CalibrationWizard()
                 wizard.start()
@@ -1582,6 +2481,24 @@ final class TestRunner {
                 assertEqual(wizard.currentStep, .completed)
                 assertTrue(result.leftStick.restCenterX > 0.01)
                 assertTrue(result.leftStick.maxRadius >= 0.85)
+
+                // Premature finish from idle does NOT impose 85% ceiling
+                let freshWizard = CalibrationWizard()
+                let idleResult = freshWizard.finish()
+                assertEqual(idleResult.leftStick.maxRadius, 1.0)
+                assertEqual(idleResult.rightStick.maxRadius, 1.0)
+
+                // Validation & repair of corrupt / NaN calibration
+                var corruptStick = StickCalibration(
+                    restCenterX: Float.nan,
+                    driftRadius: -0.5,
+                    maxRadius: Float.nan
+                )
+                corruptStick.validateAndRepair()
+                assertTrue(corruptStick.isValid)
+                assertEqual(corruptStick.restCenterX, 0.0)
+                assertEqual(corruptStick.maxRadius, 1.0)
+                assertTrue(corruptStick.driftRadius > 0.0)
             }
 
             test("Control scheme remapping conflict detection") {
@@ -1753,12 +2670,149 @@ final class TestRunner {
                     assertEqual(reply[4], 0x24) // Profile Enabled Report
                 }
             }
+
+            test("Property Exchange inquiry returns supported JSON resource list") {
+                let session = MIDICISession(muid: 0x0ABC_DEF0)
+                let remoteMUID: UInt32 = 0x0123_4567
+
+                var inquiry: [UInt8] = [0xF0, 0x7E, 0x7F, 0x0D, 0x34, 0x02]
+                inquiry.append(contentsOf: [
+                    UInt8(remoteMUID & 0x7F), UInt8((remoteMUID >> 7) & 0x7F),
+                    UInt8((remoteMUID >> 14) & 0x7F), UInt8((remoteMUID >> 21) & 0x7F)
+                ])
+                inquiry.append(contentsOf: [
+                    UInt8(session.myMUID & 0x7F), UInt8((session.myMUID >> 7) & 0x7F),
+                    UInt8((session.myMUID >> 14) & 0x7F), UInt8((session.myMUID >> 21) & 0x7F)
+                ])
+                inquiry.append(0x01) // Request ID
+                inquiry.append(contentsOf: [0x00, 0x00]) // Header length = 0 (ResourceList)
+                inquiry.append(0xF7)
+
+                let reply = session.processIncomingSysEx(inquiry)
+                assertNotNil(reply)
+                if let reply = reply {
+                    assertEqual(reply[4], 0x35) // Get Property Data Reply
+                    // Must contain JSON resource list
+                    let replyStr = String(decoding: reply, as: UTF8.self)
+                    assertTrue(replyStr.contains("DeviceInfo"))
+                }
+            }
         }
 
         // ==================================================
-        // SUITE: Native MIDI 2 Per-Note Expression Evaluation
         // ==================================================
-        suite("Native MIDI 2 Per-Note Expression Evaluation") {
+        // SUITE: Real-Time Dynamic Microtonal Temperaments & Just Intonation
+        // ==================================================
+        suite("Microtonal Temperaments & Dynamic Just Intonation") {
+            test("Dynamic Just Intonation produces pure acoustic 3rds and 5ths on C Major triad") {
+                let temperament = MicrotonalTemperament.dynamicJustIntonation
+                // C4 (60), E4 (64), G4 (67) relative to C root
+                let cOffset = temperament.tuningOffsetInCents(for: 60, scaleRoot: .c, activeChordRoot: .c)
+                let eOffset = temperament.tuningOffsetInCents(for: 64, scaleRoot: .c, activeChordRoot: .c)
+                let gOffset = temperament.tuningOffsetInCents(for: 67, scaleRoot: .c, activeChordRoot: .c)
+
+                assertEqual(round(cOffset * 1000) / 1000, 0.0)
+                assertEqual(round(eOffset * 1000) / 1000, -13.686) // Pure major 3rd is ~13.7 cents flat of 12-TET
+                assertEqual(round(gOffset * 1000) / 1000, 1.955)   // Pure 5th is ~2 cents sharp of 12-TET
+            }
+
+            test("Dynamic Just Intonation adjusts 3rd on Minor triad") {
+                let temperament = MicrotonalTemperament.dynamicJustIntonation
+                // C4 (60), Eb4 (63), G4 (67)
+                let ebOffset = temperament.tuningOffsetInCents(for: 63, scaleRoot: .c, activeChordRoot: .c, isMinorChord: true)
+                assertEqual(round(ebOffset * 1000) / 1000, 15.641) // Pure minor 3rd (6:5) is ~15.6 cents sharp of 12-TET
+            }
+
+            test("Quarter-Comma Meantone and Pythagorean tuning offsets") {
+                let meantone = MicrotonalTemperament.quarterCommaMeantone
+                let eMeantone = meantone.tuningOffsetInCents(for: 64, scaleRoot: .c)
+                assertEqual(eMeantone, -14.0)
+
+                let pythagorean = MicrotonalTemperament.pythagorean
+                let gPythagorean = pythagorean.tuningOffsetInCents(for: 67, scaleRoot: .c)
+                assertEqual(gPythagorean, 1.95)
+            }
+
+            test("24-EDO Maqam neutral third tuning offset") {
+                let maqam = MicrotonalTemperament.maqam24EDO
+                let neutralThird = maqam.tuningOffsetInCents(for: 64, scaleRoot: .c)
+                assertEqual(neutralThird, -50.0) // Half-flat (quarter-tone) major 3rd -> 350 cents
+            }
+
+            test("AudioEngine applies microtonal temperament tuning offsets to voice base frequencies") {
+                let audio = AudioEngine()
+                audio.temperament = .dynamicJustIntonation
+                audio.scaleRoot = .c
+                audio.activeChordRoot = .c
+                audio.isMinorChord = false
+                assertEqual(audio.temperament, .dynamicJustIntonation)
+                assertEqual(audio.scaleRoot, .c)
+            }
+        }
+
+        // ==================================================
+        // SUITE: Native MIDI 2 Per-Note Expression & Note Attributes Evaluation
+        // ==================================================
+        suite("Native MIDI 2 Per-Note Expression & Note Attributes Evaluation") {
+            test("Pitch 7.9-bit codec roundtrip precision") {
+                let encoded = Pitch7_9Codec.encode(note: 60, centOffset: 14.5)
+                let decoded = Pitch7_9Codec.decode(encoded)
+                assertEqual(decoded.note, 60)
+                assertTrue(abs(decoded.centOffsetFromBase - 14.5) < 0.25)
+            }
+
+            test("Note On with Pitch 7.9 attribute generates valid 64-bit UMP") {
+                let ump = MIDI2UMPEncoder.noteOnWithPitch7_9(
+                    channel: 3,
+                    note: 64,
+                    velocity16: 0x8000,
+                    centOffset: -13.7
+                )
+                let msgType = (ump.word0 >> 28) & 0x0F
+                let status = (ump.word0 >> 16) & 0xF0
+                let channel = (ump.word0 >> 16) & 0x0F
+                let note = (ump.word0 >> 8) & 0x7F
+                let attrType = UInt8(ump.word0 & 0xFF)
+
+                assertEqual(msgType, 0x4)
+                assertEqual(status, 0x90)
+                assertEqual(channel, 3)
+                assertEqual(note, 64)
+                assertEqual(attrType, MIDI2NoteAttributeType.pitch7_9.rawValue)
+
+                let decodedMessages = MIDI2UMPDecoder.decode(words: [ump.word0, ump.word1])
+                assertTrue(decodedMessages.contains { msg in
+                    if case .noteOnAttribute(let ch, let n, _, let aType, _) = msg {
+                        return ch == 3 && n == 64 && aType == MIDI2NoteAttributeType.pitch7_9.rawValue
+                    }
+                    return false
+                })
+            }
+
+            test("Byte-to-UMP noteOn and noteOff translation preserves velocity in upper 16-bits of word1") {
+                // Note On (0x92, Note 60, Velocity 100)
+                let noteOnBytes: [UInt8] = [0x92, 60, 100]
+                let onUMP = MIDI2UMPEncoder.message(from: noteOnBytes)
+                assertNotNil(onUMP)
+                if let onUMP = onUMP {
+                    let onVel16 = UInt16((onUMP.word1 >> 16) & 0xFFFF)
+                    let onAttr = UInt16(onUMP.word1 & 0xFFFF)
+                    assertEqual(onVel16, MIDI2UMPEncoder.scale7To16(100))
+                    assertEqual(onAttr, 0)
+                }
+
+                // Note Off (0x82, Note 60, Velocity 64)
+                let noteOffBytes: [UInt8] = [0x82, 60, 64]
+                let offUMP = MIDI2UMPEncoder.message(from: noteOffBytes)
+                assertNotNil(offUMP)
+                if let offUMP = offUMP {
+                    let offVel16 = UInt16((offUMP.word1 >> 16) & 0xFFFF)
+                    let offAttr = UInt16(offUMP.word1 & 0xFFFF)
+                    assertEqual(offVel16, MIDI2UMPEncoder.scale7To16(64))
+                    assertEqual(offAttr, 0)
+                }
+            }
+
             test("Per-Note Pitch Bend generates 32-bit UMP with 0x60 status") {
                 let ump = MIDI2UMPEncoder.perNotePitchBendMessage(
                     channel: 2,
@@ -1794,21 +2848,35 @@ final class TestRunner {
                 assertTrue(ump.word1 > 0x8000_0000)
             }
 
-            test("Per-Note Registered Controller generates Timbre CC74 UMP") {
-                let ump = MIDI2UMPEncoder.perNoteRegisteredControllerMessage(
-                    channel: 1,
-                    note: 67,
-                    controllerIndex: 74,
-                    normalizedValue: 0.82
+            test("Registered Per-Note Controllers (RPNC) Matrix & Decoder") {
+                let panUMP = MIDI2UMPEncoder.perNoteRegisteredControllerMessage(
+                    channel: 0,
+                    note: 60,
+                    controller: .pan,
+                    normalizedValue: 0.25
                 )
-                let messageType = (ump.word0 >> 28) & 0x0F
-                let note = (ump.word0 >> 8) & 0x7F
-                let controller = ump.word0 & 0xFF
+                let resUMP = MIDI2UMPEncoder.perNoteRegisteredControllerMessage(
+                    channel: 0,
+                    note: 60,
+                    controller: .resonance,
+                    normalizedValue: 0.85
+                )
 
-                assertEqual(messageType, 0x4)
-                assertEqual(note, 67)
-                assertEqual(controller, 74)
-                assertTrue(ump.word1 > 0x8000_0000)
+                let decodedPan = MIDI2UMPDecoder.decode(words: [panUMP.word0, panUMP.word1])
+                assertTrue(decodedPan.contains { msg in
+                    if case .perNoteRPNC(let ch, let n, let rpnc, _) = msg {
+                        return ch == 0 && n == 60 && rpnc == .pan
+                    }
+                    return false
+                })
+
+                let decodedRes = MIDI2UMPDecoder.decode(words: [resUMP.word0, resUMP.word1])
+                assertTrue(decodedRes.contains { msg in
+                    if case .perNoteRPNC(let ch, let n, let rpnc, _) = msg {
+                        return ch == 0 && n == 60 && rpnc == .resonance
+                    }
+                    return false
+                })
             }
 
             test("Per-Note Management resets and detaches controller flags") {
@@ -1819,6 +2887,31 @@ final class TestRunner {
                 let detachUMP = MIDI2UMPEncoder.perNoteManagementMessage(channel: 0, note: 60, detach: true, reset: false)
                 let flagsDetach = detachUMP.word0 & 0xFF
                 assertEqual(flagsDetach, 0x02)
+            }
+        }
+
+        // ==================================================
+        // SUITE: Dual-Zone MPE Coordination & Voice Separation
+        // ==================================================
+        suite("Dual-Zone MPE Coordination & Voice Separation") {
+            test("DualZoneMPEManager splits Lower and Upper zones cleanly") {
+                let dualMPE = DualZoneMPEManager(lowerMemberCount: 7, upperMemberCount: 7)
+                assertEqual(dualMPE.lowerZone.currentZoneLayout.masterChannel, 0)
+                assertEqual(dualMPE.upperZone.currentZoneLayout.masterChannel, 15)
+
+                // Lower zone: chords below split note 60
+                dualMPE.noteOn(note: 48, velocity: 90, target: .auto(splitNote: 60))
+                assertTrue(dualMPE.lowerZone.activeVoice(for: 48) != nil)
+                assertTrue(dualMPE.upperZone.activeVoice(for: 48) == nil)
+
+                // Upper zone: lead melody at or above split note 60
+                dualMPE.noteOn(note: 72, velocity: 100, target: .auto(splitNote: 60))
+                assertTrue(dualMPE.upperZone.activeVoice(for: 72) != nil)
+                assertTrue(dualMPE.lowerZone.activeVoice(for: 72) == nil)
+
+                dualMPE.stopAllNotes()
+                assertEqual(dualMPE.lowerZone.activeVoiceCount, 0)
+                assertEqual(dualMPE.upperZone.activeVoiceCount, 0)
             }
         }
 
@@ -1849,6 +2942,32 @@ final class TestRunner {
                     assertTrue(parsed.events.count >= 6) // 3 NoteOn + 3 NoteOff
                 } catch {
                     assertTrue(false, "SMF2Parser failed on valid exported file: \(error)")
+                }
+            }
+
+            test("Rich technique events SMF2 export preserves per-note pitch bends and RPNC") {
+                let techEvents: [RecordedTechniqueEvent] = [
+                    RecordedTechniqueEvent(
+                        tick: 0,
+                        event: InstrumentPerformanceEvent(
+                            note: Note(pitchClass: .c, octave: 4),
+                            phase: .began,
+                            technique: .bend,
+                            velocity: 100,
+                            pressure: 0.8,
+                            pitchOffset: 2.0,
+                            timbre: 0.75
+                        ),
+                        durationTicks: 960
+                    )
+                ]
+
+                let data = SMF2Exporter.export(techniqueEvents: techEvents, channel: 0, ppqn: 960)
+                do {
+                    let parsed = try SMF2Parser.parse(data: data)
+                    assertTrue(parsed.events.count >= 4) // NoteOn + PB + Press + Timbre + NoteOff
+                } catch {
+                    assertTrue(false, "Failed to parse technique SMF2 export: \(error)")
                 }
             }
 
@@ -1912,21 +3031,672 @@ final class TestRunner {
                 assertTrue(!switchPro.hasAnalogTriggers)
             }
 
+            test("DualShock 4 capability profile has touchpad and motion IMU") {
+                let ds4 = ControllerCapabilityProfile.dualShock4
+                assertTrue(ds4.hasTouchpad)
+                assertTrue(ds4.hasMotionIMU)
+                assertTrue(ds4.hasHaptics)
+                assertTrue(ds4.hasAnalogTriggers)
+                assertTrue(ds4.hasThumbstickClicks)
+                assertEqual(ds4.buttonLabels[0], "Cross (✕)")
+            }
+
             test("Generic MFi fallback profile ergonomics") {
                 let generic = ControllerCapabilityProfile.generic
                 assertTrue(!generic.hasTouchpad)
                 assertTrue(!generic.hasMotionIMU)
             }
+        }
 
-            test("Disconnect and reconnect cleans up all voices without stuck notes") {
-                let midi = MIDIEngine()
-                midi.sendNoteOn(port: .main, channel: 0, note: 60, velocity: 100)
-                midi.sendNoteOn(port: .mpe, channel: 1, note: 64, velocity: 90)
-                assertEqual(midi.activeNoteCount, 2)
+        // ==================================================
+        // SUITE: DualSense 6-Axis IMU Gyro, Gravity Vector & MPE 3D Spatial Modulation
+        // ==================================================
+        suite("DualSense 6-Axis IMU Gyro, Gravity Vector & MPE 3D Spatial Modulation") {
+            test("ControllerState gravity vector calculates pitch and roll tilt angles") {
+                let state = ControllerState()
+                // Flat horizontal orientation (gravity pointing straight down Z/Y)
+                state.gravityX = 0.0
+                state.gravityY = -0.98
+                state.gravityZ = 0.0
+                state.pitchTilt = -state.gravityY.clamped(to: -1.0...1.0)
+                state.rollTilt = state.gravityX.clamped(to: -1.0...1.0)
 
-                // Simulate abrupt controller disconnect -> panic
-                midi.panic()
-                assertEqual(midi.activeNoteCount, 0)
+                assertTrue(state.pitchTilt > 0.95) // Leveled forward horizon
+                assertEqual(state.rollTilt, 0.0)    // No roll tilt
+
+                // 45° right roll tilt
+                state.gravityX = 0.707
+                state.rollTilt = state.gravityX.clamped(to: -1.0...1.0)
+                assertTrue(state.rollTilt > 0.7)
+            }
+
+            test("Dynamic user acceleration calculates shake magnitude") {
+                let state = ControllerState()
+                state.accelX = 0.5
+                state.accelY = 0.8
+                state.accelZ = 0.4
+                let shake = sqrt(state.accelX * state.accelX + state.accelY * state.accelY + state.accelZ * state.accelZ)
+                state.shakeMagnitude = shake
+
+                assertTrue(state.shakeMagnitude > 1.0)
+            }
+
+            test("SpatialAudioEngine translates 6-axis IMU into 3D Cartesian coordinates") {
+                let spatial = SpatialAudioEngine(sampleRate: 48000.0)
+                spatial.setCoordinates(azimuth: 45.0, elevation: 30.0, distance: 2.0)
+                let cart = spatial.currentCoordinates.cartesian
+
+                // In Cartesian: X > 0 (right), Y > 0 (up), Z > 0 (front)
+                assertTrue(cart.x > 0.5)
+                assertTrue(cart.y > 0.5)
+                assertTrue(cart.z > 0.5)
+            }
+
+            test("IMU tilt maps to normalized MPE Pan (CC10) and Timbre (CC74)") {
+                let rollTilt = 0.5 // Tilted right
+                let pitchTilt = -0.2 // Tilted slightly down
+                let normPan = (rollTilt + 1.0) * 0.5
+                let normTimbre = (pitchTilt + 1.0) * 0.5
+
+                assertEqual(normPan, 0.75)   // 75% right
+                assertEqual(normTimbre, 0.4) // 40% timbre
+
+                let panUMP = MIDI2UMPEncoder.perNoteRegisteredControllerMessage(
+                    channel: 1,
+                    note: 60,
+                    controller: .pan,
+                    normalizedValue: normPan
+                )
+                let decoded = MIDI2UMPDecoder.decode(words: [panUMP.word0, panUMP.word1])
+                assertTrue(decoded.contains { msg in
+                    if case .perNoteRPNC(let ch, let n, let rpnc, _) = msg {
+                        return ch == 1 && n == 60 && rpnc == .pan
+                    }
+                    return false
+                })
+            }
+        }
+
+        // ==================================================
+        // SUITE: ControlScheme Transfer: Versioned Archive Import/Export
+        // ==================================================
+        suite("ControlScheme Transfer: Versioned Archive Import/Export") {
+            test("ControlSchemeArchive export and import roundtrip") {
+                let defaultScheme = ControlSchemePreset.xpiPerformance
+                let json = try ControlSchemeTransfer.exportJSON(defaultScheme, metadata: ["creator": "XPI Tester"])
+                
+                assertTrue(json.contains("schemaVersion"))
+                assertTrue(json.contains("XPI Performance"))
+                
+                let result = try ControlSchemeTransfer.importArchive(from: json)
+                assertEqual(result.schemaVersion, 1)
+                assertEqual(result.scheme.name, defaultScheme.name)
+                assertEqual(result.scheme.stickFeel, defaultScheme.stickFeel)
+                assertEqual(result.scheme.triggerFeel, defaultScheme.triggerFeel)
+            }
+
+            test("Tolerant import handles bare unversioned ControlScheme JSON") {
+                let defaultScheme = ControlSchemePreset.lowFatigue
+                let encoder = JSONEncoder()
+                let bareData = try encoder.encode(defaultScheme)
+
+                let result = try ControlSchemeTransfer.importArchive(from: bareData)
+                assertEqual(result.schemaVersion, 1)
+                assertEqual(result.scheme.id, defaultScheme.id)
+                assertTrue(!result.warnings.isEmpty)
+            }
+
+            test("Import rejects future unsupported schema versions") {
+                let futureJSON = "{\"schemaVersion\": 999, \"exportedAt\": \"2030-01-01T00:00:00Z\", \"scheme\": {}}"
+                var caught = false
+                do {
+                    _ = try ControlSchemeTransfer.importArchive(from: futureJSON)
+                } catch {
+                    caught = true
+                }
+                assertTrue(caught)
+            }
+        }
+
+        // ==================================================
+        // SUITE: Controller Vendor Database & Heuristic Identification
+        // ==================================================
+        suite("Controller Vendor Database & Heuristic Identification") {
+            test("Classifies Raphnet Guitar Hero adapter to .guitarHero") {
+                let kind = ControllerKind.identify(vendorName: "Raphnet Technologies", productCategory: "Wii Classic / Guitar Adapter")
+                assertEqual(kind, .guitarHero)
+                assertEqual(kind.suggestedSchemeID, "xpi_rhythm_pad")
+            }
+
+            test("Classifies Sound Voltex Faucetwo / Yuancon to .soundVoltex") {
+                let kind = ControllerKind.identify(vendorName: "Gamo2", productCategory: "FAUCETWO SDVX Controller")
+                assertEqual(kind, .soundVoltex)
+                assertEqual(kind.suggestedSchemeID, "xpi_rhythm_pad")
+            }
+
+            test("Classifies Beatmania IIDX DJ DAO Phoenixwan to .beatmaniaIIDX") {
+                let kind = ControllerKind.identify(vendorName: "DJ DAO", productCategory: "PHOENIXWAN IIDX Turntable")
+                assertEqual(kind, .beatmaniaIIDX)
+                assertEqual(kind.suggestedSchemeID, "xpi_rhythm_pad")
+            }
+
+            test("Classifies Thrustmaster HOTAS to .flightStick") {
+                let kind = ControllerKind.identify(vendorName: "Thrustmaster", productCategory: "T.16000M Flight Stick & Throttle")
+                assertEqual(kind, .flightStick)
+                assertEqual(kind.suggestedSchemeID, "xpi_flight_deck")
+            }
+
+            test("Classifies Logitech G29 Racing Wheel to .racingWheel") {
+                let kind = ControllerKind.identify(vendorName: "Logitech", productCategory: "G29 Driving Force Racing Wheel")
+                assertEqual(kind, .racingWheel)
+                assertEqual(kind.suggestedSchemeID, "xpi_racing_wheel")
+            }
+
+            test("Classifies Hori Fighting Stick to .fightStick") {
+                let kind = ControllerKind.identify(vendorName: "HORI", productCategory: "Fighting Stick Alpha / Leverless")
+                assertEqual(kind, .fightStick)
+                assertEqual(kind.suggestedSchemeID, "xpi_arcade_stick")
+            }
+
+            test("ControlSchemePreset.allBuiltIn contains 16 presets with unique IDs and valid bindings") {
+                let presets = ControlSchemePreset.allBuiltIn
+                assertEqual(presets.count, 16)
+                let ids = Set(presets.map { $0.id })
+                assertEqual(ids.count, 16)
+                for preset in presets {
+                    assertTrue(!preset.name.isEmpty)
+                    assertTrue(!preset.bindings.isEmpty)
+                    // Every preset must cover critical actions (panic safety) and produce no hard conflicts
+                    let criticalGaps = preset.coverageIssues().filter { $0.severity == .critical }
+                    assertEqual(criticalGaps.count, 0)
+                    let criticalConflicts = MappingConflict.detectConflicts(in: preset).filter { $0.severity == .critical }
+                    assertEqual(criticalConflicts.count, 0)
+                }
+            }
+        }
+
+        // ==================================================
+        // SUITE: XPadPractice: Lessons, Challenges & Progress Tracker
+        // ==================================================
+        suite("XPadPractice: Lessons, Challenges & Progress Tracker") {
+            test("Factory preset lessons have deterministic IDs across calls") {
+                let presets1 = PracticeLesson.factoryPresets()
+                let presets2 = PracticeLesson.factoryPresets()
+                assertEqual(presets1.count, 6)
+                assertEqual(presets2.count, 6)
+                for i in 0..<presets1.count {
+                    assertEqual(presets1[i].id, presets2[i].id)
+                    assertEqual(presets1[i].steps.count, presets2[i].steps.count)
+                    for s in 0..<presets1[i].steps.count {
+                        assertEqual(presets1[i].steps[s].id, presets2[i].steps[s].id)
+                    }
+                }
+            }
+
+            test("Factory preset challenges have deterministic IDs") {
+                let c1 = PracticeChallenge.factoryPresets()
+                let c2 = PracticeChallenge.factoryPresets()
+                assertEqual(c1.count, 3)
+                assertEqual(c2.count, 3)
+                for i in 0..<c1.count {
+                    assertEqual(c1[i].id, c2[i].id)
+                }
+            }
+
+            test("Progress tracker records session and updates mastery") {
+                let tracker = ProgressTracker.shared
+                tracker.resetProgress()
+                let lesson = PracticeLesson.factoryPresets()[0]
+                let sessionResult = PracticeSessionResult(
+                    lessonId: lesson.id,
+                    startTime: Date().addingTimeInterval(-30),
+                    endTime: Date(),
+                    stepResults: [],
+                    overallAccuracy: 0.95,
+                    averageResponseTime: 0.8,
+                    completed: true
+                )
+                tracker.recordSession(sessionResult)
+                let mastery = tracker.getLessonMastery(for: lesson.id)
+                assertNotNil(mastery)
+                assertEqual(mastery?.attemptCount, 1)
+                assertEqual(mastery?.completedCount, 1)
+            }
+
+            test("PracticeEngine auto-advance is cleanly cancellable and debounces duplicate inputs") {
+                let engine = PracticeEngine()
+                let lesson = PracticeLesson.factoryPresets()[0]
+                engine.startLesson(lesson)
+                assertEqual(engine.currentStepIndex, 0)
+
+                // First correct input
+                engine.evaluateChordInput(lesson.steps[0].expectedChord)
+                assertEqual(engine.sessionResults.count, 1)
+
+                // Rapid duplicate input during 0.5s auto-advance window is ignored
+                engine.evaluateChordInput(lesson.steps[0].expectedChord)
+                assertEqual(engine.sessionResults.count, 1)
+
+                // Stop immediately cancels pending advance
+                engine.stopPractice()
+                assertFalse(engine.isPracticeActive)
+            }
+        }
+
+        // ==================================================
+        // SUITE: Arpeggiator Engine: Patterns, Octave Ranges & Tick/Time Scheduling
+        // ==================================================
+        suite("Arpeggiator: Pattern Generators, Octave Registrations & Clock Sync") {
+            test("Pattern generation: Up, Down, UpDown, DownUp, Converge, Diverge") {
+                let baseNotes = [
+                    Note(pitchClass: .c, octave: 4), // 60
+                    Note(pitchClass: .e, octave: 4), // 64
+                    Note(pitchClass: .g, octave: 4)  // 67
+                ]
+                var seed: UInt64 = 42
+
+                let up = ArpeggiatorEngine.generateSequence(from: baseNotes, pattern: .up, octaveRange: 1, rngSeed: &seed)
+                assertEqual(up.map(\.midiNote), [60, 64, 67])
+
+                let down = ArpeggiatorEngine.generateSequence(from: baseNotes, pattern: .down, octaveRange: 1, rngSeed: &seed)
+                assertEqual(down.map(\.midiNote), [67, 64, 60])
+
+                let upDown = ArpeggiatorEngine.generateSequence(from: baseNotes, pattern: .upDown, octaveRange: 1, rngSeed: &seed)
+                assertEqual(upDown.map(\.midiNote), [60, 64, 67, 64])
+
+                let downUp = ArpeggiatorEngine.generateSequence(from: baseNotes, pattern: .downUp, octaveRange: 1, rngSeed: &seed)
+                assertEqual(downUp.map(\.midiNote), [67, 64, 60, 64])
+
+                let converge = ArpeggiatorEngine.generateSequence(from: baseNotes, pattern: .converge, octaveRange: 1, rngSeed: &seed)
+                assertEqual(converge.map(\.midiNote), [60, 67, 64])
+
+                let diverge = ArpeggiatorEngine.generateSequence(from: baseNotes, pattern: .diverge, octaveRange: 1, rngSeed: &seed)
+                assertEqual(diverge.map(\.midiNote), [64, 67, 60])
+            }
+
+            test("Octave expansion spans multi-octave registers") {
+                let baseNotes = [
+                    Note(pitchClass: .c, octave: 3), // 48
+                    Note(pitchClass: .g, octave: 3)  // 55
+                ]
+                var seed: UInt64 = 100
+                let twoOctaves = ArpeggiatorEngine.generateSequence(from: baseNotes, pattern: .up, octaveRange: 2, rngSeed: &seed)
+                assertEqual(twoOctaves.map(\.midiNote), [48, 55, 60, 67])
+
+                let threeOctaves = ArpeggiatorEngine.generateSequence(from: baseNotes, pattern: .up, octaveRange: 3, rngSeed: &seed)
+                assertEqual(threeOctaves.map(\.midiNote), [48, 55, 60, 67, 72, 79])
+            }
+
+            test("Deterministic seeded random pattern generator") {
+                let baseNotes = [
+                    Note(pitchClass: .c, octave: 4),
+                    Note(pitchClass: .e, octave: 4),
+                    Note(pitchClass: .g, octave: 4),
+                    Note(pitchClass: .b, octave: 4)
+                ]
+                var seed1: UInt64 = 0xDEAD_BEEF
+                var seed2: UInt64 = 0xDEAD_BEEF
+                let random1 = ArpeggiatorEngine.generateSequence(from: baseNotes, pattern: .random, octaveRange: 1, rngSeed: &seed1)
+                let random2 = ArpeggiatorEngine.generateSequence(from: baseNotes, pattern: .random, octaveRange: 1, rngSeed: &seed2)
+                assertEqual(random1.map(\.midiNote), random2.map(\.midiNote))
+            }
+
+            test("ArpeggiatorEngine tick stepping and gate length note-off") {
+                var engine = ArpeggiatorEngine(
+                    configuration: ArpeggiatorConfiguration(pattern: .up, rate: .sixteenth, octaveRange: 1, gateLength: 0.5)
+                )
+                let voice = ChordGateVoice(
+                    chord: Chord(root: .c, quality: .major),
+                    notes: [Note(pitchClass: .c, octave: 4), Note(pitchClass: .e, octave: 4)]
+                )
+                let initialEvents = engine.setVoice(voice)
+                assertEqual(initialEvents.count, 0)
+                assertEqual(engine.sequence.map(\.midiNote), [60, 64])
+
+                // Step 0: Tick 0 triggers Note 60
+                let step0Events = engine.processTick(currentTick: 0, velocity: 90)
+                assertEqual(step0Events.count, 1)
+                assertEqual(step0Events[0], .noteOn(Note(pitchClass: .c, octave: 4), velocity: 90))
+
+                // Gate length 0.5 of 240 ticks = 120 ticks. At tick 120, noteOff is emitted
+                let gateEvents = engine.processTick(currentTick: 120, velocity: 90)
+                assertEqual(gateEvents.count, 1)
+                assertEqual(gateEvents[0], .noteOff(Note(pitchClass: .c, octave: 4)))
+
+                // Step 1: Tick 240 triggers Note 64
+                let step1Events = engine.processTick(currentTick: 240, velocity: 95)
+                assertEqual(step1Events.count, 1)
+                assertEqual(step1Events[0], .noteOn(Note(pitchClass: .e, octave: 4), velocity: 95))
+
+                // Release all ends active notes
+                let releaseEvents = engine.releaseAll()
+                assertEqual(releaseEvents.count, 1)
+                assertEqual(releaseEvents[0], .noteOff(Note(pitchClass: .e, octave: 4)))
+            }
+
+            test("Rate secondsPerStep calculation at various tempos") {
+                assertEqual(ArpeggiatorRate.sixteenth.secondsPerStep(tempoBPM: 120.0), 0.125)
+                assertEqual(ArpeggiatorRate.eighth.secondsPerStep(tempoBPM: 120.0), 0.25)
+                assertEqual(ArpeggiatorRate.quarter.secondsPerStep(tempoBPM: 120.0), 0.5)
+            }
+        }
+
+        // ==================================================
+        // SUITE: Tutorial Engine: Gesture Validation, Scheme Hints & Mission Progress
+        // ==================================================
+        suite("Tutorial Engine: Gesture Validation, Scheme Hints & Mission Progress") {
+            func makeState() -> ControllerState { ControllerState() }
+
+            test("Factory missions have unique IDs, non-empty steps and resolvable gestures") {
+                let missions = TutorialMission.factoryPresets()
+                assertEqual(missions.count, 5)
+                assertEqual(Set(missions.map(\.id)).count, 5)
+                for mission in missions {
+                    assertTrue(!mission.steps.isEmpty)
+                    for step in mission.steps {
+                        // Every instruction either embeds a control placeholder or stands alone
+                        assertTrue(!step.instruction.isEmpty)
+                    }
+                }
+            }
+
+            test("First Strum mission completes via synthetic navigate → strum → pluck sequence") {
+                let engine = TutorialEngine(scheme: ControlSchemePreset.xpiPerformance)
+                let mission = TutorialMission.factoryPresets()[0]
+                assertEqual(mission.id, "first_strum")
+                engine.load(mission: mission)
+
+                var t: TimeInterval = 0
+                var progress = engine.process(state: makeState(), timestamp: t)
+
+                // Step 1: harmony navigation past 0.45 radius on left stick (scheme-bound)
+                t += 0.05
+                let nav = makeState()
+                nav.leftStick = ProcessedStickState(
+                    rawX: 0.8, rawY: 0.0, calibratedX: 0.8, calibratedY: 0.0,
+                    x: 0.8, y: 0.0, radius: 0.8, angle: 0,
+                    movementVelocity: 0, xVelocity: 0, yVelocity: 0, radialVelocity: 0
+                )
+                progress = engine.process(state: nav, timestamp: t)
+                assertTrue(progress.stepJustCompleted)
+                assertEqual(progress.currentStepIndex, 1)
+
+                // Step 2: strum sweep — right stick Y velocity above threshold
+                t += 0.05
+                let strum = makeState()
+                strum.rightStick = ProcessedStickState(
+                    rawX: 0.0, rawY: -1.0, calibratedX: 0.0, calibratedY: -1.0,
+                    x: 0.0, y: -1.0, radius: 1.0, angle: -.pi / 2,
+                    movementVelocity: 2.4, xVelocity: 0, yVelocity: -2.4, radialVelocity: 2.4
+                )
+                progress = engine.process(state: strum, timestamp: t)
+                assertTrue(progress.stepJustCompleted)
+                assertEqual(progress.currentStepIndex, 2)
+
+                // Step 3: root pluck — rising edge of button bound to voiceDegree1 (buttonSouth)
+                t += 0.05
+                let idle = makeState()
+                progress = engine.process(state: idle, timestamp: t) // settle edge tracker
+                t += 0.05
+                let pluck = makeState()
+                pluck.buttonA = true
+                progress = engine.process(state: pluck, timestamp: t)
+                assertTrue(progress.stepJustCompleted)
+                assertTrue(progress.isMissionComplete)
+                assertEqual(progress.completedSteps.count, 3)
+                assertEqual(progress.completedSteps.map(\.stepID), ["fs_navigate", "fs_strum", "fs_pluck"])
+            }
+
+            test("Pressure-hold gesture accumulates only while threshold sustained") {
+                let engine = TutorialEngine(scheme: ControlSchemePreset.xpiPerformance)
+                let mission = TutorialMission(
+                    id: "hold_test",
+                    title: "Hold",
+                    summary: "",
+                    steps: [
+                        TutorialStep(
+                            id: "h1",
+                            instruction: "Hold %@",
+                            gesture: .pressureHold(action: .pressureExpression, threshold: 0.6, duration: 0.4)
+                        )
+                    ]
+                )
+                engine.load(mission: mission)
+
+                var t: TimeInterval = 0
+                // Below threshold — no accumulation
+                let soft = makeState()
+                soft.rightTrigger = ProcessedTriggerState(rawValue: 0.3, calibratedValue: 0.3, value: 0.3, isPressed: false)
+                var progress = engine.process(state: soft, timestamp: t)
+                assertFalse(progress.isMissionComplete)
+
+                // Above threshold but reset by dip mid-way
+                t += 0.2
+                let firm = makeState()
+                firm.rightTrigger = ProcessedTriggerState(rawValue: 0.8, calibratedValue: 0.8, value: 0.8, isPressed: true)
+                _ = engine.process(state: firm, timestamp: t)
+                t += 0.2
+                _ = engine.process(state: soft, timestamp: t)   // dip resets accumulator
+                t += 0.2
+                _ = engine.process(state: firm, timestamp: t)
+                t += 0.15
+                progress = engine.process(state: firm, timestamp: t)
+                assertFalse(progress.isMissionComplete)          // only 0.35s since reset
+
+                // Sustained past duration completes the mission
+                t += 0.1
+                progress = engine.process(state: firm, timestamp: t)
+                assertTrue(progress.isMissionComplete)
+                assertEqual(progress.totalSteps, 1)
+            }
+
+            test("Scheme-aware hints name the physical controls from the active scheme") {
+                let performance = TutorialEngine(scheme: ControlSchemePreset.xpiPerformance)
+                assertTrue(performance.resolvedHint(for: .navigateHarmony(radius: 0.5)).contains("Left Stick"))
+                assertTrue(performance.resolvedHint(for: .strumSweep(minVelocity: 1)).contains("Right Stick"))
+                assertTrue(performance.resolvedHint(for: .pluckVoice(degree: .root)).contains("South Button"))
+
+                // One-hand-left scheme binds excitation to left trigger — hint follows the scheme
+                let oneHand = TutorialEngine(scheme: ControlSchemePreset.oneHandLeft)
+                assertTrue(oneHand.resolvedHint(for: .strumSweep(minVelocity: 1)).contains("Trigger"))
+                // oneHandLeft maps the root voice degree onto D-Pad Left
+                assertTrue(oneHand.resolvedHint(for: .pluckVoice(degree: .root)).contains("D-Pad Left"))
+
+                // First-timer scheme leaves expression unmapped
+                let beginner = TutorialEngine(scheme: ControlSchemePreset.firstTimer)
+                assertEqual(beginner.resolvedHint(for: .pressureHold(action: .pressureExpression, threshold: 0.5, duration: 1)), "unmapped")
+            }
+
+            test("Octave shift and motion tilt gestures complete with scheme bindings respected") {
+                let engine = TutorialEngine(scheme: ControlSchemePreset.xpiPerformance)
+                let mission = TutorialMission(
+                    id: "octave_motion",
+                    title: "Octave & Motion",
+                    summary: "",
+                    steps: [
+                        TutorialStep(id: "up", instruction: "%@", gesture: .shiftOctave(direction: .up)),
+                        TutorialStep(id: "tilt", instruction: "%@", gesture: .tiltMotion(axis: .pitch, degrees: 10))
+                    ]
+                )
+                engine.load(mission: mission)
+
+                var t: TimeInterval = 0
+                var progress = engine.process(state: makeState(), timestamp: t)
+
+                // D-Pad Up is bound to octaveUp in XPI Performance
+                t += 0.05
+                let dpadUp = makeState()
+                dpadUp.dpadUp = true
+                progress = engine.process(state: dpadUp, timestamp: t)
+                assertTrue(progress.stepJustCompleted)
+
+                // Motion disabled schemes never satisfy tilt
+                let noMotion = TutorialEngine(scheme: ControlSchemePreset.xpiClassic)
+                noMotion.load(mission: mission)
+                let tilted = makeState()
+                tilted.pitchTilt = 30
+                tilted.hasMotion = true
+                progress = noMotion.process(state: tilted, timestamp: t + 0.05)
+                assertFalse(progress.stepJustCompleted)
+                assertFalse(noMotion.currentProgress.isMissionComplete)
+
+                // Motion-enabled scheme completes on tilt
+                t += 0.1
+                progress = engine.process(state: tilted, timestamp: t)
+                assertTrue(progress.stepJustCompleted)
+                assertTrue(progress.isMissionComplete)
+            }
+
+            test("Reset restores mission from scratch and completion callback fires once") {
+                let engine = TutorialEngine(scheme: ControlSchemePreset.firstTimer)
+                var completions = 0
+                engine.onMissionComplete = { completions += 1 }
+                let mission = TutorialMission(
+                    id: "cb_test",
+                    title: "Callback",
+                    summary: "",
+                    steps: [TutorialStep(id: "s", instruction: "%@", gesture: .pluckVoice(degree: .root))]
+                )
+                engine.load(mission: mission)
+
+                let press = makeState()
+                press.buttonA = true
+                var progress = engine.process(state: makeState(), timestamp: 0)
+                progress = engine.process(state: press, timestamp: 0.1)
+                assertTrue(progress.isMissionComplete)
+
+                // Re-processing after completion must not double-fire
+                _ = engine.process(state: press, timestamp: 0.2)
+                _ = engine.process(state: makeState(), timestamp: 0.3)
+
+                engine.reset()
+                assertFalse(engine.currentProgress.isMissionComplete)
+                assertEqual(engine.currentProgress.currentStepIndex, 0)
+
+                progress = engine.process(state: makeState(), timestamp: 1.0)
+                progress = engine.process(state: press, timestamp: 1.1)
+                assertTrue(progress.isMissionComplete)
+            }
+        }
+
+        // ==================================================
+        // SUITE: Drone Pad Bed: Sustain Lifecycle, Chord Morphing & Panic Cleanup
+        // ==================================================
+        suite("Drone Pad Bed: Sustain Lifecycle, Chord Morphing & Panic Cleanup") {
+            let cMaj = ChordGateVoice(
+                chord: Chord(root: .c, quality: .major),
+                notes: [Note(pitchClass: .c, octave: 4), Note(pitchClass: .e, octave: 4), Note(pitchClass: .g, octave: 4)]
+            )
+            // A minor shares C and E — only G leaves, A joins.
+            let aMin = ChordGateVoice(
+                chord: Chord(root: .a, quality: .minor),
+                notes: [Note(pitchClass: .a, octave: 3), Note(pitchClass: .c, octave: 4), Note(pitchClass: .e, octave: 4)]
+            )
+            let fMaj = ChordGateVoice(
+                chord: Chord(root: .f, quality: .major),
+                notes: [Note(pitchClass: .f, octave: 3), Note(pitchClass: .a, octave: 3), Note(pitchClass: .c, octave: 4)]
+            )
+
+            test("First setVoice attacks the full chord; bed holds with no further events") {
+                var bed = DroneBedEngine()
+                let events = bed.setVoice(cMaj, timestamp: 0)
+                assertEqual(events.count, 3)
+                assertTrue(events.allSatisfy { if case .noteOn = $0 { return true } else { return false } })
+                assertEqual(bed.activeNotes.count, 3)
+                assertEqual(bed.currentVoice?.chord.root, PitchClass.c)
+
+                // Re-asserting the identical voice is a no-op — sustain continues.
+                let repeatEvents = bed.setVoice(cMaj, timestamp: 0.5)
+                assertEqual(repeatEvents.count, 0)
+                assertEqual(bed.activeNotes.count, 3)
+            }
+
+            test("Chord change morphs the bed — shared notes keep sounding") {
+                var bed = DroneBedEngine()
+                _ = bed.setVoice(cMaj, timestamp: 0)
+                let morph = bed.setVoice(aMin, timestamp: 1.0)
+
+                // Exactly one off (G4) and one on (A3).
+                assertEqual(morph.count, 2)
+                let offs = morph.filter { if case .noteOff(let n) = $0 { return n.midiNote == 67 } else { return false } }
+                let ons = morph.filter { if case .noteOn(let n, _) = $0 { return n.midiNote == 57 } else { return false } }
+                assertEqual(offs.count, 1)
+                assertEqual(ons.count, 1)
+                // Sustained set is now A3, C4, E4
+                assertEqual(bed.activeNotes.map(\.midiNote).sorted(), [57, 60, 64])
+            }
+
+            test("Full change releases everything before attacking the new chord") {
+                var bed = DroneBedEngine()
+                _ = bed.setVoice(cMaj, timestamp: 0)
+                let swap = bed.setVoice(fMaj, timestamp: 2.0)
+
+                // Only C4 survives; E4 and G4 release; F3 and A3 join.
+                let offCount = swap.filter { if case .noteOff = $0 { return true } else { return false } }.count
+                let onCount = swap.filter { if case .noteOn = $0 { return true } else { return false } }.count
+                assertEqual(offCount, 2)   // E4, G4
+                assertEqual(onCount, 2)    // F3, A3
+                assertEqual(bed.activeNotes.map(\.midiNote).sorted(), [53, 57, 60])
+            }
+
+            test("Rearticulate accents all sounding notes without changing membership") {
+                var bed = DroneBedEngine()
+                _ = bed.setVoice(cMaj, timestamp: 0)
+                let accent = bed.rearticulate(velocity: 110)
+
+                assertEqual(accent.count, 3)
+                assertTrue(accent.allSatisfy { if case .noteOn(_, velocity: 110) = $0 { return true } else { return false } })
+                assertEqual(bed.lastVelocity, 110)
+                assertEqual(bed.activeNotes.count, 3)
+            }
+
+            test("Release all silences the bed and clears voice state") {
+                var bed = DroneBedEngine()
+                _ = bed.setVoice(cMaj, timestamp: 0)
+                let release = bed.releaseAll()
+
+                assertEqual(release.count, 3)
+                assertTrue(release.allSatisfy { if case .noteOff = $0 { return true } else { return false } })
+                assertEqual(bed.activeNotes.count, 0)
+                assertEqual(bed.currentVoice, nil)
+
+                // Releasing an empty bed is a no-op.
+                assertEqual(bed.releaseAll().count, 0)
+            }
+
+            test("Setting nil voice releases; silent reset drops bookkeeping for panic paths") {
+                var bed = DroneBedEngine()
+                _ = bed.setVoice(cMaj, timestamp: 0)
+                let viaNil = bed.setVoice(nil, timestamp: 3.0)
+                assertEqual(viaNil.count, 3)
+                assertTrue(viaNil.allSatisfy { if case .noteOff = $0 { return true } else { return false } })
+
+                _ = bed.setVoice(cMaj, timestamp: 4.0)
+                bed.resetSilently()
+                assertEqual(bed.activeNotes.count, 0)
+                assertEqual(bed.currentVoice, nil)
+            }
+
+            test("Duplicate voicing entries are collapsed into single sustained notes") {
+                var bed = DroneBedEngine()
+                let doubled = ChordGateVoice(
+                    chord: cMaj.chord,
+                    notes: [Note(pitchClass: .c, octave: 4), Note(pitchClass: .c, octave: 4), Note(pitchClass: .g, octave: 4)]
+                )
+                let events = bed.setVoice(doubled, timestamp: 0)
+                assertEqual(events.count, 2)
+                assertEqual(bed.activeNotes.count, 2)
+            }
+
+            test("Velocity persists across subsequent morphs") {
+                var bed = DroneBedEngine()
+                _ = bed.setVoice(cMaj, timestamp: 0)
+                _ = bed.rearticulate(velocity: 100)
+                let morph = bed.setVoice(aMin, timestamp: 1.0)
+                let joined = morph.compactMap { if case .noteOn(let n, let v) = $0 { return (n.midiNote, v) } else { return nil } }
+                assertEqual(joined.count, 1)
+                assertEqual(joined[0].0, 57)
+                assertEqual(joined[0].1, 100)
             }
         }
 

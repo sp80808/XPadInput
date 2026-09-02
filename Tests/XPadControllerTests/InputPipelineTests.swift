@@ -154,4 +154,146 @@ final class InputPipelineTests: XCTestCase {
 
         XCTAssertEqual(at60Hz, at240Hz, accuracy: 0.000_01)
     }
+
+    func testDigitalOnlyEventDoesNotAdvanceStickSmoothingOrVelocity() {
+        var pipeline = AnalogControlPipeline(leftStickProcessor: StickProcessor(profile: unsmoothedTestProfile()))
+        var snapshot = RawAnalogSnapshot()
+
+        pipeline.process(snapshot: snapshot, changedPhysicalControls: [.leftStick], timestamp: 0)
+        snapshot.leftStickX = 1
+        pipeline.process(snapshot: snapshot, changedPhysicalControls: [.leftStick], timestamp: 0.01)
+
+        let xAfterMove = pipeline.leftStick.x
+        let velocityAfterMove = pipeline.leftStick.movementVelocity
+        XCTAssertGreaterThan(velocityAfterMove, 1)
+
+        pipeline.process(snapshot: snapshot, changedPhysicalControls: [], timestamp: 0.02)
+
+        XCTAssertEqual(pipeline.leftStick.x, xAfterMove, accuracy: 0.000_001)
+        XCTAssertEqual(pipeline.leftStick.movementVelocity, velocityAfterMove, accuracy: 0.000_001)
+    }
+
+    func testTriggerOnlyEventDoesNotCreateStickVelocityOrChangeStickResponse() {
+        var pipeline = AnalogControlPipeline(
+            leftStickProcessor: StickProcessor(profile: unsmoothedTestProfile()),
+            leftTriggerProcessor: TriggerProcessor(deadzone: 0, smoothingFactor: 1)
+        )
+        var snapshot = RawAnalogSnapshot()
+        pipeline.process(snapshot: snapshot, changedPhysicalControls: [.leftStick], timestamp: 0)
+
+        snapshot.leftTrigger = 1
+        pipeline.process(snapshot: snapshot, changedPhysicalControls: [.leftTrigger], timestamp: 0.01)
+
+        XCTAssertEqual(pipeline.leftStick.x, 0, accuracy: 0.000_001)
+        XCTAssertEqual(pipeline.leftStick.movementVelocity, 0, accuracy: 0.000_001)
+        XCTAssertEqual(pipeline.leftTrigger.value, 1, accuracy: 0.000_001)
+    }
+
+    func testInterleavedTriggerEventsDoNotPolluteLaterStickVelocity() {
+        func stickVelocity(interleaveTrigger: Bool) -> Float {
+            var pipeline = AnalogControlPipeline(leftStickProcessor: StickProcessor(profile: unsmoothedTestProfile()))
+            var snapshot = RawAnalogSnapshot()
+            pipeline.process(snapshot: snapshot, changedPhysicalControls: [.leftStick], timestamp: 0)
+
+            snapshot.leftStickX = 0.5
+            pipeline.process(snapshot: snapshot, changedPhysicalControls: [.leftStick], timestamp: 0.01)
+
+            if interleaveTrigger {
+                snapshot.leftTrigger = 0.8
+                pipeline.process(
+                    snapshot: snapshot,
+                    changedPhysicalControls: [.leftTrigger],
+                    timestamp: 0.015
+                )
+            }
+
+            snapshot.leftStickX = 1
+            pipeline.process(snapshot: snapshot, changedPhysicalControls: [.leftStick], timestamp: 0.02)
+            return pipeline.leftStick.movementVelocity
+        }
+
+        XCTAssertEqual(
+            stickVelocity(interleaveTrigger: true),
+            stickVelocity(interleaveTrigger: false),
+            accuracy: 0.000_001
+        )
+    }
+
+    func testRoleSwapRoutesPhysicalLeftStickOntoMusicalRightProcessor() {
+        var pipeline = AnalogControlPipeline(
+            leftStickProcessor: StickProcessor(profile: unsmoothedTestProfile()),
+            rightStickProcessor: StickProcessor(profile: unsmoothedTestProfile())
+        )
+        var snapshot = RawAnalogSnapshot()
+        pipeline.process(
+            snapshot: snapshot,
+            changedPhysicalControls: [.leftStick],
+            swapLeftRight: true,
+            timestamp: 0
+        )
+
+        snapshot.leftStickX = 1
+        pipeline.process(
+            snapshot: snapshot,
+            changedPhysicalControls: [.leftStick],
+            swapLeftRight: true,
+            timestamp: 0.01
+        )
+
+        XCTAssertEqual(pipeline.leftStick.x, 0, accuracy: 0.000_001)
+        XCTAssertEqual(pipeline.leftStick.movementVelocity, 0, accuracy: 0.000_001)
+        XCTAssertGreaterThan(pipeline.rightStick.x, 0.9)
+        XCTAssertGreaterThan(pipeline.rightStick.movementVelocity, 1)
+    }
+
+    func testUnrelatedStickDoesNotAdvanceWhenTheOtherStickChanges() {
+        var pipeline = AnalogControlPipeline(
+            leftStickProcessor: StickProcessor(profile: unsmoothedTestProfile()),
+            rightStickProcessor: StickProcessor(profile: unsmoothedTestProfile())
+        )
+        var snapshot = RawAnalogSnapshot()
+        pipeline.process(
+            snapshot: snapshot,
+            changedPhysicalControls: [.leftStick, .rightStick],
+            timestamp: 0
+        )
+
+        snapshot.leftStickX = 1
+        pipeline.process(snapshot: snapshot, changedPhysicalControls: [.leftStick], timestamp: 0.01)
+        let leftVelocity = pipeline.leftStick.movementVelocity
+        XCTAssertGreaterThan(leftVelocity, 1)
+
+        snapshot.rightStickX = 1
+        pipeline.process(snapshot: snapshot, changedPhysicalControls: [.rightStick], timestamp: 0.02)
+
+        XCTAssertEqual(pipeline.leftStick.movementVelocity, leftVelocity, accuracy: 0.000_001)
+        XCTAssertGreaterThan(pipeline.rightStick.movementVelocity, 1)
+    }
+
+    func testControllerManagerDigitalIngestDoesNotMutateStickHistory() {
+        let manager = ControllerManager()
+        manager.leftStickProcessor.profile = unsmoothedTestProfile()
+
+        var snapshot = RawAnalogSnapshot()
+        manager.ingestAnalogSnapshot(snapshot, changedPhysicalControls: [.leftStick], timestamp: 0)
+        snapshot.leftStickX = 1
+        manager.ingestAnalogSnapshot(snapshot, changedPhysicalControls: [.leftStick], timestamp: 0.01)
+
+        let velocity = manager.controllerState.leftStick.movementVelocity
+        XCTAssertGreaterThan(velocity, 1)
+
+        manager.ingestAnalogSnapshot(snapshot, changedPhysicalControls: [], timestamp: 0.02)
+        XCTAssertEqual(manager.controllerState.leftStick.movementVelocity, velocity, accuracy: 0.000_001)
+        XCTAssertEqual(manager.analogPipeline.leftStick.movementVelocity, velocity, accuracy: 0.000_001)
+    }
+
+    private func unsmoothedTestProfile() -> InputProcessingProfile {
+        InputProcessingProfile(
+            id: "test",
+            name: "Test",
+            deadzone: .none,
+            responseCurve: .linear,
+            smoothingFactor: 1
+        )
+    }
 }

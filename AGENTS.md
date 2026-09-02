@@ -18,52 +18,147 @@ The repository is organized into distinct Swift packages and modules:
 
 ```
 Sources/
-├── XPadCore/          # Foundational musical types & domain primitives
+├── XPadCore/              # Foundational musical types & domain primitives
 │   ├── PitchClass.swift
 │   ├── Interval.swift
 │   ├── Note.swift
 │   ├── Scale.swift
 │   ├── Chord.swift
-│   └── PerformanceEvent.swift
+│   ├── ChordVoicing.swift
+│   ├── PerformanceEvent.swift
+│   ├── InstrumentPerformanceEvent.swift
+│   ├── InstrumentProfile.swift
+│   ├── MusicalTechnique.swift
+│   ├── PerformanceControl.swift
+│   ├── PitchExpression.swift
+│   ├── ScalarMath.swift
+│   ├── MIDIValueCodec.swift
+│   ├── DestinationCapability.swift
+│   ├── PerformanceLaneRegisters.swift
+│   ├── HostMIDIContext.swift
+│   ├── OCDSModels.swift
+│   ├── OCDSManager.swift
+│   └── ControllerIconPack.swift
 │
-├── XPadTheory/        # Harmony, analysis & progression algorithms
+├── XPadTheory/            # Harmony, analysis & progression algorithms
 │   ├── HarmonicDegree.swift
 │   ├── HarmonicWheel.swift
 │   ├── VoiceLeadingEngine.swift
+│   ├── VoiceLedSoloEngine.swift
 │   ├── HarmonicSuggestionEngine.swift
+│   ├── HarmonicChordBender.swift
 │   ├── ModulationEngine.swift
-│   └── Progression.swift
+│   ├── Progression.swift
+│   ├── MusicalContext.swift
+│   └── PitchExpressionEngine.swift
 │
-├── XPadController/    # GameController hardware abstraction & gesture DSP
+├── XPadPractice/          # Practice mode for chord progression learning
+│   ├── PracticeLesson.swift
+│   ├── PracticeEngine.swift
+│   └── ProgressTracker.swift
+│
+├── XPadController/        # GameController hardware abstraction & gesture DSP
 │   ├── GamepadState.swift
 │   ├── VirtualStrummer.swift
 │   ├── RhythmCompassEngine.swift
 │   ├── GestureRecorder.swift
-│   └── ControllerManager.swift
+│   ├── GestureVelocityTracker.swift
+│   ├── ControllerManager.swift
+│   ├── ControllerCalibration.swift
+│   ├── ControllerIdentification.swift
+│   ├── MultiControllerJamming.swift
+│   ├── SmartSoloMode.swift
+│   ├── CoreHapticsEngine.swift
+│   ├── AdaptiveTriggerEngine.swift
+│   ├── InstrumentPerformanceEngine.swift
+│   ├── PerformanceControlEngines.swift
+│   ├── AnalogControlPipeline.swift
+│   ├── PitchExpressionEngine.swift
+│   ├── PressureAndVibrato.swift
+│   ├── LegatoAndStrings.swift
+│   ├── ControlScheme.swift
+│   ├── ControlSchemePreset.swift
+│   ├── ControlSchemeSettingsView.swift
+│   ├── ControlSurfaceResolver.swift
+│   ├── SemanticMusicalAction.swift
+│   ├── NicheControllerMappingEngine.swift
+│   ├── InputProcessingProfile.swift
+│   ├── ResponseCurve.swift
+│   ├── DeadzoneStrategy.swift
+│   ├── AngularHysteresis.swift
+│   ├── StickProcessor.swift
+│   └── TriggerProcessor.swift
 │
-├── XPadMIDI/          # CoreMIDI virtual endpoints & MPE zone dispatcher
+├── XPadMIDI/              # CoreMIDI virtual endpoints & MPE zone dispatcher
 │   ├── MIDIManager.swift
 │   ├── MPEManager.swift
-│   └── SMFExporter.swift
+│   ├── SMFExporter.swift
+│   ├── SMF2Exporter.swift
+│   ├── MIDI2Support.swift
+│   ├── MIDICISession.swift
+│   ├── LiveExpressionDispatch.swift
+│   └── TechniqueMIDITranslator.swift
 │
-├── XPadAudio/         # Real-time multi-voice polyphonic DSP synthesizer
-│   └── AudioEngine.swift
+├── XPadAudio/             # Real-time multi-voice polyphonic DSP synthesizer
+│   ├── AudioEngine.swift
+│   ├── DSPMath.swift
+│   ├── SynthEffects.swift
+│   ├── SpatialAudioEngine.swift
+│   ├── BuiltInDrums.swift
+│   ├── AUv3/               # Audio Unit v3 plugin target
+│   │   ├── XPadAUFactory.swift
+│   │   ├── XPadAUViewController.swift
+│   │   ├── XPadAUMIDIFX.swift
+│   │   ├── XPadAUInstrument.swift
+│   │   ├── XPadAUParameters.swift
+│   │   ├── XPadAudioUnitBase.swift
+│   │   └── VST3Bridge.swift
+│   └── VirtualAudio/       # Virtual audio driver loopback
+│       ├── VirtualAudioDriver.swift
+│       ├── VirtualAudioLoopbackEngine.swift
+│       ├── AudioRingBuffer.swift
+│       └── AudioLevelMeter.swift
 │
-├── XPadSequencer/     # Tick-based 960 PPQN multi-track timeline engine
+├── XPadSequencer/         # Tick-based 960 PPQN multi-track timeline engine
 │   └── Sequencer.swift
 │
-├── XPadUI/            # Native SwiftUI 5-workspace interface & visualizers
+├── XPadUI/                # Native SwiftUI 6-workspace interface & visualizers
 │   ├── MainAppView.swift
+│   ├── AppState.swift
 │   ├── TransportBarView.swift
+│   ├── TransportContextSelectors.swift
 │   ├── PlayWorkspaceView.swift
+│   ├── PracticeWorkspaceView.swift
 │   ├── HarmonyWorkspaceView.swift
+│   ├── HarmonyWorkspaceView.swift
+│   ├── HarmonicWheelView.swift
 │   ├── SequenceWorkspaceView.swift
 │   ├── MapWorkspaceView.swift
 │   ├── LibraryWorkspaceView.swift
-│   └── WorkspaceNavigation.swift
+│   ├── OCDSWorkspaceView.swift
+│   ├── ExpressionMapWorkspaceView.swift
+│   ├── WorkspaceNavigation.swift
+│   ├── ViewportMetrics.swift
+│   ├── GreenTheme.swift
+│   ├── ControllerPerformanceHUD.swift
+│   ├── ControllerVisualizerView.swift
+│   ├── ControllerGlyphView.swift
+│   ├── InputHUDs.swift
+│   ├── SoloModeHUD.swift
+│   ├── MultiControllerHUD.swift
+│   ├── SpatialAudioVisualizerView.swift
+│   ├── NicheControllerVisualizers.swift
+│   ├── PerformanceQuickControlsView.swift
+│   ├── InstrumentSelectorView.swift
+│   ├── MenuBarContentView.swift
+│   ├── VirtualAudioView.swift
+│   └── AUPluginView.swift
 │
-└── XPadInput/         # App main entrypoint
-    └── XPadInputApp.swift
+├── XPadInput/             # App main entrypoint
+│   └── XPadInputApp.swift
+│
+└── XPadTests/             # Universal exhaustive test runner
+    └── main.swift
 ```
 
 ---
@@ -74,6 +169,7 @@ Sources/
 - **No Third-Party Dependencies**: Do not introduce CocoaPods, Carthage, or third-party SPM packages unless explicitly requested. Use native Apple APIs (`GameController`, `CoreMIDI`, `AVFAudio`).
 - **Clean Separation of Concerns**:
   - `XPadCore` and `XPadTheory` must remain deterministic, pure Swift models with zero audio or UI dependencies.
+  - `XPadPractice` depends only on `XPadCore` and `XPadTheory` to maintain theory/practice separation from UI and audio concerns.
   - `XPadMIDI` and `XPadAudio` are isolated from UI state and communicate via thread-safe callbacks or Swift Concurrency.
   - UI components reside strictly in `XPadUI`.
 - **Concurrency & MainActor**:
@@ -92,6 +188,7 @@ Sources/
 Every module is accompanied by an exhaustive test suite under `Tests/`:
 - `XPadCoreTests`: Tests pitch class math, enharmonics, intervals, note frequencies, scale quantization, and chord voicings.
 - `XPadTheoryTests`: Tests harmonic wheels, polar lookups, SATB/smooth voice leading, suggestions, modulations, and progressions.
+- `XPadPracticeTests`: Tests practice lesson creation, chord evaluation, timing accuracy, and progress tracking.
 - `XPadControllerTests`: Tests deadzones, strum velocity, direction heuristics, rhythm compass polar sectors, and gesture capture.
 - `XPadMIDITests`: Tests virtual port lifecycles, MPE multi-channel distribution, and SMF binary encoding.
 - `XPadAudioTests`: Tests synth preset configurations and ADSR state machine transitions.
@@ -101,6 +198,8 @@ Every module is accompanied by an exhaustive test suite under `Tests/`:
 ```bash
 swift test
 ```
+
+**Note**: Tests require XCTest which may not be available in all build environments. Use `swift build` for compilation verification.
 
 ### Building the Project
 ```bash

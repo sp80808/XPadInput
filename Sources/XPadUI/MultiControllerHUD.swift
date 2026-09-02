@@ -33,6 +33,7 @@ public struct MultiControllerJammingBarView: View {
                         .padding(.vertical, 2)
                         .background(Color.green.opacity(0.15))
                         .clipShape(Capsule())
+                        .xShimmer(isActive: true)
                 }
             }
 
@@ -62,7 +63,7 @@ public struct MultiControllerJammingBarView: View {
                 Circle()
                     .fill(player.isConnected ? color : Color.gray.opacity(0.4))
                     .frame(width: 8, height: 8)
-                    .xGlow(isActive: player.isConnected, color: color)
+                    .xPulse(isActive: player.isConnected, color: color, speed: 0.8)
 
                 Text(player.slot.rawValue)
                     .font(.system(size: 11, weight: .bold))

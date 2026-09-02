@@ -19,6 +19,7 @@ enum DSPWorkspaceTab: String, CaseIterable, Identifiable {
     case performance = "Performance"
     case synth = "Synth"
     case fx = "FX"
+    case spatial = "Spatial 3D"
     var id: String { rawValue }
 }
 
@@ -66,95 +67,178 @@ public struct PlayView: View {
     
     public var body: some View {
         GeometryReader { geo in
-            let isWide = geo.size.width >= 1380
-            let leftWidth = isWide ? geo.size.width * 0.50 : geo.size.width * 0.48
-            let rightWidth = geo.size.width - leftWidth
-            
+            let metrics = ViewportMetrics(size: geo.size)
+            let isCompactH = metrics.isCompactHeight
+            let isExpandedH = metrics.heightClass == .expanded
+            let colPadding: CGFloat = isCompactH ? 8 : (metrics.isCompactWidth ? 10 : 12)
+            let colSpacing: CGFloat = isCompactH ? 6 : 8
+
+            // Compute dynamic column widths with user-adjustable split ratio
+            let hasLeft = appState.showHarmonicPanel
+            let hasRight = appState.showControllerVisualizer || appState.showDSPWorkspace || appState.showPerformanceMonitor || appState.showPerformanceQuickControls || appState.showStrumMidiBar
+
+            let leftWidth: CGFloat = {
+                if !hasLeft { return 0 }
+                if !hasRight { return geo.size.width }
+                let clampedRatio = max(0.22, min(0.78, appState.playSplitRatio))
+                return max(280, min(geo.size.width - 320, geo.size.width * clampedRatio))
+            }()
+
+            let rightWidth: CGFloat = {
+                if !hasRight { return 0 }
+                if !hasLeft { return geo.size.width }
+                return max(320, geo.size.width - leftWidth - 8)
+            }()
+
+            let chordDisplayHeight: CGFloat = isCompactH ? 58 : (isExpandedH ? 80 : 72)
+            let quickControlsH: CGFloat = isCompactH ? 42 : 48
+            let perfMonitorH: CGFloat = isCompactH ? 72 : (isExpandedH ? 92 : 84)
+            let strumMidiH: CGFloat = isCompactH ? 48 : (isExpandedH ? 60 : 54)
+
             HStack(spacing: 0) {
-                // LEFT COLUMN: Harmonic Workspace - Fixed layout, no scroll
-                VStack(spacing: 12) {
-                    // Reserved: Multi-Jam Bar (always occupies same height)
-                    if appState.multiJamManager.isSessionActive {
-                        MultiControllerJammingBarView(jammingManager: appState.multiJamManager)
-                            .transition(.opacity)
+                // LEFT COLUMN: Harmonic Workspace
+                if hasLeft {
+                    VStack(spacing: colSpacing) {
+                        // Multi-Jam Bar (when active)
+                        if appState.multiJamManager.isSessionActive {
+                            MultiControllerJammingBarView(jammingManager: appState.multiJamManager)
+                                .transition(.opacity)
+                        }
+
+                        // Current Chord Display with integrated static contextual hint
+                        EnhancedChordDisplayView()
+                            .frame(height: chordDisplayHeight)
+
+                        // Solo HUD (when active)
+                        if appState.instrumentProfile.family == .synthLead || appState.isSoloModeActive {
+                            SmartSoloHUDView(telemetry: appState.smartSoloEngine.telemetry, chord: appState.currentChord)
+                                .transition(.opacity)
+                        }
+
+                        // Arcade Frets lane (hidden Guitar Hero mode)
+                        if appState.isArcadeModeEnabled {
+                            ArcadeLaneView()
+                                .frame(height: isCompactH ? 108 : 128)
+                                .transition(.opacity)
+                        }
+
+                        // Harmonic Wheel - chord selection via stick
+                        HarmonicWheelView()
+                            .frame(minHeight: 160, maxHeight: .infinity)
+                            .padding(.vertical, isCompactH ? 2 : 4)
+
+                        // Splitter between wheel and tabbed workspace
+                        if appState.showHarmonicTabSection {
+                            HorizontalSplitterHandle(ratio: Binding(
+                                get: { appState.leftVerticalSplitRatio },
+                                set: { appState.leftVerticalSplitRatio = $0 }
+                            ), defaultRatio: 0.58)
+
+                            // Tabbed: Chords | Progression | Suggestions
+                            HarmonicTabbedWorkspace(
+                                tab: $harmonicWorkspaceTab,
+                                activeProgression: $activeProgression,
+                                selectedBlockIndex: $selectedBlockIndex,
+                                isPlayingProgression: $isPlayingProgression,
+                                diatonicChords: diatonicChords,
+                                currentOrSelectedChord: currentOrSelectedChord,
+                                harmonicSuggestions: harmonicSuggestions,
+                                onAuditionChord: auditionChord,
+                                onSendToSequencer: sendProgressionToSequencer
+                            )
+                            .frame(minHeight: 120, maxHeight: .infinity)
+                        }
+
+                        // Active Notes
+                        ActiveNotesView()
                     }
-                    // Reserved space when not active
-                    if !appState.multiJamManager.isSessionActive {
-                        Spacer().frame(height: 130)
-                    }
-
-                    // Current Chord Display - Fixed height with prominent key/scale
-                    EnhancedChordDisplayView()
-                        .frame(height: 80)
-
-                    // Reserved: Solo HUD - Fixed height
-                    if appState.instrumentProfile.family == .synthLead || appState.isSoloModeActive {
-                        SmartSoloHUDView(telemetry: appState.smartSoloEngine.telemetry, chord: appState.currentChord)
-                            .transition(.opacity)
-                    }
-                    if !(appState.instrumentProfile.family == .synthLead || appState.isSoloModeActive) {
-                        Spacer().frame(height: 140)
-                    }
-
-                    // Reserved: Contextual Hint - Fixed height
-                    ContextualHintSlot()
-                        .frame(height: 36)
-
-                    // Harmonic Wheel - SIGNIFICANTLY LARGER
-                    HarmonicWheelView()
-                        .frame(minHeight: 350, maxHeight: .infinity)
-                        .padding(.vertical, 4)
-
-                    // Tabbed: Chords | Progression | Suggestions
-                    HarmonicTabbedWorkspace(
-                        tab: $harmonicWorkspaceTab,
-                        activeProgression: $activeProgression,
-                        selectedBlockIndex: $selectedBlockIndex,
-                        isPlayingProgression: $isPlayingProgression,
-                        diatonicChords: diatonicChords,
-                        currentOrSelectedChord: currentOrSelectedChord,
-                        harmonicSuggestions: harmonicSuggestions,
-                        onAuditionChord: auditionChord,
-                        onSendToSequencer: sendProgressionToSequencer
-                    )
-                    .frame(height: 240)
-
-                    // Active Notes - Fixed height
-                    ActiveNotesView()
-                        .frame(height: 44)
+                    .padding(colPadding)
+                    .frame(width: leftWidth)
+                    .animation(XTheme.snappy, value: appState.showHarmonicTabSection)
+                    .animation(.easeInOut(duration: 0.25), value: appState.multiJamManager.isSessionActive)
+                    .animation(.easeInOut(duration: 0.25), value: appState.isSoloModeActive)
+                    .animation(.easeInOut(duration: 0.25), value: appState.isArcadeModeEnabled)
                 }
-                .padding(16)
-                .frame(width: leftWidth)
-                
-                Divider().background(XTheme.border)
-                
-                // RIGHT COLUMN: Controller & DSP Workspace - Fixed layout, no scroll
-                VStack(spacing: 12) {
-                    // Controller Visualizer - Fixed height
-                    ControllerVisualizerView()
-                        .frame(height: 320)
 
-                    // Performance Quick Controls - Fixed height
-                    PerformanceQuickControlsView()
-                        .frame(height: 56)
-
-                    // Tabbed: Performance | Synth | FX
-                    DSPTabbedWorkspace(
-                        tab: $dspWorkspaceTab,
-                        cutoff: $filterCutoff,
-                        resonance: $filterResonance,
-                        drive: $saturation,
-                        reverb: $reverbMix
+                // Vertical column splitter between left and right panes
+                if hasLeft && hasRight {
+                    VerticalSplitterHandle(
+                        ratio: Binding(
+                            get: { appState.playSplitRatio },
+                            set: { appState.playSplitRatio = $0 }
+                        ),
+                        containerWidth: geo.size.width,
+                        defaultRatio: 0.38
                     )
-                    .frame(height: 180)
-
-                    // Strum Indicator - Fixed height
-                    StrumIndicatorView()
-                        .frame(height: 68)
                 }
-                .padding(16)
-                .frame(width: rightWidth)
+
+                // RIGHT COLUMN: Controller & Performance Workspace
+                if hasRight {
+                    VStack(spacing: colSpacing) {
+                        // Section Header / Quick View Toggles Bar
+                        HStack {
+                            Spacer()
+                            ViewLayoutMenuButton()
+                        }
+                        .frame(height: 20)
+
+                        // Controller Visualizer - Prominent & dynamically scaled
+                        if appState.showControllerVisualizer {
+                            ControllerVisualizerView()
+                                .frame(minHeight: isCompactH ? 230 : (isExpandedH ? 320 : 270), maxHeight: .infinity)
+                        }
+
+                        // Splitter between Controller HUD and lower DSP section
+                        if appState.showControllerVisualizer && (appState.showDSPWorkspace || appState.showPerformanceMonitor) {
+                            HorizontalSplitterHandle(ratio: Binding(
+                                get: { appState.rightVerticalSplitRatio },
+                                set: { appState.rightVerticalSplitRatio = $0 }
+                            ), defaultRatio: 0.58)
+                        }
+
+                        // Performance Quick Controls
+                        if appState.showPerformanceQuickControls {
+                            PerformanceQuickControlsView()
+                                .frame(height: quickControlsH)
+                        }
+
+                        // Real-time Performance Monitor
+                        if appState.showPerformanceMonitor {
+                            PerformanceMonitorView()
+                                .frame(height: perfMonitorH)
+                        }
+
+                        // Tabbed: Performance | Synth | FX | Spatial 3D
+                        if appState.showDSPWorkspace {
+                            DSPTabbedWorkspace(
+                                tab: $dspWorkspaceTab,
+                                cutoff: $filterCutoff,
+                                resonance: $filterResonance,
+                                drive: $saturation,
+                                reverb: $reverbMix
+                            )
+                            .frame(minHeight: 110, maxHeight: .infinity)
+                        }
+
+                        // Strum Indicator & MIDI Activity
+                        if appState.showStrumMidiBar {
+                            HStack(spacing: 8) {
+                                StrumIndicatorView()
+                                MIDIActivityView()
+                            }
+                            .frame(height: strumMidiH)
+                        }
+                    }
+                    .padding(colPadding)
+                    .frame(width: rightWidth)
+                    .animation(XTheme.snappy, value: appState.showControllerVisualizer)
+                    .animation(XTheme.snappy, value: appState.showDSPWorkspace)
+                    .animation(XTheme.snappy, value: appState.showPerformanceMonitor)
+                    .animation(XTheme.snappy, value: appState.showPerformanceQuickControls)
+                    .animation(XTheme.snappy, value: appState.showStrumMidiBar)
+                }
             }
+            .environment(\.viewportMetrics, metrics)
         }
         .onAppear {
             if activeProgression.blocks.isEmpty {
@@ -198,7 +282,7 @@ public struct PlayView: View {
     }
 }
 
-// MARK: - Contextual Hint Slot
+// MARK: - Draggable Splitter Components
 
 private struct ContextualHintSlot: View {
     @Environment(AppState.self) private var appState
@@ -221,69 +305,307 @@ private struct ContextualHintSlot: View {
     }
 }
 
+struct VerticalSplitterHandle: View {
+    @Binding var ratio: CGFloat
+    let containerWidth: CGFloat
+    var defaultRatio: CGFloat = 0.38
+    
+    @State private var isHovering: Bool = false
+    @State private var isDragging: Bool = false
+    @State private var dragStartRatio: CGFloat = 0.38
+    
+    var body: some View {
+        ZStack {
+            // Invisible wider hit target
+            Rectangle()
+                .fill(Color.clear)
+                .frame(width: 14)
+                .contentShape(Rectangle())
+
+            // Visible divider line
+            Rectangle()
+                .fill(isDragging ? XTheme.primary : (isHovering ? XTheme.primary.opacity(0.65) : XTheme.border))
+                .frame(width: 1)
+
+            // Centered tactile grip handle
+            RoundedRectangle(cornerRadius: 2)
+                .fill(isDragging ? XTheme.primary : (isHovering ? XTheme.primary.opacity(0.8) : XTheme.surfaceElevated))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 2)
+                        .stroke(isDragging ? XTheme.primary : (isHovering ? XTheme.primary.opacity(0.5) : XTheme.border), lineWidth: 1)
+                )
+                .frame(width: 5, height: 32)
+                .shadow(color: isHovering || isDragging ? XTheme.primary.opacity(0.35) : Color.clear, radius: 4)
+        }
+        .frame(width: 8)
+        .onHover { hovering in
+            isHovering = hovering
+            if hovering {
+                NSCursor.resizeLeftRight.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .gesture(
+            DragGesture(minimumDistance: 1)
+                .onChanged { value in
+                    if !isDragging {
+                        isDragging = true
+                        dragStartRatio = ratio
+                    }
+                    guard containerWidth > 0 else { return }
+                    let deltaRatio = value.translation.width / containerWidth
+                    let newRatio = dragStartRatio + deltaRatio
+                    ratio = max(0.22, min(0.78, newRatio))
+                }
+                .onEnded { _ in
+                    isDragging = false
+                }
+        )
+        .onTapGesture(count: 2) {
+            withAnimation(XTheme.snappy) {
+                ratio = defaultRatio
+            }
+        }
+        .help("Drag to resize columns (Double-click to reset)")
+    }
+}
+
+struct HorizontalSplitterHandle: View {
+    @Binding var ratio: CGFloat
+    var defaultRatio: CGFloat = 0.50
+    
+    @State private var isHovering: Bool = false
+    @State private var isDragging: Bool = false
+    @State private var dragStartRatio: CGFloat = 0.50
+    
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                // Invisible taller hit target
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(height: 12)
+                    .contentShape(Rectangle())
+
+                // Visible divider line
+                Rectangle()
+                    .fill(isDragging ? XTheme.primary : (isHovering ? XTheme.primary.opacity(0.65) : XTheme.border.opacity(0.6)))
+                    .frame(height: 1)
+
+                // Centered tactile grip handle
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(isDragging ? XTheme.primary : (isHovering ? XTheme.primary.opacity(0.8) : XTheme.surfaceElevated))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 2)
+                            .stroke(isDragging ? XTheme.primary : (isHovering ? XTheme.primary.opacity(0.5) : XTheme.border), lineWidth: 1)
+                    )
+                    .frame(width: 32, height: 5)
+                    .shadow(color: isHovering || isDragging ? XTheme.primary.opacity(0.35) : Color.clear, radius: 4)
+            }
+            .frame(maxWidth: .infinity, maxHeight: 8)
+            .onHover { hovering in
+                isHovering = hovering
+                if hovering {
+                    NSCursor.resizeUpDown.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .gesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { value in
+                        if !isDragging {
+                            isDragging = true
+                            dragStartRatio = ratio
+                        }
+                        let totalHeight = geo.size.height > 0 ? geo.size.height : 400
+                        let deltaRatio = value.translation.height / totalHeight
+                        let newRatio = dragStartRatio + deltaRatio
+                        ratio = max(0.20, min(0.80, newRatio))
+                    }
+                    .onEnded { _ in
+                        isDragging = false
+                    }
+            )
+            .onTapGesture(count: 2) {
+                withAnimation(XTheme.snappy) {
+                    ratio = defaultRatio
+                }
+            }
+            .help("Drag to resize section (Double-click to reset)")
+        }
+        .frame(height: 8)
+    }
+}
+
+// MARK: - View Layout Menu Button
+
+struct ViewLayoutMenuButton: View {
+    @Environment(AppState.self) private var appState
+    
+    var body: some View {
+        Menu {
+            Section("Panels & Sections") {
+                Toggle("Harmonic Wheel & Theory", isOn: Binding(
+                    get: { appState.showHarmonicPanel },
+                    set: { appState.showHarmonicPanel = $0 }
+                ))
+                Toggle("Harmonic Progression Tabs", isOn: Binding(
+                    get: { appState.showHarmonicTabSection },
+                    set: { appState.showHarmonicTabSection = $0 }
+                ))
+                Toggle("Controller HUD Visualizer", isOn: Binding(
+                    get: { appState.showControllerVisualizer },
+                    set: { appState.showControllerVisualizer = $0 }
+                ))
+                Toggle("Performance Quick Controls", isOn: Binding(
+                    get: { appState.showPerformanceQuickControls },
+                    set: { appState.showPerformanceQuickControls = $0 }
+                ))
+                Toggle("Performance Monitor & Lanes", isOn: Binding(
+                    get: { appState.showPerformanceMonitor },
+                    set: { appState.showPerformanceMonitor = $0 }
+                ))
+                Toggle("DSP & Synth Workspace", isOn: Binding(
+                    get: { appState.showDSPWorkspace },
+                    set: { appState.showDSPWorkspace = $0 }
+                ))
+                Toggle("Strum & MIDI Activity Bar", isOn: Binding(
+                    get: { appState.showStrumMidiBar },
+                    set: { appState.showStrumMidiBar = $0 }
+                ))
+            }
+            
+            Divider()
+            
+            Button("Reset Workspace Layout") {
+                withAnimation(XTheme.snappy) {
+                    appState.resetPlayLayout()
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "rectangle.split.2x1")
+                    .font(.system(size: 10, weight: .semibold))
+                Text("View")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            }
+            .foregroundColor(XTheme.textSecondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(XTheme.surface.opacity(0.5))
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(XTheme.border, lineWidth: 1))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Configure visible workspace sections and layout splitters")
+    }
+}
+
 // MARK: - Enhanced Chord Display with Always-Visible Key/Scale
 
 struct EnhancedChordDisplayView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.viewportMetrics) private var viewport
+    @State private var previousChordName: String?
+    @State private var chordFlash: Bool = false
 
     private var isSounding: Bool { !appState.activeNotes.isEmpty }
-    private var chordSymbol: String { appState.currentChord?.displayName ?? "—" }
 
     var body: some View {
-        HStack(spacing: 16) {
+        let currentName = appState.currentChord?.displayName ?? "-"
+        let isCompact = viewport.isCompactHeight
+
+        HStack(spacing: isCompact ? 10 : 16) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(chordSymbol)
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                Text(currentName)
+                    .font(.system(size: isCompact ? 26 : 34, weight: .bold, design: .rounded))
                     .foregroundColor(XTheme.textPrimary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .frame(height: 40)
-                    .xMusicalContent(chordSymbol)
+                    .minimumScaleFactor(0.7)
+                    .frame(height: isCompact ? 30 : 38)
+                    .xMusicalContent(currentName)
                     .xGlow(isActive: isSounding, color: XTheme.primary)
+                    .overlay {
+                        if chordFlash && !reduceMotion {
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(XTheme.primary.opacity(0.22))
+                                .allowsHitTesting(false)
+                        }
+                    }
                 if let chord = appState.currentChord {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         if let roman = chord.romanNumeral(in: appState.currentKey, scale: appState.currentScale) {
                             Text(roman)
-                                .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                                .font(.system(size: isCompact ? 13 : 15, weight: .semibold, design: .monospaced))
+                                .monospacedDigit()
                                 .foregroundColor(XTheme.primary)
                                 .xMusicalContent(roman)
                         }
                         TensionBadge(tension: chord.tension(in: appState.currentKey, scale: appState.currentScale))
                     }
-                    .frame(height: 22)
+                    .frame(height: isCompact ? 18 : 22)
                 } else {
                     Text("Move the left stick to choose a chord")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: isCompact ? 11 : 12, weight: .medium))
                         .foregroundColor(XTheme.textTertiary)
-                        .frame(height: 22, alignment: .leading)
+                        .frame(height: isCompact ? 18 : 22, alignment: .leading)
                 }
             }
             Spacer()
-            VStack(alignment: .trailing, spacing: 4) {
-                ActiveTechniqueStatusView()
-                    .frame(height: 24)
+            VStack(alignment: .trailing, spacing: isCompact ? 2 : 4) {
+                HStack(spacing: 6) {
+                    if let hint = appState.contextualHint, !appState.activeNotes.isEmpty {
+                        HStack(spacing: 4) {
+                            Image(systemName: "hand.tap.fill")
+                                .font(.system(size: isCompact ? 8 : 9))
+                                .foregroundColor(XTheme.expression)
+                            Text(hint)
+                                .font(.system(size: isCompact ? 9 : 10, weight: .semibold, design: .rounded))
+                                .foregroundColor(XTheme.textPrimary)
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule()
+                                .fill(XTheme.expression.opacity(0.12))
+                                .overlay(Capsule().stroke(XTheme.expression.opacity(0.32), lineWidth: 1))
+                        )
+                        .transition(.opacity)
+                    }
+                    ActiveTechniqueStatusView(compact: isCompact)
+                }
+                .frame(height: isCompact ? 20 : 24)
                 HStack(spacing: 4) {
                     Text(appState.currentKey.displayName)
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .font(.system(size: isCompact ? 15 : 18, weight: .bold, design: .rounded))
                         .foregroundColor(XTheme.primary)
                     Text("•")
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.system(size: isCompact ? 14 : 18, weight: .bold))
                         .foregroundColor(XTheme.textTertiary)
                     Text(appState.currentScale.displayName)
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: isCompact ? 12 : 14, weight: .medium))
                         .foregroundColor(XTheme.textSecondary)
                         .lineLimit(1)
                 }
-                .frame(height: 28)
+                .frame(height: isCompact ? 22 : 28)
                 .xMusicalContent(appState.currentScale.id)
             }
         }
-        .frame(height: 80)
-        .padding(.horizontal, 14)
+        .padding(.horizontal, isCompact ? 10 : 14)
         .xCard(isActive: isSounding || appState.currentChord != nil)
         .animation(reduceMotion ? nil : XTheme.transitionShort, value: isSounding)
         .animation(reduceMotion ? nil : XTheme.transitionShort, value: appState.currentChord?.symbol)
+        .onChange(of: currentName) { _, newName in
+            previousChordName = newName
+            guard !reduceMotion else { return }
+            chordFlash = true
+            withAnimation(.easeOut(duration: 0.35)) { chordFlash = false }
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityChordLabel)
     }
@@ -313,12 +635,14 @@ private struct HarmonicTabbedWorkspace: View {
     let harmonicSuggestions: [ChordSuggestion]
     let onAuditionChord: (Chord) -> Void
     let onSendToSequencer: () -> Void
+    @Namespace private var tabNS
     
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 4) {
                 ForEach(HarmonicWorkspaceTab.allCases) { t in
-                    TabButton(title: t.rawValue, isSelected: tab == t) { tab = t }
+                    TabButton(title: t.rawValue, isSelected: tab == t, action: { tab = t },
+                              namespace: tabNS, namespaceID: "harmonic-tab-pill")
                 }
                 Spacer()
             }
@@ -357,12 +681,14 @@ private struct DSPTabbedWorkspace: View {
     @Binding var resonance: Double
     @Binding var drive: Double
     @Binding var reverb: Double
+    @Namespace private var dspTabNS
     
     var body: some View {
         VStack(spacing: 8) {
             HStack(spacing: 4) {
                 ForEach(DSPWorkspaceTab.allCases) { t in
-                    TabButton(title: t.rawValue, isSelected: tab == t) { tab = t }
+                    TabButton(title: t.rawValue, isSelected: tab == t, action: { tab = t },
+                              namespace: dspTabNS, namespaceID: "dsp-tab-pill")
                 }
                 Spacer()
             }
@@ -372,6 +698,7 @@ private struct DSPTabbedWorkspace: View {
                 case .performance: PerformanceDSPPanel()
                 case .synth: MasterDSPStrip(cutoff: $cutoff, resonance: $resonance, drive: $drive, reverb: $reverb)
                 case .fx: FXDSPPanel(cutoff: $cutoff, resonance: $resonance, drive: $drive, reverb: $reverb)
+                case .spatial: SpatialAudioVisualizerView()
                 }
             }
             .id(tab)
@@ -389,6 +716,8 @@ private struct TabButton: View {
     let title: String
     let isSelected: Bool
     let action: () -> Void
+    var namespace: Namespace.ID? = nil
+    var namespaceID: String = ""
 
     var body: some View {
         Button {
@@ -399,9 +728,21 @@ private struct TabButton: View {
                 .foregroundColor(isSelected ? XTheme.primary : XTheme.textTertiary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .xHoverFill(isSelected: isSelected)
+                .frame(minWidth: 48)
+                .background {
+                    if isSelected {
+                        Capsule()
+                            .fill(XTheme.primary.opacity(0.18))
+                            .overlay(Capsule().stroke(XTheme.primary, lineWidth: 1))
+                            .matchedGeometryEffect(id: namespaceID, in: namespace ?? Namespace().wrappedValue)
+                    } else {
+                        Capsule().fill(Color.clear)
+                    }
+                }
         }
         .buttonStyle(.plain)
+        .scaleEffect(isSelected ? 1.02 : 1.0)
+        .animation(XTheme.snappy, value: isSelected)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
@@ -410,23 +751,165 @@ private struct TabButton: View {
 
 private struct PerformanceDSPPanel: View {
     @Environment(AppState.self) private var appState
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("PERFORMANCE").font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(XTheme.textTertiary)
-            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
-                GridRow {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Octave").font(.system(size: 9)).foregroundColor(XTheme.textSecondary)
-                        Slider(value: .constant(0.5), in: -2...2).tint(XTheme.primary)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Bend Range").font(.system(size: 9)).foregroundColor(XTheme.textSecondary)
-                        Slider(value: .constant(2.0), in: 1...24).tint(XTheme.expression)
-                    }
-                }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("PERFORMANCE LANES")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundColor(XTheme.textTertiary)
+                Spacer()
+                Text(appState.instrumentProfile.name.uppercased())
+                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .foregroundColor(XTheme.primary)
+            }
+
+            HStack(spacing: 8) {
+                RegisterLaneStepper(
+                    title: "Strum",
+                    subtitle: "Chord voicing",
+                    icon: "guitars.fill",
+                    accent: XTheme.primary,
+                    value: Binding(
+                        get: { appState.performanceRegisters.strumOctave },
+                        set: { appState.setStrumOctave($0) }
+                    )
+                )
+
+                RegisterLaneStepper(
+                    title: "Face",
+                    subtitle: "Root · 3rd · 5th · 7th",
+                    icon: "circle.grid.2x2.fill",
+                    accent: XTheme.expression,
+                    value: Binding(
+                        get: { appState.performanceRegisters.faceButtonOctave },
+                        set: { appState.setFaceButtonOctave($0) }
+                    )
+                )
+
+                PerformanceOutputStatus()
             }
         }
         .padding(4)
+    }
+}
+
+private struct RegisterLaneStepper: View {
+    let title: String
+    let subtitle: String
+    let icon: String
+    let accent: Color
+    let value: Binding<Int>
+
+    var body: some View {
+        Stepper(value: value, in: PerformanceLaneRegisters.supportedOctaves) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(accent)
+                    .frame(width: 20)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(title)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(XTheme.textPrimary)
+                        Text("OCT \(value.wrappedValue)")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundColor(accent)
+                    }
+                    Text(subtitle)
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundColor(XTheme.textTertiary)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .controlSize(.small)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, minHeight: 52)
+        .background(
+            RoundedRectangle(cornerRadius: XTheme.radiusSmall)
+                .fill(XTheme.surfaceElevated.opacity(0.78))
+                .overlay(
+                    RoundedRectangle(cornerRadius: XTheme.radiusSmall)
+                        .stroke(accent.opacity(0.24), lineWidth: 1)
+                )
+        )
+        .accessibilityLabel("\(title) register")
+        .accessibilityValue("Octave \(value.wrappedValue)")
+        .help("Set the \(title.lowercased()) lane to octave \(value.wrappedValue)")
+    }
+}
+
+private struct PerformanceOutputStatus: View {
+    @Environment(AppState.self) private var appState
+
+    private var protocolLabel: String {
+        appState.resolvedLayout.usesMPE ? "MPE" : "MIDI"
+    }
+
+    private var outputState: String {
+        if appState.midiEngine.virtualMIDIEnabled,
+           appState.midiEngine.setupErrorDescription != nil {
+            return "MIDI SETUP ERROR"
+        }
+        return appState.midiEngine.virtualMIDIEnabled ? "VIRTUAL MIDI ON" : "INTERNAL AUDIO"
+    }
+
+    private var statusColor: Color {
+        if appState.midiEngine.virtualMIDIEnabled,
+           appState.midiEngine.setupErrorDescription != nil {
+            return XTheme.tense
+        }
+        return appState.midiEngine.virtualMIDIEnabled ? XTheme.midiActivity : XTheme.primary
+    }
+
+    private var bendLabel: String {
+        let range = appState.destinationProfile.bendRangeSemitones
+        return range.rounded() == range ? "±\(Int(range)) ST" : String(format: "±%.1f ST", range)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 6, height: 6)
+                Text(outputState)
+                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .foregroundColor(XTheme.textSecondary)
+            }
+
+            Text(appState.activeHostKind.rawValue)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(XTheme.textPrimary)
+                .lineLimit(1)
+
+            Text("\(protocolLabel) · \(bendLabel)")
+                .font(.system(size: 8, weight: .medium, design: .monospaced))
+                .foregroundColor(XTheme.textTertiary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(minWidth: 122, maxWidth: .infinity, minHeight: 52, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: XTheme.radiusSmall)
+                .fill(XTheme.surface.opacity(0.72))
+                .overlay(
+                    RoundedRectangle(cornerRadius: XTheme.radiusSmall)
+                        .stroke(XTheme.border, lineWidth: 1)
+                )
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Performance output")
+        .accessibilityValue("\(outputState), \(appState.activeHostKind.rawValue), \(protocolLabel), bend range \(bendLabel)")
+        .help(
+            appState.midiEngine.virtualMIDIEnabled
+                ? appState.midiEngine.setupErrorDescription ?? "Virtual MIDI sources are enabled"
+                : "Internal audio is active; virtual MIDI sources are off"
+        )
     }
 }
 
@@ -471,36 +954,56 @@ private struct ToggleButton: View {
 
 struct DiatonicChordPadsRow: View {
     let chords: [Chord]; let activeChord: Chord?; let onSelect: (Chord) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("DIATONIC CHORDS").font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(XTheme.textTertiary)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 7), spacing: 6) {
                 ForEach(Array(chords.enumerated()), id: \.offset) { index, chord in
                     let isActive = activeChord?.symbol == chord.symbol
-                    Button { onSelect(chord) } label: {
-                        VStack(spacing: 3) {
-                            Text(romanNumeral(for: index + 1))
-                                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                .foregroundColor(isActive ? XTheme.primaryLight : XTheme.primary)
-                            Text(chord.symbol)
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(isActive ? .white : XTheme.textPrimary)
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 54, maxHeight: 54)
-                    }
-                    .buttonStyle(XMusicalPadButtonStyle(isSelected: isActive))
-                    .help("Audition \(chord.symbol)")
-                    .accessibilityLabel("\(romanNumeral(for: index + 1)), \(chord.symbol)")
-                    .accessibilityAddTraits(isActive ? .isSelected : [])
+                    ChordPadButton(chord: chord, index: index, isActive: isActive, reduceMotion: reduceMotion, onSelect: onSelect)
                 }
             }
         }
         .padding(10).background(XTheme.surface.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius: 8))
     }
+}
+
+/// Individual diatonic chord pad — isolated so xRipple state is per-pad.
+private struct ChordPadButton: View {
+    let chord: Chord
+    let index: Int
+    let isActive: Bool
+    let reduceMotion: Bool
+    let onSelect: (Chord) -> Void
+    @State private var rippleTrigger = 0
+
     private func romanNumeral(for degree: Int) -> String {
         ["I","ii","iii","IV","V","vi","vii°"][degree-1] ?? "\(degree)"
+    }
+
+    var body: some View {
+        Button {
+            if !reduceMotion { rippleTrigger += 1 }
+            onSelect(chord)
+        } label: {
+            VStack(spacing: 3) {
+                Text(romanNumeral(for: index + 1)).font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(isActive ? XTheme.primaryLight : XTheme.primary)
+                Text(chord.symbol).font(.system(size: 11, weight: .bold)).foregroundColor(isActive ? .white : XTheme.textPrimary).lineLimit(1).fixedSize(horizontal: true, vertical: false)
+            }
+            .frame(maxWidth: .infinity, minHeight: 54, maxHeight: 54)
+            .background(isActive ? XTheme.primary.opacity(0.3) : XTheme.surface)
+            .xShimmer(isActive: isActive)
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(isActive ? XTheme.primary : XTheme.border, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(.plain)
+        .scaleEffect(isActive && !reduceMotion ? 0.94 : 1.0)
+        .animation(reduceMotion ? nil : XTheme.feedbackFast, value: isActive)
+        .xRipple(trigger: rippleTrigger, color: XTheme.primary, size: 54)
+        .help("Audition \(chord.symbol)")
+        .accessibilityLabel("\(romanNumeral(for: index + 1)), \(chord.symbol)")
+        .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 }
 
@@ -548,6 +1051,8 @@ struct ChordProgressionBuilderSection: View {
                         }
                         .buttonStyle(XMusicalPadButtonStyle(isSelected: isSelected, cornerRadius: 8))
                         .help("Audition \(block.chord.symbol)")
+                        .accessibilityLabel("\(block.romanNumeral), \(block.chord.symbol)")
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
                     }
                     Button {
                         withAnimation(XTheme.springSnappy) {
@@ -746,5 +1251,302 @@ struct TensionBadge: View {
                 )
         )
         .accessibilityLabel("Harmonic character \(character.label)")
+    }
+}
+
+// MARK: - Performance Monitor
+
+struct PerformanceMonitorView: View {
+    @Environment(AppState.self) private var appState
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "waveform.path.ecg")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(XTheme.primary)
+                Text("PERFORMANCE")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundColor(XTheme.textTertiary)
+                Spacer()
+                if let technique = appState.lastFrame?.activeTechnique, technique != .normal {
+                    Text(technique.playLabel ?? "")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundColor(XTheme.primary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(XTheme.primary.opacity(0.15))
+                        .clipShape(Capsule())
+                }
+            }
+            
+            HStack(spacing: 12) {
+                // Pitch Bend
+                ExpressionBar(
+                    label: "Bend",
+                    icon: "arrow.left.and.right",
+                    value: appState.lastFrame?.bend.bendSemitones ?? 0,
+                    range: -12...12,
+                    color: XTheme.expression,
+                    trail: appState.expressionTrails.bend
+                )
+                
+                // Pressure / Aftertouch
+                ExpressionBar(
+                    label: "Pressure",
+                    icon: "hand.raised.fill",
+                    value: appState.lastFrame?.pressure.smoothed ?? 0,
+                    range: 0...1,
+                    color: XTheme.primary,
+                    trail: appState.expressionTrails.pressure
+                )
+                
+                // Timbre / CC74
+                ExpressionBar(
+                    label: "Timbre",
+                    icon: "slider.horizontal.2.square",
+                    value: appState.lastFrame?.timbre ?? 0,
+                    range: 0...1,
+                    color: XTheme.tense,
+                    trail: appState.expressionTrails.timbre
+                )
+                
+                // Palm Mute
+                ExpressionBar(
+                    label: "Mute",
+                    icon: "hand.tap.fill",
+                    value: appState.lastFrame?.palmMuteAmount ?? 0,
+                    range: 0...1,
+                    color: XTheme.accent,
+                    trail: appState.expressionTrails.mute
+                )
+                
+                // Active notes count
+                VStack(spacing: 2) {
+                    Image(systemName: "music.note")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundColor(XTheme.textTertiary)
+                    Text("Notes")
+                        .font(.system(size: 8, weight: .medium, design: .monospaced))
+                        .foregroundColor(XTheme.textTertiary)
+                    Text("\(appState.activeNotes.count)")
+                        .font(.system(size: 18, weight: .bold, design: .rounded))
+                        .foregroundColor(appState.activeNotes.isEmpty ? XTheme.textTertiary : XTheme.textPrimary)
+                        .contentTransition(.numericText())
+                    Spacer()
+                }
+                .frame(width: 40)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(XTheme.surface.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct ExpressionBar: View {
+    let label: String
+    var icon: String? = nil          // optional SF Symbol prefix
+    let value: Double
+    let range: ClosedRange<Double>
+    let color: Color
+    var trail: [Double]? = nil
+    
+    private var normalized: Double {
+        let minVal = range.lowerBound
+        let maxVal = range.upperBound
+        guard maxVal > minVal else { return 0 }
+        return (value - minVal) / (maxVal - minVal)
+    }
+    
+    private var isBipolar: Bool { range.lowerBound < 0 }
+    
+    var body: some View {
+        VStack(spacing: 2) {
+            // Icon + label row
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundColor(color.opacity(0.75))
+            }
+            Text(label)
+                .font(.system(size: 8, weight: .medium, design: .monospaced))
+                .foregroundColor(XTheme.textTertiary)
+            GeometryReader { geo in
+                let width = geo.size.width
+                let height = geo.size.height
+                let mid = width / 2
+                
+                ZStack(alignment: .leading) {
+                    // Waveform Sparkline Trail in background
+                    if let trail = trail, trail.count > 1 {
+                        ExpressionSparkline(values: trail, range: range, color: color)
+                            .frame(width: width, height: height)
+                    }
+
+                    // Track
+                    Capsule()
+                        .fill(XTheme.surface.opacity(trail != nil ? 0.45 : 1.0))
+                        .frame(height: 6)
+                        .position(x: mid, y: height / 2)
+
+                    if isBipolar {
+                        // Center marker
+                        Rectangle()
+                            .fill(XTheme.border)
+                            .frame(width: 1, height: 6)
+                            .position(x: mid, y: height / 2)
+                        // Fill from center
+                        if normalized >= 0.5 {
+                            Capsule()
+                                .fill(color.opacity(0.85))
+                                .frame(width: max(0, (normalized - 0.5) * width), height: 6)
+                                .position(x: mid + max(0, (normalized - 0.5) * width) / 2, y: height / 2)
+                        } else {
+                            Capsule()
+                                .fill(color.opacity(0.85))
+                                .frame(width: max(0, (0.5 - normalized) * width), height: 6)
+                                .position(x: normalized * width + max(0, (0.5 - normalized) * width) / 2, y: height / 2)
+                        }
+                    } else {
+                        Capsule()
+                            .fill(color.opacity(0.85))
+                            .frame(width: max(0, normalized * width), height: 6)
+                            .position(x: max(0, normalized * width) / 2, y: height / 2)
+                    }
+                }
+            }
+            .frame(height: 14)
+            Text(formatValue())
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .monospacedDigit()
+                .frame(minWidth: 44, alignment: .center)
+                .foregroundColor(XTheme.textSecondary)
+        }
+        .frame(minWidth: 50)
+    }
+    
+    private func formatValue() -> String {
+        if isBipolar {
+            return String(format: "%+.1f", value)
+        }
+        return String(format: "%.0f%%", normalized * 100)
+    }
+}
+
+private struct ExpressionSparkline: View {
+    let values: [Double]
+    let range: ClosedRange<Double>
+    let color: Color
+
+    var body: some View {
+        Canvas { context, size in
+            guard values.count > 1, size.width > 0, size.height > 0 else { return }
+            let minVal = range.lowerBound
+            let maxVal = range.upperBound
+            guard maxVal > minVal else { return }
+            let span = maxVal - minVal
+
+            var path = Path()
+            let step = size.width / CGFloat(values.count - 1)
+
+            for (index, val) in values.enumerated() {
+                let clamped = max(minVal, min(maxVal, val))
+                let norm = (clamped - minVal) / span
+                let x = CGFloat(index) * step
+                let y = (1.0 - CGFloat(norm)) * (size.height - 2) + 1
+
+                if index == 0 {
+                    path.move(to: CGPoint(x: x, y: y))
+                } else {
+                    path.addLine(to: CGPoint(x: x, y: y))
+                }
+            }
+
+            context.stroke(
+                path,
+                with: .color(color.opacity(0.35)),
+                lineWidth: 1.5
+            )
+        }
+    }
+}
+
+// MARK: - MIDI Activity Indicator
+
+struct MIDIActivityView: View {
+    @Environment(AppState.self) private var appState
+    @State private var lastNoteOnTime: Date?
+    @State private var lastNoteOffTime: Date?
+    @State private var noteOnFlash: Bool = false
+    @State private var noteOffFlash: Bool = false
+    @State private var lastActiveCount: Int = 0
+    
+    var body: some View {
+        VStack(spacing: 3) {
+            Text("MIDI")
+                .font(.system(size: 8, weight: .bold, design: .monospaced))
+                .foregroundColor(XTheme.textTertiary)
+            
+            HStack(spacing: 6) {
+                // Note On indicator
+                Circle()
+                    .fill(noteOnFlash ? XTheme.primary : XTheme.surface)
+                    .frame(width: 8, height: 8)
+                    .overlay(
+                        Circle().stroke(XTheme.primary.opacity(0.4), lineWidth: 1)
+                    )
+                
+                // Note count
+                Text("\(appState.activeNotes.count)")
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .frame(width: 18, alignment: .center)
+                    .foregroundColor(appState.activeNotes.isEmpty ? XTheme.textTertiary : XTheme.primary)
+                    .contentTransition(.numericText())
+                
+                // Note Off indicator
+                Circle()
+                    .fill(noteOffFlash ? XTheme.tense : XTheme.surface)
+                    .frame(width: 8, height: 8)
+                    .overlay(
+                        Circle().stroke(XTheme.tense.opacity(0.4), lineWidth: 1)
+                    )
+                
+                Spacer()
+                
+                // Port indicator
+                Text(appState.destinationProfile.supportsMPE ? "MPE" : "MIDI")
+                    .font(.system(size: 8, weight: .bold, design: .monospaced))
+                    .foregroundColor(appState.destinationProfile.supportsMPE ? XTheme.primary : XTheme.textSecondary)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(XTheme.surface.opacity(0.5))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .onChange(of: appState.activeNotes.count) { _, newCount in
+            if newCount > lastActiveCount {
+                triggerNoteOnFlash()
+            } else if newCount < lastActiveCount {
+                triggerNoteOffFlash()
+            }
+            lastActiveCount = newCount
+        }
+    }
+    
+    private func triggerNoteOnFlash() {
+        noteOnFlash = true
+        withAnimation(.easeOut(duration: 0.15)) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { noteOnFlash = false }
+        }
+    }
+    
+    private func triggerNoteOffFlash() {
+        noteOffFlash = true
+        withAnimation(.easeOut(duration: 0.15)) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { noteOffFlash = false }
+        }
     }
 }

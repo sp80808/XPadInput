@@ -20,12 +20,30 @@ public final class ControllerManager: @unchecked Sendable {
     public var calibrationWizard = CalibrationWizard()
     
     // Input Processors
-    public var leftStickProcessor = StickProcessor(profile: .expressive)
-    public var rightStickProcessor = StickProcessor(profile: .expressive)
-    public var leftTriggerProcessor = TriggerProcessor()
-    public var rightTriggerProcessor = TriggerProcessor()
+    public var analogPipeline = AnalogControlPipeline()
     public var adaptiveTriggerEngine = AdaptiveTriggerEngine()
+    public var coreHapticsEngine = CoreHapticsEngine()
     public var smartSoloEngine = SmartSoloEngine()
+
+    public var leftStickProcessor: StickProcessor {
+        get { analogPipeline.leftStickProcessor }
+        set { analogPipeline.leftStickProcessor = newValue }
+    }
+
+    public var rightStickProcessor: StickProcessor {
+        get { analogPipeline.rightStickProcessor }
+        set { analogPipeline.rightStickProcessor = newValue }
+    }
+
+    public var leftTriggerProcessor: TriggerProcessor {
+        get { analogPipeline.leftTriggerProcessor }
+        set { analogPipeline.leftTriggerProcessor = newValue }
+    }
+
+    public var rightTriggerProcessor: TriggerProcessor {
+        get { analogPipeline.rightTriggerProcessor }
+        set { analogPipeline.rightTriggerProcessor = newValue }
+    }
     public var surfaceResolver = ControlSurfaceResolver()
     public let performanceState = ControllerState()
     public private(set) var surfaceFrame = ControlSurfaceFrame()
@@ -39,10 +57,21 @@ public final class ControllerManager: @unchecked Sendable {
     public var onDisconnected: (() -> Void)?
     public var onSchemeChanged: ((ControlScheme) -> Void)?
     
+    // Background Event Monitoring
+    public var isBackgroundMonitoringEnabled: Bool {
+        didSet {
+            GCController.shouldMonitorBackgroundEvents = isBackgroundMonitoringEnabled
+            ControllerSettingsStore.shared.saveBackgroundMonitoring(isBackgroundMonitoringEnabled)
+        }
+    }
+    
     private var observers: [Any] = []
     private var hapticEngine: CHHapticEngine?
     
     public init() {
+        let bgMonitoring = ControllerSettingsStore.shared.loadBackgroundMonitoring()
+        self.isBackgroundMonitoringEnabled = bgMonitoring
+        GCController.shouldMonitorBackgroundEvents = bgMonitoring
         loadPersistedSchemeAndCalibration()
         setupNotifications()
         scanForControllers()
@@ -92,6 +121,7 @@ public final class ControllerManager: @unchecked Sendable {
     }
     
     public func scanForControllers() {
+        GCController.shouldMonitorBackgroundEvents = isBackgroundMonitoringEnabled
         GCController.startWirelessControllerDiscovery {
             // Discovery completed
         }
@@ -105,13 +135,15 @@ public final class ControllerManager: @unchecked Sendable {
         connectedController = controller
         isConnected = true
         controllerName = controller.vendorName ?? controller.productCategory
-        controllerKind = identifyControllerKind(controller)
+        controllerKind = ControllerKind.identify(controller)
         capabilityProfile = ControllerCapabilityProfile.from(controller)
         
         // Load controller-specific calibration
         let controllerId = "\(controller.vendorName ?? "generic")_\(controller.productCategory)"
         hardwareCalibration = ControllerSettingsStore.shared.loadCalibration(for: controllerId)
         applyCalibrationToProcessors()
+        analogPipeline.reset()
+        surfaceResolver.reset()
         
         setupInputHandlers(controller)
         
@@ -120,6 +152,7 @@ public final class ControllerManager: @unchecked Sendable {
         }
 
         prepareHaptics(for: controller)
+        coreHapticsEngine.attach(to: controller)
     }
     
     private func controllerDisconnected() {
@@ -127,9 +160,12 @@ public final class ControllerManager: @unchecked Sendable {
         isConnected = false
         controllerName = "No Controller"
         capabilityProfile = nil
+        analogPipeline.reset()
+        surfaceResolver.reset()
         controllerState = ControllerState()
         currentState = GamepadState()
         controllerKind = .simulated
+        coreHapticsEngine.detach()
         hapticEngine?.stop(completionHandler: nil)
         hapticEngine = nil
         onStateChanged?(controllerState)
@@ -204,23 +240,22 @@ public final class ControllerManager: @unchecked Sendable {
             }
             
             let state = self.controllerState
-            let timestamp = ProcessInfo.processInfo.systemUptime
-            
-            // Process Left & Right Sticks with Calibration, Deadzones & Inversion
             let swapRoles = self.activeScheme.isLeftRightSwapped
-            let leftX = swapRoles ? rawRX : rawLX
-            let leftY = swapRoles ? rawRY : rawLY
-            let rightX = swapRoles ? rawLX : rawRX
-            let rightY = swapRoles ? rawLY : rawRY
-            
-            state.leftStick = self.leftStickProcessor.process(rawX: leftX, rawY: leftY, timestamp: timestamp)
-            state.rightStick = self.rightStickProcessor.process(rawX: rightX, rawY: rightY, timestamp: timestamp)
-            
-            // Process Triggers with Calibration & Hysteresis
-            let triggerL = swapRoles ? rawRT : rawLT
-            let triggerR = swapRoles ? rawLT : rawRT
-            state.leftTrigger = self.leftTriggerProcessor.process(rawValue: triggerL, timestamp: timestamp)
-            state.rightTrigger = self.rightTriggerProcessor.process(rawValue: triggerR, timestamp: timestamp)
+            let timestamp = Self.analogEventTimestamp(from: gamepad)
+            let snapshot = RawAnalogSnapshot(
+                leftStickX: rawLX,
+                leftStickY: rawLY,
+                rightStickX: rawRX,
+                rightStickY: rawRY,
+                leftTrigger: rawLT,
+                rightTrigger: rawRT
+            )
+            let changedAnalog = Self.physicalAnalogControls(changedBy: element, on: gamepad)
+            self.ingestAnalogSnapshot(
+                snapshot,
+                changedPhysicalControls: changedAnalog,
+                timestamp: timestamp
+            )
             
             // Shoulders
             state.leftShoulder = swapRoles ? gamepad.rightShoulder.isPressed : gamepad.leftShoulder.isPressed
@@ -272,6 +307,25 @@ public final class ControllerManager: @unchecked Sendable {
                 state.accelX = motion.userAcceleration.x
                 state.accelY = motion.userAcceleration.y
                 state.accelZ = motion.userAcceleration.z
+
+                let gx = motion.gravity.x
+                let gy = motion.gravity.y
+                let gz = motion.gravity.z
+                state.gravityX = gx
+                state.gravityY = gy
+                state.gravityZ = gz
+
+                // Pitch tilt forward/backward (-1.0 ... +1.0)
+                state.pitchTilt = -gy.clamped(to: -1.0...1.0)
+                // Roll tilt left/right (-1.0 ... +1.0)
+                state.rollTilt = gx.clamped(to: -1.0...1.0)
+
+                // Dynamic shake energy from 3-axis user acceleration
+                let ax = motion.userAcceleration.x
+                let ay = motion.userAcceleration.y
+                let az = motion.userAcceleration.z
+                state.shakeMagnitude = sqrt(ax * ax + ay * ay + az * az)
+
                 state.hasMotion = true
                 self.currentState = Self.gamepadState(from: state)
                 self.refreshPerformanceSurface()
@@ -373,6 +427,69 @@ public final class ControllerManager: @unchecked Sendable {
         controllerKind = kind
     }
 
+    /// Advances analog processors for the controls that actually changed.
+    /// Digital-only events pass an empty set so stick/trigger history is preserved.
+    public func ingestAnalogSnapshot(
+        _ snapshot: RawAnalogSnapshot,
+        changedPhysicalControls: Set<PhysicalAnalogControl>,
+        timestamp: TimeInterval
+    ) {
+        guard !changedPhysicalControls.isEmpty else { return }
+
+        analogPipeline.process(
+            snapshot: snapshot,
+            changedPhysicalControls: changedPhysicalControls,
+            swapLeftRight: activeScheme.isLeftRightSwapped,
+            timestamp: timestamp
+        )
+
+        let state = controllerState
+        let swap = activeScheme.isLeftRightSwapped
+        for physical in changedPhysicalControls {
+            switch physical.musicalRole(swapLeftRight: swap) {
+            case .leftStick:
+                state.leftStick = analogPipeline.leftStick
+            case .rightStick:
+                state.rightStick = analogPipeline.rightStick
+            case .leftTrigger:
+                state.leftTrigger = analogPipeline.leftTrigger
+            case .rightTrigger:
+                state.rightTrigger = analogPipeline.rightTrigger
+            }
+        }
+    }
+
+    static func analogEventTimestamp(from gamepad: GCExtendedGamepad) -> TimeInterval {
+        let frameworkTimestamp = gamepad.lastEventTimestamp
+        if frameworkTimestamp.isFinite, frameworkTimestamp > 0 {
+            return frameworkTimestamp
+        }
+        return ProcessInfo.processInfo.systemUptime
+    }
+
+    static func physicalAnalogControls(
+        changedBy element: GCControllerElement,
+        on gamepad: GCExtendedGamepad
+    ) -> Set<PhysicalAnalogControl> {
+        if element === gamepad.leftThumbstick
+            || element === gamepad.leftThumbstick.xAxis
+            || element === gamepad.leftThumbstick.yAxis {
+            return [.leftStick]
+        }
+        if element === gamepad.rightThumbstick
+            || element === gamepad.rightThumbstick.xAxis
+            || element === gamepad.rightThumbstick.yAxis {
+            return [.rightStick]
+        }
+        if element === gamepad.leftTrigger {
+            return [.leftTrigger]
+        }
+        if element === gamepad.rightTrigger {
+            return [.rightTrigger]
+        }
+        return []
+    }
+
     public func injectSimulatedState(_ mutate: (ControllerState) -> Void) {
         let state = controllerState
         mutate(state)
@@ -388,24 +505,8 @@ public final class ControllerManager: @unchecked Sendable {
     
     public func playTechniqueHaptic(_ haptic: TechniqueHaptic) {
         guard activeScheme.haptics != .off else { return }
-        guard let engine = hapticEngine else { return }
-        
         let multiplier: Float = activeScheme.haptics == .subtle ? 0.45 : 1.0
-        let intensity = min(1.0, haptic.intensity * multiplier)
-        
-        do {
-            let event = CHHapticEvent(
-                eventType: .hapticTransient,
-                parameters: [
-                    CHHapticEventParameter(parameterID: .hapticIntensity, value: intensity),
-                    CHHapticEventParameter(parameterID: .hapticSharpness, value: haptic.sharpness)
-                ],
-                relativeTime: 0
-            )
-            let pattern = try CHHapticPattern(events: [event], parameters: [])
-            let player = try engine.makePlayer(with: pattern)
-            try player.start(atTime: CHHapticTimeImmediate)
-        } catch {}
+        coreHapticsEngine.playTechniqueHaptic(haptic, intensityMultiplier: multiplier)
     }
 
     public func playBendTargetDetent() {
@@ -413,8 +514,28 @@ public final class ControllerManager: @unchecked Sendable {
     }
 
     private func prepareHaptics(for controller: GCController) {
-        guard capabilityProfile?.hasHaptics == true,
-              let engine = controller.haptics?.createEngine(withLocality: .default) else {
+        guard let controllerHaptics = controller.haptics else {
+            hapticEngine = nil
+            return
+        }
+
+        var candidateEngine: CHHapticEngine? = nil
+        for locality in controllerHaptics.supportedLocalities {
+            if let engine = controllerHaptics.createEngine(withLocality: locality) {
+                candidateEngine = engine
+                break
+            }
+        }
+        if candidateEngine == nil {
+            for locality in [GCHapticsLocality.default, .all, .handles, .leftHandle, .rightHandle] {
+                if let engine = controllerHaptics.createEngine(withLocality: locality) {
+                    candidateEngine = engine
+                    break
+                }
+            }
+        }
+
+        guard let engine = candidateEngine else {
             hapticEngine = nil
             return
         }
@@ -423,18 +544,9 @@ public final class ControllerManager: @unchecked Sendable {
             try engine.start()
             hapticEngine = engine
         } catch {
+            print("⚠️ Haptic engine failed to start: \(error)")
             hapticEngine = nil
         }
-    }
-
-    private func identifyControllerKind(_ controller: GCController) -> ControllerKind {
-        let identity = "\(controller.vendorName ?? "") \(controller.productCategory)".lowercased()
-        if identity.contains("dualsense") || identity.contains("ps5") { return .dualSense }
-        if identity.contains("dualshock") || identity.contains("ps4") { return .dualShock4 }
-        if identity.contains("xbox") { return .xbox }
-        if identity.contains("switch") || identity.contains("pro controller") { return .switchPro }
-        if identity.contains("steam") { return .steamDeck }
-        return .generic
     }
 
     public static func gamepadState(from state: ControllerState) -> GamepadState {

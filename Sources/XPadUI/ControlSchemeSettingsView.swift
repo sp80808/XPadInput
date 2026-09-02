@@ -264,6 +264,43 @@ public struct ControlSchemeSettingsView: View {
             
             Spacer(minLength: 8)
             
+            // Import / Export
+            Button {
+                exportCurrentScheme()
+            } label: {
+                Label("Export…", systemImage: "square.and.arrow.up")
+                    .font(.system(size: 11))
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(currentScheme.isBuiltIn)
+            
+            Button {
+                importScheme()
+            } label: {
+                Label("Import…", systemImage: "square.and.arrow.down")
+                    .font(.system(size: 11))
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            
+            // Suggested scheme hint
+            if let suggested = suggestedSchemeForCurrentController() {
+                Menu {
+                    Button {
+                        applySuggestedScheme(suggested)
+                    } label: {
+                        Label("Apply \"\(suggested.name)\"", systemImage: "wand.and.stars")
+                    }
+                } label: {
+                    Label("Suggested: \(suggested.name)", systemImage: "lightbulb.fill")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .menuStyle(.borderlessButton)
+                .foregroundStyle(XTheme.accent)
+            }
+            
+            // Actions
             Button {
                 duplicateAsCustom()
             } label: {
@@ -352,6 +389,21 @@ public struct ControlSchemeSettingsView: View {
     
     private var ergonomicsView: some View {
         VStack(spacing: 16) {
+            // Focus & Background Input
+            settingsCard(title: "Background Input & Focus Retention", icon: "macwindow.on.rectangle") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle("Background Gamepad Input", isOn: Binding(
+                        get: { appState.controllerManager.isBackgroundMonitoringEnabled },
+                        set: { appState.controllerManager.isBackgroundMonitoringEnabled = $0 }
+                    ))
+                    .font(.system(size: 13))
+                    
+                    Text("Allows XPadInput to continuously receive controller inputs, play notes, and send MPE MIDI even when you switch to your DAW, web browser, or when the window is minimized.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(XTheme.textTertiary)
+                }
+            }
+
             // Hand Roles & Orientation
             settingsCard(title: "Hand Orientation & Roles", icon: "arrow.left.and.right.square") {
                 VStack(alignment: .leading, spacing: 10) {
@@ -973,6 +1025,61 @@ public struct ControlSchemeSettingsView: View {
     
     private func startLearning(for action: SemanticMusicalAction) {
         learningTargetAction = action
+    }
+    
+    private func exportCurrentScheme() {
+        do {
+            let json = try ControlSchemeTransfer.exportJSON(currentScheme)
+            let panel = NSSavePanel()
+            panel.nameFieldStringValue = "\(currentScheme.name).xpi-scheme"
+            panel.allowedContentTypes = [.json]
+            panel.canCreateDirectories = true
+            if panel.runModal() == .OK, let url = panel.url {
+                try json.write(to: url, atomically: true, encoding: .utf8)
+            }
+        } catch {
+            print("Export failed: \(error)")
+        }
+    }
+    
+    private func importScheme() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        if panel.runModal() == .OK, let url = panel.url {
+            do {
+                let data = try Data(contentsOf: url)
+                let result = try ControlSchemeTransfer.importArchive(from: data)
+                var importedScheme = result.scheme
+                importedScheme = importedScheme.makeCustomCopy()
+                customSchemes.append(importedScheme)
+                selectedSchemeId = importedScheme.id
+                ControllerSettingsStore.shared.saveCustomScheme(importedScheme)
+                appState.controllerManager.selectControlScheme(importedScheme)
+                validateConflicts()
+                if !result.warnings.isEmpty {
+                    print("Import warnings: \(result.warnings.joined(separator: "; "))")
+                }
+            } catch {
+                print("Import failed: \(error)")
+            }
+        }
+    }
+    
+    private func suggestedSchemeForCurrentController() -> ControlScheme? {
+        let kind = appState.controllerManager.controllerKind
+        let suggestedId = kind.suggestedSchemeID
+        guard currentScheme.id != suggestedId else { return nil }
+        return allSchemes.first(where: { $0.id == suggestedId })
+    }
+    
+    private func applySuggestedScheme(_ scheme: ControlScheme) {
+        let copy = scheme.makeCustomCopy()
+        customSchemes.append(copy)
+        selectedSchemeId = copy.id
+        ControllerSettingsStore.shared.saveCustomScheme(copy)
+        appState.controllerManager.selectControlScheme(copy)
+        validateConflicts()
     }
     
     private func validateConflicts() {

@@ -38,21 +38,21 @@ import AVFoundation
 /// Real-time snapshot of audio unit parameters for lock-free render block access.
 public struct XPadAUParameterSnapshot: Sendable {
     public var masterVolume: Float = 0.7
-    public var osc1Type: Float = 1.0 // 0: Sine, 1: Saw, 2: Square, 3: Triangle, 4: Noise
-    public var osc2Type: Float = 2.0
-    public var osc2Level: Float = 0.36
-    public var osc2Detune: Float = 5.0
+    public var osc1Type: Float = 0.0 // 0: Sine, 1: Saw, 2: Square, 3: Triangle, 4: Noise
+    public var osc2Type: Float = 3.0 // Triangle
+    public var osc2Level: Float = 0.28
+    public var osc2Detune: Float = 2.0
     
-    public var filterCutoff: Float = 2800.0
-    public var filterResonance: Float = 0.25
+    public var filterCutoff: Float = 2600.0
+    public var filterResonance: Float = 0.18
     public var filterType: Float = 0.0 // 0: Lowpass, 1: Highpass, 2: Bandpass
     
-    public var attack: Float = 0.01
-    public var decay: Float = 0.15
-    public var sustain: Float = 0.75
-    public var release: Float = 0.3
+    public var attack: Float = 0.005
+    public var decay: Float = 0.38
+    public var sustain: Float = 0.58
+    public var release: Float = 0.35
     
-    public var saturation: Float = 0.1
+    public var saturation: Float = 0.06
     public var reverbMix: Float = 10.0
     
     public var keyRoot: Float = 2.0 // D
@@ -120,7 +120,7 @@ public enum XPadAUParameterTreeBuilder {
             valueStrings: ["Sine", "Sawtooth", "Square", "Triangle", "Noise"],
             dependentParameters: nil
         )
-        osc1.value = 1.0 // Saw
+        osc1.value = 0.0 // Sine
         
         let osc2 = AUParameterTree.createParameter(
             withIdentifier: "osc2Type",
@@ -134,7 +134,7 @@ public enum XPadAUParameterTreeBuilder {
             valueStrings: ["Sine", "Sawtooth", "Square", "Triangle", "Noise"],
             dependentParameters: nil
         )
-        osc2.value = 2.0 // Square
+        osc2.value = 3.0 // Triangle
         
         let osc2Lvl = AUParameterTree.createParameter(
             withIdentifier: "osc2Level",
@@ -148,7 +148,7 @@ public enum XPadAUParameterTreeBuilder {
             valueStrings: nil,
             dependentParameters: nil
         )
-        osc2Lvl.value = 0.36
+        osc2Lvl.value = 0.28
         
         let osc2Det = AUParameterTree.createParameter(
             withIdentifier: "osc2Detune",
@@ -162,7 +162,7 @@ public enum XPadAUParameterTreeBuilder {
             valueStrings: nil,
             dependentParameters: nil
         )
-        osc2Det.value = 5.0
+        osc2Det.value = 2.0
         
         // Filter Group
         let cutoff = AUParameterTree.createParameter(
@@ -177,7 +177,7 @@ public enum XPadAUParameterTreeBuilder {
             valueStrings: nil,
             dependentParameters: nil
         )
-        cutoff.value = 2800.0
+        cutoff.value = 2600.0
         
         let resonance = AUParameterTree.createParameter(
             withIdentifier: "filterResonance",
@@ -191,7 +191,7 @@ public enum XPadAUParameterTreeBuilder {
             valueStrings: nil,
             dependentParameters: nil
         )
-        resonance.value = 0.25
+        resonance.value = 0.18
         
         let filterType = AUParameterTree.createParameter(
             withIdentifier: "filterType",
@@ -220,7 +220,7 @@ public enum XPadAUParameterTreeBuilder {
             valueStrings: nil,
             dependentParameters: nil
         )
-        attack.value = 0.01
+        attack.value = 0.005
         
         let decay = AUParameterTree.createParameter(
             withIdentifier: "envDecay",
@@ -234,7 +234,7 @@ public enum XPadAUParameterTreeBuilder {
             valueStrings: nil,
             dependentParameters: nil
         )
-        decay.value = 0.15
+        decay.value = 0.38
         
         let sustain = AUParameterTree.createParameter(
             withIdentifier: "envSustain",
@@ -248,7 +248,7 @@ public enum XPadAUParameterTreeBuilder {
             valueStrings: nil,
             dependentParameters: nil
         )
-        sustain.value = 0.75
+        sustain.value = 0.58
         
         let release = AUParameterTree.createParameter(
             withIdentifier: "envRelease",

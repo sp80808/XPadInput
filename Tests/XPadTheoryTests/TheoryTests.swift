@@ -59,6 +59,51 @@ final class TheoryTests: XCTestCase {
         }
     }
 
+    func testHarmonicWheelNonHeptatonicScales() {
+        let pentMajor = HarmonicWheel(scale: .pentatonicMajor)
+        let pentMinor = HarmonicWheel(scale: Scale(root: .a, type: .pentatonicMinor))
+        let blues = HarmonicWheel(scale: .blues)
+        let chromatic = HarmonicWheel(scale: .chromatic)
+
+        for wheel in [pentMajor, pentMinor, blues, chromatic] {
+            for layer in WheelLayer.allCases {
+                let sectors = wheel.sectorsByLayer[layer]
+                XCTAssertNotNil(sectors, "\(wheel.scale.name) missing \(layer.rawValue)")
+                XCTAssertFalse(sectors?.isEmpty ?? true, "\(wheel.scale.name) empty \(layer.rawValue)")
+            }
+            for angle in stride(from: -Double.pi, through: Double.pi, by: 0.25) {
+                XCTAssertNotNil(wheel.sector(forAngle: angle, layer: .diatonic))
+                XCTAssertNotNil(wheel.sector(forAngle: angle, layer: .tension))
+            }
+        }
+
+        let pentDiatonic = pentMajor.sectorsByLayer[.diatonic] ?? []
+        XCTAssertEqual(pentDiatonic.count, 5)
+        XCTAssertEqual(pentDiatonic.map(\.romanNumeral), ["I", "ii", "iii", "V", "vi"])
+        XCTAssertEqual(pentDiatonic.map(\.chord.root), [PitchClass.c, .d, .e, .g, .a])
+
+        let pentTension = pentMajor.sectorsByLayer[.tension] ?? []
+        XCTAssertFalse(pentTension.contains { $0.romanNumeral == "V7/IV" })
+        XCTAssertTrue(pentTension.contains { $0.romanNumeral == "V7" })
+        XCTAssertTrue(pentTension.contains { $0.romanNumeral == "V7/V" })
+        XCTAssertTrue(pentTension.contains { $0.romanNumeral == "V7/vi" })
+
+        let minorDiatonic = pentMinor.sectorsByLayer[.diatonic] ?? []
+        XCTAssertEqual(minorDiatonic.count, 5)
+        XCTAssertEqual(minorDiatonic.map(\.romanNumeral), ["i", "III", "iv", "v", "VII"])
+        XCTAssertEqual(minorDiatonic.map(\.chord.root), [PitchClass.a, .c, .d, .e, .g])
+
+        let bluesDiatonic = blues.sectorsByLayer[.diatonic] ?? []
+        XCTAssertEqual(bluesDiatonic.count, 6)
+        XCTAssertEqual(bluesDiatonic.map(\.romanNumeral), ["i", "III", "iv", "♭V°", "v", "VII"])
+        XCTAssertEqual(bluesDiatonic[3].chord.quality, .diminished)
+
+        let chromaticDiatonic = chromatic.sectorsByLayer[.diatonic] ?? []
+        XCTAssertEqual(chromaticDiatonic.count, 12)
+        XCTAssertEqual(chromaticDiatonic.map(\.chord.root).count, 12)
+        XCTAssertEqual(Set(chromaticDiatonic.map(\.chord.root)).count, 12)
+    }
+
     // MARK: - Voice Leading Engine Tests
     func testVoiceLeadingStrategies() {
         let engine = VoiceLeadingEngine()

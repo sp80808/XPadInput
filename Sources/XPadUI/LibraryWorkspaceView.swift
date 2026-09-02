@@ -5,7 +5,8 @@ import XPadAudio
 import XPadMIDI
 
 public struct LibraryWorkspaceView: View {
-    @State private var selectedPreset: SynthPreset = .polyLead
+    @Environment(AppState.self) private var appState
+    @State private var selectedPreset: SynthPreset = .acousticSine
 
     public init() {}
 
@@ -34,6 +35,40 @@ public struct LibraryWorkspaceView: View {
 
                 // CoreAudio Virtual Audio Driver & Loopback Section
                 VirtualAudioView()
+
+                Divider()
+
+                // Guided Interactive Tutorials (Learn Hub)
+                Button {
+                    appState.showLearnHub = true
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "graduationcap.fill")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundColor(XTheme.primary)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Learn Hub — Guided Interactive Tutorials")
+                                .font(.headline)
+                                .foregroundColor(XTheme.textPrimary)
+                            Text("Five missions that watch your controller input in real time and coach you through strumming, MPE expression, harmony navigation, finger drumming and sustain technique.")
+                                .font(.caption)
+                                .foregroundColor(XTheme.textSecondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(XTheme.textTertiary)
+                    }
+                    .padding(14)
+                    .background(XTheme.surface)
+                    .overlay(RoundedRectangle(cornerRadius: XTheme.radiusMedium).strokeBorder(XTheme.primary.opacity(0.35), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+
+                Divider()
+
+                // Ways to Play — one-tap control-scheme gallery
+                WaysToPlayGallery()
 
                 Divider()
 
@@ -97,18 +132,7 @@ public struct LibraryWorkspaceView: View {
     }
 
     private func dawGuideCard(daw: String, steps: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(daw)
-                .font(.subheadline.bold())
-                .foregroundStyle(Color.accentColor)
-            Text(steps)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Material.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        DAWGuideCard(daw: daw, steps: steps)
     }
 
     private func auditionPreset() {
@@ -124,11 +148,39 @@ public struct LibraryWorkspaceView: View {
     }
 }
 
+private struct DAWGuideCard: View {
+    let daw: String
+    let steps: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering: Bool = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(daw)
+                .font(.subheadline.bold())
+                .foregroundStyle(Color.accentColor)
+            Text(steps)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Material.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .scaleEffect(reduceMotion ? 1 : (isHovering ? 1.01 : 1.0))
+        .shadow(color: .black.opacity(reduceMotion ? 0 : (isHovering ? 0.2 : 0)), radius: reduceMotion ? 0 : (isHovering ? 8 : 0), y: reduceMotion ? 0 : (isHovering ? 3 : 0))
+        .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.8), value: isHovering)
+        .onHover { isHovering = $0 }
+    }
+}
+
 private struct PresetCard: View {
     let preset: SynthPreset
     let isSelected: Bool
     let onSelect: () -> Void
-
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering: Bool = false
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(preset.name)
@@ -151,5 +203,9 @@ private struct PresetCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Material.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .scaleEffect(reduceMotion ? 1 : (isHovering ? 1.02 : 1.0))
+        .shadow(color: .black.opacity(reduceMotion ? 0 : (isHovering ? 0.2 : 0)), radius: reduceMotion ? 0 : (isHovering ? 8 : 0), y: reduceMotion ? 0 : (isHovering ? 3 : 0))
+        .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.8), value: isHovering)
+        .onHover { isHovering = $0 }
     }
 }

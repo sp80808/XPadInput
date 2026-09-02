@@ -1,0 +1,35 @@
+# SwiftLint configuration for XPadInput
+
+disabled_rules:
+  - trailing_whitespace
+  - line_length
+  - type_body_length
+  - file_length
+  - function_body_length
+  - cyclomatic_complexity
+  - large_tuple
+
+opt_in_rules:
+  - empty_count
+  - explicit_init
+  - fatal_error_message
+  - first_where
+  - modifier_order
+  - redundant_nil_coalescing
+  - unneeded_break_in_switch
+
+included:
+  - Sources
+  - Tests
+
+excluded:
+  - .build
+  - dist
+  - .agents
+  - .beads
+
+identifier_name:
+  min_length:
+    warning: 1
+  max_length:
+    warning: 60

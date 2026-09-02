@@ -129,14 +129,13 @@ private final class PercussionControlState: @unchecked Sendable {
 
     var isStopped: Bool {
         guard lock.try() else { return false }
-        let value = stopped
-        lock.unlock()
-        return value
+        defer { lock.unlock() }
+        return stopped
     }
 
     func stop() {
         lock.lock()
+        defer { lock.unlock() }
         stopped = true
-        lock.unlock()
     }
 }

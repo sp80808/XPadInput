@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="${1:-${XPI_VERSION:-0.0.02}}"
+VERSION="${1:-${XPI_VERSION:-0.0.05}}"
 DIST_DIR="${DIST_DIR:-dist}"
 APP_NAME="XPI"
 EXECUTABLE_NAME="XPI"
@@ -14,7 +14,7 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
 fi
 
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9]+)?$ ]]; then
-  echo "error: version must look like 0.0.02 or 0.0.02-alpha" >&2
+  echo "error: version must look like 0.0.05 or 0.0.05-alpha" >&2
   exit 1
 fi
 
@@ -42,6 +42,12 @@ mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cp "$BINARY" "$MACOS_DIR/$EXECUTABLE_NAME"
 chmod +x "$MACOS_DIR/$EXECUTABLE_NAME"
 
+# Copy AppIcon.icns from project Resources folder
+PROJECT_ROOT="$(cd "$ROOT_DIR" && pwd)"
+if [[ -f "$PROJECT_ROOT/Resources/AppIcon.icns" ]]; then
+    cp "$PROJECT_ROOT/Resources/AppIcon.icns" "$RESOURCES_DIR/"
+fi
+
 cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -53,6 +59,8 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <string>XPI: Game Controller MIDI</string>
     <key>CFBundleExecutable</key>
     <string>XPI</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon.icns</string>
     <key>CFBundleIdentifier</key>
     <string>${BUNDLE_ID}</string>
     <key>CFBundleInfoDictionaryVersion</key>
@@ -69,6 +77,10 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <string>14.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSSupportsAutomaticTermination</key>
+    <false/>
+    <key>NSSupportsSuddenTermination</key>
+    <false/>
 </dict>
 </plist>
 PLIST

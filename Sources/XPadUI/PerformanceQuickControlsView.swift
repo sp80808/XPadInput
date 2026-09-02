@@ -8,10 +8,17 @@ struct PerformanceQuickControlsView: View {
     @Environment(AppState.self) private var appState
     @State private var showsGate = false
     @State private var showsVelocity = false
+    @State private var showsArp = false
     @State private var showsTriggers = false
     @State private var showsEQ = false
     @State private var showsCompressor = false
     @State private var showsReverb = false
+    @State private var soloOffset: CGFloat = 0
+    @State private var duoFlip: Double = 0
+    @State private var gateWiggle: Double = 0
+    @State private var velocityWiggle: Double = 0
+    @State private var arpWiggle: Double = 0
+    @State private var triggerWiggle: Double = 0
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -32,7 +39,7 @@ struct PerformanceQuickControlsView: View {
 
     private func controls(compact: Bool) -> some View {
         HStack(spacing: compact ? 5 : 7) {
-            Button { showsGate.toggle() } label: {
+            Button { showsGate.toggle(); wiggle { gateWiggle = $0 } } label: {
                 QuickControlLabel(
                     icon: "timer",
                     title: compact ? "Gate" : "Chord gate",
@@ -45,8 +52,9 @@ struct PerformanceQuickControlsView: View {
                 ChordGatePopover()
             }
             .help("Choose how played chords release")
+            .rotationEffect(.degrees(gateWiggle))
 
-            Button { showsVelocity.toggle() } label: {
+            Button { showsVelocity.toggle(); wiggle { velocityWiggle = $0 } } label: {
                 QuickControlLabel(
                     icon: "dial.medium",
                     title: compact ? "Feel" : "Velocity",
@@ -59,12 +67,14 @@ struct PerformanceQuickControlsView: View {
                 VelocityPopover()
             }
             .help("Shape and stabilize performance velocity")
+            .rotationEffect(.degrees(velocityWiggle))
 
             Button {
                 let next: DuoPerformanceMode = appState.duoPerformanceMode == .instrumentOnly
                     ? .drumsAndInstrument
                     : .instrumentOnly
                 appState.setDuoPerformanceMode(next)
+                withAnimation(XTheme.bouncy) { duoFlip += 180 }
             } label: {
                 QuickControlLabel(
                     icon: "square.grid.2x2.fill",
@@ -72,6 +82,7 @@ struct PerformanceQuickControlsView: View {
                     value: compact ? nil : (appState.duoPerformanceMode == .drumsAndInstrument ? "Drums on" : "Off"),
                     compact: compact
                 )
+                .rotation3DEffect(.degrees(duoFlip), axis: (x: 0, y: 1, z: 0))
             }
             .buttonStyle(
                 XTactileButtonStyle(
@@ -86,6 +97,12 @@ struct PerformanceQuickControlsView: View {
                 withAnimation(XTheme.springAnimation) {
                     appState.isSoloModeActive.toggle()
                 }
+                if appState.isSoloModeActive {
+                    withAnimation(XTheme.bouncy) { soloOffset = -3 }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+                        withAnimation(XTheme.bouncy) { soloOffset = 0 }
+                    }
+                }
             } label: {
                 QuickControlLabel(
                     icon: "guitars.fill",
@@ -93,6 +110,7 @@ struct PerformanceQuickControlsView: View {
                     value: compact ? nil : (appState.isSoloModeActive ? "Lead on" : "Strum"),
                     compact: compact
                 )
+                .offset(y: soloOffset)
             }
             .buttonStyle(
                 XTactileButtonStyle(
@@ -102,7 +120,27 @@ struct PerformanceQuickControlsView: View {
             )
             .help("Smart Soloing: Right stick locks to chord tones, passing runs, and blues inflections")
 
-            Button { showsTriggers.toggle() } label: {
+            Button { showsArp.toggle(); wiggle { arpWiggle = $0 } } label: {
+                QuickControlLabel(
+                    icon: "waveform.path.ecg",
+                    title: "Arp",
+                    value: compact ? nil : (appState.selectedPlayMode == .arp ? appState.arpeggiatorConfiguration.pattern.rawValue : "Off"),
+                    compact: compact
+                )
+            }
+            .buttonStyle(
+                XTactileButtonStyle(
+                    isActive: appState.selectedPlayMode == .arp,
+                    activeColor: XTheme.accent
+                )
+            )
+            .popover(isPresented: $showsArp, arrowEdge: .bottom) {
+                ArpeggiatorPopover()
+            }
+            .help("Arpeggiator: Step chord tones to BPM across customizable patterns and octaves")
+            .rotationEffect(.degrees(arpWiggle))
+
+            Button { showsTriggers.toggle(); wiggle { triggerWiggle = $0 } } label: {
                 QuickControlLabel(
                     icon: "hand.tap.fill",
                     title: compact ? "Trig" : "Triggers",
@@ -115,6 +153,27 @@ struct PerformanceQuickControlsView: View {
                 AdaptiveTriggerQuickPopover()
             }
             .help("DualSense motor resistance, string tension and mod-wheel detents")
+            .rotationEffect(.degrees(triggerWiggle))
+
+            Button {
+                withAnimation(XTheme.springAnimation) {
+                    appState.toggleSynthMute()
+                }
+            } label: {
+                QuickControlLabel(
+                    icon: appState.isSynthMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
+                    title: "Synth",
+                    value: compact ? nil : (appState.isSynthMuted ? "Muted" : "On"),
+                    compact: compact
+                )
+            }
+            .buttonStyle(
+                XTactileButtonStyle(
+                    isActive: appState.isSynthMuted,
+                    activeColor: XTheme.warning
+                )
+            )
+            .help(appState.isSynthMuted ? "Synth muted — MIDI passthru prioritized" : "Mute built-in synthesizer")
 
             Spacer(minLength: compact ? 2 : 8)
 
@@ -169,6 +228,18 @@ struct PerformanceQuickControlsView: View {
 
     private func effectState(_ enabled: Bool) -> String {
         enabled ? "On" : "Off"
+    }
+
+    /// Fires a ±5° wiggle oscillation on the given setter closure.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private func wiggle(_ setAngle: @escaping (Double) -> Void) {
+        guard !reduceMotion else { return }
+        let seq: [Double] = [5, -5, 3, -3, 0]
+        var delay = 0.0
+        for deg in seq {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { setAngle(deg) }
+            delay += 0.06
+        }
     }
 }
 
@@ -556,4 +627,94 @@ private struct AdaptiveTriggerQuickPopover: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 }
+
+private struct ArpeggiatorPopover: View {
+    @Environment(AppState.self) private var appState
+
+    var body: some View {
+        TactilePopoverShell(
+            title: "Arpeggiator",
+            subtitle: "Sequence chord tones in real-time synced to transport BPM."
+        ) {
+            Toggle("Enable Arpeggiator", isOn: Binding(
+                get: { appState.selectedPlayMode == .arp },
+                set: { appState.setPlayMode($0 ? .arp : .chords) }
+            ))
+            .toggleStyle(.switch)
+            .tint(XTheme.accent)
+
+            Divider().background(XTheme.border)
+
+            Picker("Pattern", selection: Binding(
+                get: { appState.arpeggiatorConfiguration.pattern },
+                set: {
+                    var updated = appState.arpeggiatorConfiguration
+                    updated.pattern = $0
+                    appState.updateArpeggiatorConfiguration(updated)
+                }
+            )) {
+                ForEach(ArpeggiatorPattern.allCases) { pattern in
+                    Label(pattern.rawValue, systemImage: pattern.iconName).tag(pattern)
+                }
+            }
+            .pickerStyle(.menu)
+
+            Picker("Rate", selection: Binding(
+                get: { appState.arpeggiatorConfiguration.rate },
+                set: {
+                    var updated = appState.arpeggiatorConfiguration
+                    updated.rate = $0
+                    appState.updateArpeggiatorConfiguration(updated)
+                }
+            )) {
+                ForEach(ArpeggiatorRate.allCases) { rate in
+                    Text(rate.rawValue).tag(rate)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Stepper(
+                "Octaves: \(appState.arpeggiatorConfiguration.octaveRange)",
+                value: Binding(
+                    get: { appState.arpeggiatorConfiguration.octaveRange },
+                    set: {
+                        var updated = appState.arpeggiatorConfiguration
+                        updated.octaveRange = $0
+                        appState.updateArpeggiatorConfiguration(updated)
+                    }
+                ),
+                in: 1...4
+            )
+
+            TactileSliderRow(
+                title: "Gate length",
+                value: "\(Int(appState.arpeggiatorConfiguration.gateLength * 100))%",
+                valueBinding: Binding(
+                    get: { appState.arpeggiatorConfiguration.gateLength },
+                    set: {
+                        var updated = appState.arpeggiatorConfiguration
+                        updated.gateLength = $0
+                        appState.updateArpeggiatorConfiguration(updated)
+                    }
+                ),
+                range: 0.1...1.0,
+                step: 0.05
+            )
+
+            Toggle("Latch Held Chord", isOn: Binding(
+                get: { appState.arpeggiatorConfiguration.isLatched },
+                set: {
+                    var updated = appState.arpeggiatorConfiguration
+                    updated.isLatched = $0
+                    appState.updateArpeggiatorConfiguration(updated)
+                }
+            ))
+            .toggleStyle(.switch)
+            .tint(XTheme.accent)
+        }
+        .padding(14)
+        .frame(width: 290)
+    }
+}
+
 

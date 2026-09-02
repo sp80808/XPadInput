@@ -73,19 +73,22 @@ public struct FaceButtonNoteEvent: Sendable, Equatable {
     public var isOn: Bool
     public var technique: MusicalTechnique
     public var velocity: UInt8
+    public var velocity16: UInt16?
 
     public init(
         role: ChordToneRole,
         note: Note,
         isOn: Bool,
         technique: MusicalTechnique,
-        velocity: UInt8
+        velocity: UInt8,
+        velocity16: UInt16? = nil
     ) {
         self.role = role
         self.note = note
         self.isOn = isOn
         self.technique = technique
         self.velocity = velocity
+        self.velocity16 = velocity16 ?? (UInt16(velocity) << 8 | UInt16(velocity) << 1)
     }
 }
 
@@ -122,6 +125,7 @@ public struct InstrumentPerformanceEngine: Sendable {
     public var slideEngine: SlideEngine
     public var stringModel: VirtualStringModel
     public var intervalMemory = IntervalMemory()
+    private var heldNotesByRole: [ChordToneRole: Note] = [:]
 
     private var lastTimestamp: TimeInterval = 0
     private var previousFace: (a: Bool, x: Bool, y: Bool, b: Bool) = (false, false, false, false)
@@ -157,11 +161,26 @@ public struct InstrumentPerformanceEngine: Sendable {
         pitchEngine.configure(profile: profile, destination: destination, assist: settings.pitchAssist)
         pressureEngine.curve = profile.defaultPressureCurve
         vibratoEngine.configure(profile: profile)
-        stringModel = profile.family == .bass ? .bassStandard() : .guitarStandard()
         pitchEngine.reset()
         pressureEngine.reset()
         vibratoEngine.reset()
+        resetMelodicTargeting(rearmFaceButtons: true)
+    }
+
+    /// Clears voice-leading history when the instrument or face-button register
+    /// changes. Re-arming edge detection lets an already-held face control sound
+    /// immediately in the new register on the next controller frame.
+    public mutating func resetMelodicTargeting(rearmFaceButtons: Bool = false) {
+        intervalMemory = IntervalMemory()
+        heldNotesByRole.removeAll()
+        lastMelodicNote = nil
+        lastMelodicTime = 0
+        preparedLowerNote = nil
+        stringModel = profile.family == .bass ? .bassStandard() : .guitarStandard()
         slideEngine.cancel()
+        if rearmFaceButtons {
+            previousFace = (false, false, false, false)
+        }
     }
 
     public mutating func setDestination(_ destination: DestinationCapabilityProfile) {
@@ -187,9 +206,11 @@ public struct InstrumentPerformanceEngine: Sendable {
         let rightX = Double(state.rightStick.x)
         let rightY = Double(state.rightStick.y)
         let notesHeld = held != nil
+        let isTechniqueMod = state.leftShoulder
         let lateral = abs(rightX) > 0.12 && abs(rightX) >= abs(rightY) * 0.7
-        let bendingNow = notesHeld && profile.supportsPitchBend && (
-            profile.family == .synthLead || profile.family == .genericMPE || lateral
+        let bendingNow = notesHeld && (
+            (profile.supportsPitchBend && (profile.family == .synthLead || profile.family == .genericMPE || lateral)) ||
+            (isTechniqueMod && abs(rightX) > 0.05)
         )
 
         let pickAttack = detectPickAttack(state: state, timestamp: timestamp)
@@ -202,7 +223,9 @@ public struct InstrumentPerformanceEngine: Sendable {
                 || Double(state.rightStick.radius) > 0.75
             candidates.append(strong ? .pinchHarmonic : .harmonic)
         }
-        if state.leftShoulder && notesHeld && profile.supportsSlides {
+        if isTechniqueMod && notesHeld && abs(rightX) > 0.05 {
+            candidates.append(.bend)
+        } else if isTechniqueMod && notesHeld && profile.supportsSlides {
             candidates.append(.slideUp)
         }
         if bendingNow { candidates.append(.bend) }
@@ -236,12 +259,22 @@ public struct InstrumentPerformanceEngine: Sendable {
             candidates.append(event.technique)
         }
 
-        let technique = TechniquePriority.resolve(candidates: candidates, profile: profile)
+        let technique = TechniquePriority.resolve(candidates: candidates, profile: profile, forceAllowBend: isTechniqueMod)
 
         let bendNote = held ?? context.currentNote
         var contextForBend = context
         contextForBend.currentNote = bendNote
         contextForBend.pitchAssist = settings.pitchAssist
+
+        // When holding technique mod, automatically set pitchEngine to scale-relevant bend range
+        if isTechniqueMod {
+            pitchEngine.instrumentRange = context.scale.scaleRelevantBendRange
+            pitchEngine.allowDownward = true
+        } else {
+            pitchEngine.instrumentRange = profile.preferredPitchBendRange
+            pitchEngine.allowDownward = profile.allowDownwardBend
+        }
+
         let bend = pitchEngine.process(
             stickX: bendingNow ? rightX : 0,
             heldNote: held,
@@ -261,18 +294,23 @@ public struct InstrumentPerformanceEngine: Sendable {
         lastPalmMuted = palmNow
 
         var hint: String?
-        if notesHeld && profile.supportsPitchBend && !hasUsedBend && !sustainHintShown {
+        if isTechniqueMod && notesHeld {
+            let range = Int(context.scale.scaleRelevantBendRange)
+            hint = "Chord Diatonic Bend (±\(range) st) · Move R-Stick X"
+        } else if notesHeld && profile.supportsPitchBend && !hasUsedBend && !sustainHintShown {
             hint = "Move R Stick sideways to bend"
             sustainHintShown = true
         }
         if notesHeld && profile.supportsAftertouch && !hasUsedPressure && pressure.smoothed < 0.05 && hint == nil {
             hint = "Press R2 while sustaining for pressure"
         }
-        if bend.isBending && abs(bend.bendSemitones) > 0.15 { hasUsedBend = true; hint = nil }
+        if bend.isBending && abs(bend.bendSemitones) > 0.15 { hasUsedBend = true; if !isTechniqueMod { hint = nil } }
         if pressure.isActive { hasUsedPressure = true; if hint?.contains("R2") == true { hint = nil } }
 
         var theory: String?
-        if settings.theoryAssist, let nearest = bend.nearestTarget, bend.targetProximity > 0.4 {
+        if isTechniqueMod && notesHeld && abs(rightX) > 0.05, let nearest = bend.nearestTarget {
+            theory = "Chord Bend → \(nearest.displayLabel)"
+        } else if settings.theoryAssist, let nearest = bend.nearestTarget, bend.targetProximity > 0.4 {
             let chordBit = nearest.isChordTone ? "chord \(nearest.roleLabel)" : (nearest.isScaleTone ? "scale" : "chromatic")
             theory = "Bend \(nearest.displayLabel) · \(chordBit)"
         }
@@ -361,7 +399,6 @@ public struct InstrumentPerformanceEngine: Sendable {
         pickAttack: Bool,
         timestamp: TimeInterval
     ) -> [FaceButtonNoteEvent] {
-        guard let chord = context.chord else { return [] }
         let targeter = ContextualPitchTargeter()
         let pairs: [(pressed: Bool, was: Bool, role: ChordToneRole)] = [
             (state.buttonA, previousFace.a, .root),
@@ -372,6 +409,7 @@ public struct InstrumentPerformanceEngine: Sendable {
         var events: [FaceButtonNoteEvent] = []
         for pair in pairs {
             if pair.pressed && !pair.was {
+                guard let chord = context.chord else { continue }
                 let note = targeter.note(for: pair.role, chord: chord, previous: intervalMemory.lastNote, baseOctave: context.registerOctave)
                 let sameString = stringModel.wouldBeSameString(from: lastMelodicNote ?? note, to: note)
                 _ = stringModel.assign(note: note)
@@ -400,6 +438,7 @@ public struct InstrumentPerformanceEngine: Sendable {
                     slideEngine.begin(from: previous, to: note)
                 }
                 intervalMemory.remember(role: pair.role, note: note)
+                heldNotesByRole[pair.role] = note
                 if note < (lastMelodicNote ?? note) {
                     preparedLowerNote = lastMelodicNote
                 }
@@ -413,15 +452,18 @@ public struct InstrumentPerformanceEngine: Sendable {
                     velocity: legato?.velocity ?? 110
                 ))
             } else if !pair.pressed && pair.was {
-                let note = targeter.note(for: pair.role, chord: chord, previous: intervalMemory.lastNote, baseOctave: context.registerOctave)
-                preparedLowerNote = note
-                events.append(FaceButtonNoteEvent(
-                    role: pair.role,
-                    note: note,
-                    isOn: false,
-                    technique: .normal,
-                    velocity: 0
-                ))
+                let note = heldNotesByRole.removeValue(forKey: pair.role)
+                    ?? (context.chord.map { targeter.note(for: pair.role, chord: $0, previous: intervalMemory.lastNote, baseOctave: context.registerOctave) })
+                if let note {
+                    preparedLowerNote = note
+                    events.append(FaceButtonNoteEvent(
+                        role: pair.role,
+                        note: note,
+                        isOn: false,
+                        technique: .normal,
+                        velocity: 0
+                    ))
+                }
             }
         }
         return events

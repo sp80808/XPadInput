@@ -61,8 +61,10 @@ public final class VirtualStrummer: @unchecked Sendable {
 
         let direction: StrumDirection = dy < 0 ? .down : .up
 
-        // Calculate dynamic velocity from stick speed (40 to 127)
-        let rawVelocity = min(127, max(40, Int(speed * 35.0)))
+        // Calculate dynamic velocity blending radial sensitivity zone + stick gesture speed
+        let radiusVelocity = strumVelocityFromRadius(Double(stick.radius))
+        let speedBonus = min(24, Int(speed * 10.0))
+        let rawVelocity = min(127, max(30, radiusVelocity + speedBonus))
         
         // Palm mute attenuates velocity and tightens decay
         let isMuted = triggerMute > 0.3
@@ -122,5 +124,26 @@ public final class VirtualStrummer: @unchecked Sendable {
             yVelocity: Float((y - previousY) / 0.05)
         )
         return processStick(stick: stick, triggerMute: triggerMute, chordNotes: chordNotes, timestamp: timestamp)
+    }
+
+    /// Maps the thumbstick deflection radius into musical velocity sensitivity zones:
+    /// - Inner zone (< 0.40): 30...55 (ghost notes / delicate plucks)
+    /// - Mid zone (0.40...0.70): 55...95 (standard musical volume)
+    /// - Outer zone (> 0.70): 95...127 (accented fortissimo attacks)
+    private func strumVelocityFromRadius(_ radius: Double) -> Int {
+        let r = max(0.0, min(1.0, radius))
+        if r < 0.40 {
+            // Soft / ghost zone: normalize 0.0...0.40 -> 30...55
+            let t = r / 0.40
+            return Int(30.0 + t * 25.0)
+        } else if r < 0.70 {
+            // Mid / normal zone: normalize 0.40...0.70 -> 55...95
+            let t = (r - 0.40) / 0.30
+            return Int(55.0 + t * 40.0)
+        } else {
+            // Outer / accent zone: normalize 0.70...1.0 -> 95...127
+            let t = (r - 0.70) / 0.30
+            return Int(95.0 + t * 32.0)
+        }
     }
 }

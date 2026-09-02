@@ -6,6 +6,9 @@ import XPadController
 struct ControllerVisualizerView: View {
     @Environment(AppState.self) private var appState
     @State private var displayState = ControllerDisplayState()
+    @State private var showsMappingOverlay: Bool = false
+    @State private var connectTrigger: Int = 0
+    @State private var wasConnected: Bool = false
     
     var body: some View {
         let isConnected = appState.controllerManager.isConnected
@@ -31,6 +34,23 @@ struct ControllerVisualizerView: View {
                         .foregroundColor(XTheme.textTertiary)
                 }
 
+                // Interactive Mapping Legend Overlay Toggle
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showsMappingOverlay.toggle()
+                    }
+                } label: {
+                    Image(systemName: showsMappingOverlay ? "questionmark.circle.fill" : "questionmark.circle")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(showsMappingOverlay ? XTheme.primary : XTheme.textSecondary)
+                        .padding(4)
+                        .background(
+                            Circle().fill(showsMappingOverlay ? XTheme.primary.opacity(0.18) : Color.white.opacity(0.06))
+                        )
+                }
+                .buttonStyle(.plain)
+                .help("Toggle Interactive Controller Mapping Overlay")
+
                 Text(isConnected ? "LIVE" : hasLiveInput ? "SIM" : "PREVIEW")
                     .font(.system(size: 9, weight: .black, design: .monospaced))
                     .foregroundStyle(isConnected ? XTheme.controllerConnected : XTheme.warning)
@@ -55,11 +75,19 @@ struct ControllerVisualizerView: View {
                 duoMode: appState.duoPerformanceMode,
                 currentChord: appState.currentChord,
                 lastVelocity: hasLiveInput ? displayState.lastVelocity : 0,
-                lastStrumDirection: hasLiveInput ? displayState.lastStrumDirection : .none
+                lastStrumDirection: hasLiveInput ? displayState.lastStrumDirection : .none,
+                showsMappingOverlay: showsMappingOverlay
             )
         }
         .padding(18)
         .xCard(isActive: isConnected)
+        .xRipple(trigger: connectTrigger, color: XTheme.controllerConnected, size: 140)
+        .onChange(of: isConnected) { _, connected in
+            if connected && !wasConnected {
+                connectTrigger += 1
+            }
+            wasConnected = connected
+        }
         .task {
             await sampleDisplayState()
         }

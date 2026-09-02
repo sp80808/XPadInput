@@ -1,5 +1,6 @@
 import CoreMIDI
 import Foundation
+import XPadCore
 
 /// Wire protocol used by XPI's CoreMIDI virtual sources.
 ///
@@ -27,11 +28,90 @@ public enum MIDITransportProtocol: String, CaseIterable, Identifiable, Sendable 
     }
 }
 
+/// Standard MIDI 2.0 Registered Per-Note Controllers (RPNC).
+public enum MIDI2RPNC: UInt8, CaseIterable, Identifiable, Codable, Equatable, Hashable, Sendable {
+    case modulation = 1
+    case breath = 2
+    case pitchOffset7_9 = 3
+    case volume = 7
+    case pan = 10
+    case expression = 11
+    case soundVariation = 70
+    case resonance = 71
+    case releaseTime = 72
+    case attackTime = 73
+    case brightness = 74
+    case decayTime = 75
+    case vibratoRate = 76
+    case vibratoDepth = 77
+    case vibratoDelay = 78
+
+    public var id: UInt8 { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .modulation: "Modulation"
+        case .breath: "Breath"
+        case .pitchOffset7_9: "Pitch 7.9 Offset"
+        case .volume: "Volume"
+        case .pan: "Pan"
+        case .expression: "Expression"
+        case .soundVariation: "Sound Variation"
+        case .resonance: "Resonance"
+        case .releaseTime: "Release Time"
+        case .attackTime: "Attack Time"
+        case .brightness: "Brightness / Cutoff"
+        case .decayTime: "Decay Time"
+        case .vibratoRate: "Vibrato Rate"
+        case .vibratoDepth: "Vibrato Depth"
+        case .vibratoDelay: "Vibrato Delay"
+        }
+    }
+}
+
+/// MIDI 2.0 Note On & Note Off Attribute Types (M2-104-UM).
+public enum MIDI2NoteAttributeType: UInt8, CaseIterable, Identifiable, Codable, Equatable, Hashable, Sendable {
+    case none = 0x00
+    case manufacturerSpecific = 0x01
+    case profileSpecific = 0x02
+    case pitch7_9 = 0x03
+
+    public var id: UInt8 { rawValue }
+}
+
+/// Codec for MIDI 2.0 Pitch 7.9-bit microtuning representation.
+/// (Bits 9...15: semitone note 0...127, Bits 0...8: 512ths of a semitone).
+public enum Pitch7_9Codec {
+    public static func encode(note: UInt8, centOffset: Double) -> UInt16 {
+        let baseNote = Int(note & 0x7F)
+        let cents = centOffset.clamped(to: -100.0...100.0)
+        let totalFraction = cents / 100.0 // -1.0 ... +1.0
+
+        let noteAndFraction = Double(baseNote) + totalFraction
+        let effectiveNote = Int(floor(noteAndFraction)).clamped(to: 0...127)
+        let fraction = (noteAndFraction - floor(noteAndFraction)) * 512.0
+        let clampedFraction = UInt16(min(511, max(0, Int(fraction.rounded()))))
+
+        return (UInt16(effectiveNote & 0x7F) << 9) | clampedFraction
+    }
+
+    public static func decode(_ data: UInt16) -> (note: UInt8, centOffsetFromBase: Double) {
+        let note = UInt8((data >> 9) & 0x7F)
+        let fraction512 = Double(data & 0x1FF)
+        let centOffset = (fraction512 / 512.0) * 100.0
+        return (note, centOffset)
+    }
+}
+
 /// Translates XPI channel-message semantics into native MIDI 2.0 Channel Voice
 /// UMP. Legacy byte-shaped events remain supported, while normalized/high-
 /// resolution helpers allow expressive values to bypass unnecessary 7/14-bit
 /// quantization when the selected transport is MIDI 2.0.
 public enum MIDI2UMPEncoder {
+    public typealias MIDI2RPNC = XPadMIDI.MIDI2RPNC
+    public typealias MIDI2NoteAttributeType = XPadMIDI.MIDI2NoteAttributeType
+    public typealias Pitch7_9Codec = XPadMIDI.Pitch7_9Codec
+
     public static let group: UInt8 = 0
     public static let pitchBendCentre: UInt32 = 0x8000_0000
 
@@ -194,7 +274,22 @@ public enum MIDI2UMPEncoder {
     }
 
     /// Generates a native 64-bit UMP Registered Per-Note Controller (PNRC, Status 0x00).
-    /// Used for per-note Timbre (Controller 74), Cutoff, Modulation, and Vibrato.
+    public static func perNoteRegisteredControllerMessage(
+        channel: UInt8,
+        note: UInt8,
+        controller: MIDI2RPNC,
+        normalizedValue: Double
+    ) -> MIDIMessage_64 {
+        perNoteRegisteredControllerMessage(
+            channel: channel,
+            note: note,
+            controllerIndex: controller.rawValue,
+            normalizedValue: normalizedValue
+        )
+    }
+
+    /// Generates a native 64-bit UMP Registered Per-Note Controller (PNRC, Status 0x00).
+    /// Used for per-note Timbre (Controller 74), Cutoff, Resonance, Pan, Modulation, and Vibrato.
     public static func perNoteRegisteredControllerMessage(
         channel: UInt8,
         note: UInt8,
@@ -231,10 +326,160 @@ public enum MIDI2UMPEncoder {
         return MIDIMessage_64(word0: word0, word1: 0)
     }
 
+    // MARK: - Note On / Note Off with 16-bit Velocity & Attributes
+
+    public static func noteOnMessage(
+        channel: UInt8,
+        note: UInt8,
+        velocity16: UInt16,
+        attributeType: MIDI2NoteAttributeType = .none,
+        attributeData: UInt16 = 0
+    ) -> MIDIMessage_64 {
+        MIDI2NoteOn(
+            group,
+            min(15, channel),
+            min(127, note),
+            attributeType.rawValue,
+            attributeData,
+            velocity16
+        )
+    }
+
+    public static func noteOnWithPitch7_9(
+        channel: UInt8,
+        note: UInt8,
+        velocity16: UInt16,
+        centOffset: Double
+    ) -> MIDIMessage_64 {
+        let attrData = Pitch7_9Codec.encode(note: note, centOffset: centOffset)
+        return noteOnMessage(
+            channel: channel,
+            note: note,
+            velocity16: velocity16,
+            attributeType: .pitch7_9,
+            attributeData: attrData
+        )
+    }
+
+    public static func noteOnMessage(
+        channel: UInt8,
+        note: UInt8,
+        velocity16: UInt16,
+        rawAttributeType: UInt8,
+        attributeData: UInt16 = 0
+    ) -> MIDIMessage_64 {
+        MIDI2NoteOn(
+            group,
+            min(15, channel),
+            min(127, note),
+            rawAttributeType,
+            attributeData,
+            velocity16
+        )
+    }
+
+    public static func noteOffMessage(
+        channel: UInt8,
+        note: UInt8,
+        velocity16: UInt16 = 0,
+        attributeType: MIDI2NoteAttributeType = .none,
+        attributeData: UInt16 = 0
+    ) -> MIDIMessage_64 {
+        MIDI2NoteOff(
+            group,
+            min(15, channel),
+            min(127, note),
+            attributeType.rawValue,
+            attributeData,
+            velocity16
+        )
+    }
+
+    public static func noteOffMessage(
+        channel: UInt8,
+        note: UInt8,
+        velocity16: UInt16 = 0,
+        rawAttributeType: UInt8,
+        attributeData: UInt16 = 0
+    ) -> MIDIMessage_64 {
+        MIDI2NoteOff(
+            group,
+            min(15, channel),
+            min(127, note),
+            rawAttributeType,
+            attributeData,
+            velocity16
+        )
+    }
+
+    /// Encodes arbitrary SysEx 7-bit bytes into 64-bit UMP packets (Message Type 0x3).
+    public static func sysex7Messages(from bytes: [UInt8], group: UInt8 = 0) -> [MIDIMessage_64] {
+        guard !bytes.isEmpty else { return [] }
+        var packets: [MIDIMessage_64] = []
+        let totalBytes = bytes.count
+        let chunkSize = 6
+
+        if totalBytes <= chunkSize {
+            packets.append(makeSysEx7Packet(bytes: bytes, group: group, status: 0))
+            return packets
+        }
+
+        var offset = 0
+        while offset < totalBytes {
+            let remaining = totalBytes - offset
+            let count = min(chunkSize, remaining)
+            let chunk = Array(bytes[offset..<(offset + count)])
+            let status: UInt8
+            if offset == 0 {
+                status = 1 // Start
+            } else if offset + count >= totalBytes {
+                status = 3 // End
+            } else {
+                status = 2 // Continue
+            }
+            packets.append(makeSysEx7Packet(bytes: chunk, group: group, status: status))
+            offset += count
+        }
+        return packets
+    }
+
+    private static func makeSysEx7Packet(bytes: [UInt8], group: UInt8, status: UInt8) -> MIDIMessage_64 {
+        let count = min(6, bytes.count)
+        let b1 = count > 0 ? UInt32(bytes[0]) : 0
+        let b2 = count > 1 ? UInt32(bytes[1]) : 0
+        let b3 = count > 2 ? UInt32(bytes[2]) : 0
+        let b4 = count > 3 ? UInt32(bytes[3]) : 0
+        let b5 = count > 4 ? UInt32(bytes[4]) : 0
+        let b6 = count > 5 ? UInt32(bytes[5]) : 0
+
+        let word0 = (0x3 << 28)
+            | (UInt32(group & 0x0F) << 24)
+            | (UInt32(status & 0x0F) << 20)
+            | (UInt32(count & 0x0F) << 16)
+            | (b1 << 8)
+            | b2
+        let word1 = (b3 << 24)
+            | (b4 << 16)
+            | (b5 << 8)
+            | b6
+
+        return MIDIMessage_64(word0: word0, word1: word1)
+    }
+
     /// Full-range conversion that preserves 0 and 127 exactly.
     public static func scale7To16(_ value: UInt8) -> UInt16 {
         let clamped = UInt32(min(127, value))
         return UInt16((clamped * UInt32(UInt16.max) + 63) / 127)
+    }
+
+    /// Converts a 16-bit velocity to standard 7-bit MIDI velocity.
+    public static func scale16To7(_ value: UInt16) -> UInt8 {
+        UInt8((UInt32(value) * 127 + 32767) / UInt32(UInt16.max))
+    }
+
+    /// Converts a normalized float (0.0 ... 1.0) directly to 16-bit unsigned integer.
+    public static func floatTo16Bit(_ value: Double) -> UInt16 {
+        scaleNormalizedTo16(value)
     }
 
     /// Full-range conversion that preserves 0 and 127 exactly.
@@ -244,15 +489,11 @@ public enum MIDI2UMPEncoder {
     }
 
     public static func scaleNormalizedTo16(_ value: Double) -> UInt16 {
-        guard value.isFinite else { return 0 }
-        let normalized = min(1.0, max(0.0, value))
-        return UInt16((normalized * Double(UInt16.max)).rounded())
+        UInt16((value.normalizedUnit * Double(UInt16.max)).rounded())
     }
 
     public static func scaleNormalizedTo32(_ value: Double) -> UInt32 {
-        guard value.isFinite else { return 0 }
-        let normalized = min(1.0, max(0.0, value))
-        return UInt32((normalized * Double(UInt32.max)).rounded())
+        UInt32((value.normalizedUnit * Double(UInt32.max)).rounded())
     }
 
     /// Maps a musical bend directly into MIDI 2's 32-bit pitch-bend field.
@@ -262,13 +503,11 @@ public enum MIDI2UMPEncoder {
         semitoneOffset: Double,
         bendRangeSemitones: Double
     ) -> UInt32 {
-        guard semitoneOffset.isFinite,
-              bendRangeSemitones.isFinite,
-              bendRangeSemitones > 0 else {
+        guard bendRangeSemitones.isFinite, bendRangeSemitones > 0 else {
             return pitchBendCentre
         }
 
-        let normalized = min(1.0, max(-1.0, semitoneOffset / bendRangeSemitones))
+        let normalized = (semitoneOffset / bendRangeSemitones).normalizedBipolar
         if normalized == 0 { return pitchBendCentre }
 
         if normalized < 0 {
@@ -300,5 +539,302 @@ public enum MIDI2UMPEncoder {
                 * UInt64(UInt32.max - pitchBendCentre)
                 / UInt64(8_191)
         )
+    }
+
+    /// Converts a 32-bit pitch-bend value to standard 14-bit pitch bend.
+    public static func scale32To14BitPitchBend(_ value32: UInt32) -> UInt16 {
+        if value32 == pitchBendCentre { return 8_192 }
+        if value32 < pitchBendCentre {
+            return UInt16((UInt64(value32) * 8_192) / UInt64(pitchBendCentre))
+        }
+        let positiveRange = UInt64(UInt32.max) - UInt64(pitchBendCentre)
+        return 8_192 + UInt16(((UInt64(value32) - UInt64(pitchBendCentre)) * 8_191) / positiveRange)
+    }
+
+    /// Converts a 32-bit pitch bend directly to musical semitones given a bend range.
+    public static func pitchBend32ToSemitones(_ value32: UInt32, bendRangeSemitones: Double) -> Double {
+        guard bendRangeSemitones.isFinite, bendRangeSemitones > 0 else { return 0.0 }
+        if value32 == pitchBendCentre { return 0.0 }
+        if value32 < pitchBendCentre {
+            let norm = -Double(UInt64(pitchBendCentre) - UInt64(value32)) / Double(pitchBendCentre)
+            return norm * bendRangeSemitones
+        }
+        let positiveRange = UInt64(UInt32.max) - UInt64(pitchBendCentre)
+        let norm = Double(UInt64(value32) - UInt64(pitchBendCentre)) / Double(positiveRange)
+        return norm * bendRangeSemitones
+    }
+
+    /// Converts a 32-bit unsigned controller/pressure value to 7-bit MIDI value.
+    public static func scale32To7(_ value: UInt32) -> UInt8 {
+        UInt8((UInt64(value) * 127 + 0x7FFF_FFFF) / UInt64(UInt32.max))
+    }
+
+    /// Converts a 32-bit unsigned controller/pressure value to normalized 0.0...1.0.
+    public static func scale32ToNormalized(_ value: UInt32) -> Double {
+        Double(value) / Double(UInt32.max)
+    }
+}
+
+/// Routing policy for incoming MIDI received at the virtual destination (e.g. "XPI Input / CI").
+public enum MIDIPassthruMode: String, CaseIterable, Identifiable, Codable, Sendable {
+    case off = "Off"
+    case thruToAudio = "Synth Only"
+    case thruToOutputs = "DAW Thru Only"
+    case full = "Full Passthru"
+
+    public var id: String { rawValue }
+
+    public var routesToAudio: Bool {
+        self == .thruToAudio || self == .full
+    }
+
+    public var routesToOutputs: Bool {
+        self == .thruToOutputs || self == .full
+    }
+
+    public var description: String {
+        switch self {
+        case .off:
+            "Incoming MIDI ignored (MIDI-CI discovery active)"
+        case .thruToAudio:
+            "Incoming MIDI triggers internal Synth Engine"
+        case .thruToOutputs:
+            "Incoming MIDI forwarded to DAW virtual output ports"
+        case .full:
+            "Incoming MIDI routed to internal Synth Engine and DAW ports"
+        }
+    }
+}
+
+/// Structured representation of a decoded Universal MIDI Packet (UMP).
+public enum DecodedMIDIMessage: Equatable, Sendable {
+    case channelVoice(event: PerformanceEvent, rawBytes: [UInt8])
+    case noteOnAttribute(channel: UInt8, note: UInt8, velocity16: UInt16, attributeType: UInt8, attributeData: UInt16)
+    case perNotePitchBend(channel: UInt8, note: UInt8, semitoneOffset: Double, pitch32: UInt32)
+    case perNotePressure(channel: UInt8, note: UInt8, normalizedPressure: Double)
+    case perNoteController(channel: UInt8, note: UInt8, controller: UInt8, normalizedValue: Double)
+    case perNoteRPNC(channel: UInt8, note: UInt8, rpnc: MIDI2RPNC, normalizedValue: Double)
+    case perNoteManagement(channel: UInt8, note: UInt8, detach: Bool, reset: Bool)
+    case sysEx(bytes: [UInt8])
+    case systemRealtime(status: UInt8)
+}
+
+/// Decodes Universal MIDI Packets (UMP) into structured musical events and raw MIDI bytes.
+public enum MIDI2UMPDecoder {
+    public static func decode(words: [UInt32]) -> [DecodedMIDIMessage] {
+        var dummyBuffer: [UInt8] = []
+        return decodeStream(words: words, sysExBuffer: &dummyBuffer)
+    }
+
+    public static func decodeStream(
+        words: [UInt32],
+        sysExBuffer: inout [UInt8]
+    ) -> [DecodedMIDIMessage] {
+        var results: [DecodedMIDIMessage] = []
+        var index = 0
+
+        while index < words.count {
+            let word0 = words[index]
+            let messageType = (word0 >> 28) & 0x0F
+
+            switch messageType {
+            case 0x1: // System Real-Time and Common (32-bit / 1 word)
+                let status = UInt8((word0 >> 16) & 0xFF)
+                results.append(.systemRealtime(status: status))
+                index += 1
+
+            case 0x2: // MIDI 1.0 Channel Voice (32-bit / 1 word)
+                let statusByte = UInt8((word0 >> 16) & 0xFF)
+                let status = statusByte & 0xF0
+                let channel = statusByte & 0x0F
+                let data1 = UInt8((word0 >> 8) & 0x7F)
+                let data2 = UInt8(word0 & 0x7F)
+
+                switch status {
+                case 0x80:
+                    let event = PerformanceEvent.noteOff(channel: channel, note: data1)
+                    results.append(.channelVoice(event: event, rawBytes: [statusByte, data1, data2]))
+                case 0x90:
+                    if data2 == 0 {
+                        let event = PerformanceEvent.noteOff(channel: channel, note: data1)
+                        results.append(.channelVoice(event: event, rawBytes: [0x80 | channel, data1, 0]))
+                    } else {
+                        let event = PerformanceEvent.noteOn(channel: channel, note: data1, velocity: data2)
+                        results.append(.channelVoice(event: event, rawBytes: [statusByte, data1, data2]))
+                    }
+                case 0xA0:
+                    let event = PerformanceEvent.polyPressure(channel: channel, note: data1, pressure: data2)
+                    results.append(.channelVoice(event: event, rawBytes: [statusByte, data1, data2]))
+                case 0xB0:
+                    if data1 == 74 {
+                        let event = PerformanceEvent.timbreCC74(channel: channel, value: data2)
+                        results.append(.channelVoice(event: event, rawBytes: [statusByte, data1, data2]))
+                    } else if data1 == 123 || data1 == 120 {
+                        let event = PerformanceEvent.allNotesOff(channel: channel)
+                        results.append(.channelVoice(event: event, rawBytes: [statusByte, data1, data2]))
+                    } else {
+                        let event = PerformanceEvent.controlChange(channel: channel, controller: data1, value: data2)
+                        results.append(.channelVoice(event: event, rawBytes: [statusByte, data1, data2]))
+                    }
+                case 0xD0:
+                    let event = PerformanceEvent.channelPressure(channel: channel, pressure: data1)
+                    results.append(.channelVoice(event: event, rawBytes: [statusByte, data1]))
+                case 0xE0:
+                    let value14 = UInt16(data1) | (UInt16(data2) << 7)
+                    let signedVal = Int16(Int(value14) - 8192)
+                    let event = PerformanceEvent.pitchBend(channel: channel, value: signedVal)
+                    results.append(.channelVoice(event: event, rawBytes: [statusByte, data1, data2]))
+                default:
+                    break
+                }
+                index += 1
+
+            case 0x3: // 7-bit Data / SysEx (64-bit / 2 words)
+                guard index + 1 < words.count else {
+                    index += 1
+                    break
+                }
+                let word1 = words[index + 1]
+                let status = UInt8((word0 >> 20) & 0x0F)
+                let byteCount = min(6, Int((word0 >> 16) & 0x0F))
+
+                let rawBytesInPacket = [
+                    UInt8((word0 >> 8) & 0xFF),
+                    UInt8(word0 & 0xFF),
+                    UInt8((word1 >> 24) & 0xFF),
+                    UInt8((word1 >> 16) & 0xFF),
+                    UInt8((word1 >> 8) & 0xFF),
+                    UInt8(word1 & 0xFF)
+                ]
+                let validBytes = Array(rawBytesInPacket.prefix(byteCount))
+
+                switch status {
+                case 0: // Complete in single packet
+                    results.append(.sysEx(bytes: validBytes))
+                case 1: // Start
+                    sysExBuffer = validBytes
+                case 2: // Continue
+                    sysExBuffer.append(contentsOf: validBytes)
+                case 3: // End
+                    sysExBuffer.append(contentsOf: validBytes)
+                    results.append(.sysEx(bytes: sysExBuffer))
+                    sysExBuffer.removeAll(keepingCapacity: true)
+                default:
+                    break
+                }
+                index += 2
+
+            case 0x4: // MIDI 2.0 Channel Voice (64-bit / 2 words)
+                guard index + 1 < words.count else {
+                    index += 1
+                    break
+                }
+                let word1 = words[index + 1]
+                let channel = UInt8((word0 >> 16) & 0x0F)
+                let opcode = UInt8((word0 >> 20) & 0x0F)
+                let data1 = UInt8((word0 >> 8) & 0x7F)
+                let data2 = UInt8(word0 & 0xFF)
+
+                switch opcode {
+                case 0x8: // Note Off
+                    let note = data1
+                    let vel16 = UInt16((word1 >> 16) & 0xFFFF)
+                    let vel7 = MIDI2UMPEncoder.scale16To7(vel16)
+                    let event = PerformanceEvent.noteOff(channel: channel, note: note)
+                    results.append(.channelVoice(event: event, rawBytes: [0x80 | channel, note, vel7]))
+
+                case 0x9: // Note On
+                    let note = data1
+                    let attrType = data2
+                    let vel16 = UInt16((word1 >> 16) & 0xFFFF)
+                    let attrData = UInt16(word1 & 0xFFFF)
+
+                    let vel7 = MIDI2UMPEncoder.scale16To7(vel16)
+                    if vel16 == 0 {
+                        let event = PerformanceEvent.noteOff(channel: channel, note: note)
+                        results.append(.channelVoice(event: event, rawBytes: [0x80 | channel, note, 0]))
+                    } else {
+                        let event = PerformanceEvent.noteOn(channel: channel, note: note, velocity: vel7)
+                        results.append(.channelVoice(event: event, rawBytes: [0x90 | channel, note, vel7]))
+                        if attrType != 0 {
+                            results.append(.noteOnAttribute(
+                                channel: channel,
+                                note: note,
+                                velocity16: vel16,
+                                attributeType: attrType,
+                                attributeData: attrData
+                            ))
+                        }
+                    }
+
+                case 0xA: // Poly Pressure
+                    let note = data1
+                    let press7 = MIDI2UMPEncoder.scale32To7(word1)
+                    let event = PerformanceEvent.polyPressure(channel: channel, note: note, pressure: press7)
+                    let normPress = MIDI2UMPEncoder.scale32ToNormalized(word1)
+                    results.append(.perNotePressure(channel: channel, note: note, normalizedPressure: normPress))
+                    results.append(.channelVoice(event: event, rawBytes: [0xA0 | channel, note, press7]))
+
+                case 0xB: // Control Change
+                    let controller = data1
+                    let val7 = MIDI2UMPEncoder.scale32To7(word1)
+                    if controller == 74 {
+                        let event = PerformanceEvent.timbreCC74(channel: channel, value: val7)
+                        results.append(.channelVoice(event: event, rawBytes: [0xB0 | channel, controller, val7]))
+                    } else if controller == 123 || controller == 120 {
+                        let event = PerformanceEvent.allNotesOff(channel: channel)
+                        results.append(.channelVoice(event: event, rawBytes: [0xB0 | channel, controller, 0]))
+                    } else {
+                        let event = PerformanceEvent.controlChange(channel: channel, controller: controller, value: val7)
+                        results.append(.channelVoice(event: event, rawBytes: [0xB0 | channel, controller, val7]))
+                    }
+
+                case 0xD: // Channel Pressure
+                    let press7 = MIDI2UMPEncoder.scale32To7(word1)
+                    let event = PerformanceEvent.channelPressure(channel: channel, pressure: press7)
+                    results.append(.channelVoice(event: event, rawBytes: [0xD0 | channel, press7]))
+
+                case 0xE: // Pitch Bend
+                    let pitch14 = MIDI2UMPEncoder.scale32To14BitPitchBend(word1)
+                    let signedVal = Int16(Int(pitch14) - 8192)
+                    let event = PerformanceEvent.pitchBend(channel: channel, value: signedVal)
+                    results.append(.channelVoice(event: event, rawBytes: [
+                        0xE0 | channel,
+                        UInt8(pitch14 & 0x7F),
+                        UInt8((pitch14 >> 7) & 0x7F)
+                    ]))
+
+                case 0x0: // Registered Per-Note Controller
+                    let note = data1
+                    let controller = data2
+                    let normVal = MIDI2UMPEncoder.scale32ToNormalized(word1)
+                    results.append(.perNoteController(channel: channel, note: note, controller: controller, normalizedValue: normVal))
+                    if let rpnc = MIDI2RPNC(rawValue: controller) {
+                        results.append(.perNoteRPNC(channel: channel, note: note, rpnc: rpnc, normalizedValue: normVal))
+                    }
+
+                case 0x6: // Per-Note Pitch Bend
+                    let note = data1
+                    let semitones = MIDI2UMPEncoder.pitchBend32ToSemitones(word1, bendRangeSemitones: 48.0)
+                    results.append(.perNotePitchBend(channel: channel, note: note, semitoneOffset: semitones, pitch32: word1))
+
+                case 0xF: // Per-Note Management
+                    let note = data1
+                    let detach = (data2 & 0x02) != 0
+                    let reset = (data2 & 0x01) != 0
+                    results.append(.perNoteManagement(channel: channel, note: note, detach: detach, reset: reset))
+
+                default:
+                    break
+                }
+                index += 2
+
+            default:
+                // Skip unknown 32-bit word
+                index += 1
+            }
+        }
+
+        return results
     }
 }

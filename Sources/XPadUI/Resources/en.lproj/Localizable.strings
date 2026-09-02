@@ -1,0 +1,604 @@
+/* ============================================================
+   Localizable.strings — English (en)
+   XPadInput · XPadUI module
+   ============================================================ */
+
+// MARK: - Common
+
+"common.done"      = "Done";
+"common.cancel"    = "Cancel";
+"common.start"     = "Start";
+"common.exit"      = "Exit";
+"common.add"       = "Add";
+"common.stop"      = "Stop";
+"common.play"      = "Play";
+"common.on"        = "On";
+"common.off"       = "Off";
+"common.yes"       = "Yes";
+"common.no"        = "No";
+"common.active"    = "Active";
+"common.muted"     = "Muted";
+
+// MARK: - App Branding
+
+"app.brand.name"     = "XPI";
+"app.brand.subtitle" = "MPE INSTRUMENT";
+
+// MARK: - Controller kind labels (compact)
+
+"controller.kind.simulated.compact" = "Sim Pad";
+"controller.kind.simulated"         = "Simulated Gamepad";
+"controller.kind.dualsense"         = "DualSense";
+"controller.kind.dualshock4"        = "DS4";
+"controller.kind.xbox"              = "Xbox";
+"controller.kind.switch"            = "Switch";
+"controller.kind.steamdeck"         = "Deck";
+"controller.kind.guitar"            = "Guitar";
+"controller.kind.fightstick"        = "FightStick";
+"controller.kind.wheel"             = "Wheel";
+"controller.kind.hotas"             = "HOTAS";
+"controller.kind.generic"           = "Gamepad";
+
+// MARK: - Settings sheet (MainAppView)
+
+"settings.sheet.title"              = "Controller & Hardware Configuration";
+"header.controller.badge.help"      = "Configure Controller Scheme, Calibrate Deadzones, and Remap Buttons";
+"header.settings.help"              = "Open Settings";
+
+// MARK: - Transport Bar
+
+"transport.stop"                    = "Stop";
+"transport.play"                    = "Play";
+"transport.record"                  = "Record";
+"transport.loop"                    = "Loop";
+"transport.metronome.disable.help"  = "Disable metronome";
+"transport.metronome.enable.help"   = "Enable metronome";
+"transport.metronome.label"         = "Metronome";
+"transport.bpm.label"               = "BPM";
+"transport.tap.help"                = "Tap tempo beat calculator";
+"transport.tap.button"              = "TAP";
+"transport.midi.protocol.help"      = "CoreMIDI virtual-source protocol";
+"transport.controller.preview"      = "Preview";
+"transport.synth.unmute.help"       = "Unmute Built-in Synth";
+"transport.synth.mute.help"         = "Mute Built-in Synth (Prioritizes MIDI/DAW Passthru)";
+"transport.synth.mute.label"        = "Mute Synth";
+"transport.volume.slider.muted.help"= "Synth is muted — Drag to unmute and adjust volume";
+"transport.volume.slider.help"      = "Master Synthesizer Output Volume";
+"transport.panic.help"              = "MIDI Panic — All Notes Off";
+
+// MARK: - Transport Context Selectors
+
+"transport.key.help"   = "Choose key";
+"transport.key.label"  = "Key";
+"transport.scale.help" = "Choose scale";
+"transport.scale.label"= "Scale";
+
+// MARK: - Instrument Selector
+
+"instrument.selector.help"  = "Choose performance instrument";
+"instrument.selector.label" = "Instrument";
+
+// MARK: - Workspace Navigation tabs
+
+"nav.tab.play"     = "Play";
+"nav.tab.harmony"  = "Harmony";
+"nav.tab.sequence" = "Sequence";
+"nav.tab.map"      = "Controller Map";
+"nav.tab.library"  = "Library";
+"nav.tab.practice" = "Practice";
+
+// MARK: - Instrument play modes
+
+"instrument.mode.chordStrummer" = "Chord Strummer";
+"instrument.mode.drums"         = "Rhythm Compass";
+"instrument.mode.bass"          = "Bassline";
+"instrument.mode.melody"        = "Melody Lead";
+
+// MARK: - Menu Bar
+
+"menuBar.controller.connected"    = "Controller: %@";
+"menuBar.controller.disconnected" = "No Gamepad Connected";
+"menuBar.key.label"               = "Key: %@ %@ • %@";
+"menuBar.openWindow"              = "Open XPadInput Window";
+"menuBar.toggle.backgroundInput"  = "Background Gamepad Input";
+"menuBar.toggle.virtualMidi"      = "Virtual MIDI Output";
+"menuBar.panic"                   = "Panic — All Notes Off";
+"menuBar.instrumentProfile.menu"  = "Instrument Profile";
+"menuBar.switchWorkspace.menu"    = "Switch Workspace";
+"menuBar.practice.exit"           = "Exit Practice Mode";
+"menuBar.practice.open"           = "Open Practice Mode";
+"menuBar.rescanControllers"       = "Rescan Controllers";
+"menuBar.quit"                    = "Quit XPadInput";
+
+// MARK: - Play Workspace
+
+"play.tab.chords"           = "Chords";
+"play.tab.progression"      = "Progression";
+"play.tab.suggestions"      = "Suggestions";
+
+"play.dsp.tab.performance"  = "Performance";
+"play.dsp.tab.synth"        = "Synth";
+"play.dsp.tab.fx"           = "FX";
+"play.dsp.tab.spatial"      = "Spatial 3D";
+
+"play.lanes.header"         = "PERFORMANCE LANES";
+"play.lanes.strum.title"    = "Strum";
+"play.lanes.strum.subtitle" = "Chord voicing";
+"play.lanes.face.title"     = "Face";
+"play.lanes.face.subtitle"  = "Root · 3rd · 5th · 7th";
+
+"play.output.error"         = "MIDI SETUP ERROR";
+"play.output.virtual"       = "VIRTUAL MIDI ON";
+"play.output.internal"      = "INTERNAL AUDIO";
+
+"play.fx.header"            = "EFFECTS";
+"play.fx.eq"                = "EQ";
+"play.fx.compressor"        = "Comp";
+"play.fx.reverb"            = "Verb";
+
+"play.chords.diatonic.header"   = "DIATONIC CHORDS";
+
+"play.progression.header"   = "CHORD PROGRESSION";
+"play.progression.mutate"   = "Mutate";
+"play.progression.stop"     = "Stop";
+"play.progression.play"     = "Play";
+"play.progression.add"      = "Add";
+
+"play.suggestions.header"   = "WHAT NEXT?";
+
+"play.dsp.synth.header"     = "SYNTH & MASTER";
+"play.dsp.cutoff.label"     = "Cutoff: %dHz";
+"play.dsp.resonance.label"  = "Res: %d%%";
+"play.dsp.drive.label"      = "Drive: %d%%";
+"play.dsp.reverb.label"     = "Reverb: %d%%";
+
+"play.notes.none"           = "No notes playing";
+"play.notes.count.label"    = "Notes";
+"play.performance.header"   = "PERFORMANCE";
+"play.midi.label"           = "MIDI";
+"play.midi.protocol.mpe"    = "MPE";
+"play.midi.protocol.midi"   = "MIDI";
+
+"play.expression.bend"      = "Bend";
+"play.expression.pressure"  = "Pressure";
+"play.expression.timbre"    = "Timbre";
+"play.expression.mute"      = "Mute";
+
+// MARK: - Tension Badge
+
+"tension.stable"            = "Stable";
+"tension.natural"           = "Natural";
+"tension.colourful"         = "Colourful";
+"tension.adventurous"       = "Adventurous";
+"tension.outside"           = "Outside";
+
+// MARK: - Harmony Workspace
+
+"harmony.progression.builder.title"  = "Chord Progression Builder";
+"harmony.progression.mutate"         = "Mutate";
+"harmony.progression.stop"           = "Stop";
+"harmony.progression.playAll"        = "Play All";
+"harmony.modulation.explorer.title"  = "Modulation Explorer: %@ →";
+"harmony.modulation.targetKey"       = "Target Key";
+"harmony.modulation.auditionPath"    = "Audition Path";
+"harmony.voiceLeading.picker"        = "Voice Leading";
+"harmony.suggestions.title"         = "Harmonic Suggestions for %@";
+"harmony.suggestions.audition"      = "Audition";
+"harmony.suggestions.add"           = "Add";
+"harmony.chordBlock.beats"          = "%d beats";
+
+// MARK: - Sequence Workspace
+
+"sequence.scenes.label"  = "Scenes:";
+"sequence.export.button" = "Export .MID to DAW";
+"sequence.export.error"  = "Failed to save MIDI file: %@";
+"sequence.clip.label"    = "%@ Clip";
+
+// MARK: - Practice Workspace
+
+"practice.header.title"          = "PRACTICE";
+"practice.header.subtitle"       = "Learning Workspace";
+"practice.header.done"           = "Done";
+"practice.header.done.help"      = "Return to Play";
+
+"practice.tab.lessons"           = "Lessons";
+"practice.tab.practice"          = "Practice";
+"practice.tab.progress"          = "Progress";
+"practice.tab.challenges"        = "Challenges";
+
+"practice.stats.streak"          = "Streak";
+"practice.stats.total"           = "Total";
+"practice.stats.done"            = "Done";
+
+"practice.lessonCard.start"      = "Start Lesson";
+"practice.lessonCard.again"      = "Practice Again";
+
+"practice.lessonDetail.title"       = "Lesson Details";
+"practice.lessonDetail.objectives"  = "Learning Objectives";
+"practice.lessonDetail.steps"       = "Lesson Steps";
+
+"practice.session.fallbackTitle"    = "Practice";
+"practice.session.stepProgress"     = "Step %d of %d";
+"practice.session.resume"           = "Resume";
+"practice.session.pause"            = "Pause";
+"practice.session.guidance.similar" = "Try these similar chords:";
+"practice.session.timer"            = "%ds";
+"practice.session.complete.title"   = "Session Complete";
+"practice.session.complete.accuracy"      = "Accuracy: %d%%";
+"practice.session.complete.avgResponse"   = "Average Response: %.1fs";
+"practice.session.tryAgain"         = "Try Again";
+"practice.session.row.accuracy"     = "%d%% accuracy";
+
+"practice.progress.title"           = "Your Progress";
+"practice.stats.totalPractice"      = "Total Practice";
+"practice.stats.currentStreak"      = "Current Streak";
+"practice.stats.days"               = "%d days";
+"practice.stats.lessonsCompleted"   = "Lessons Completed";
+"practice.stats.masteredLessons"    = "Mastered Lessons";
+"practice.progress.weeklyGoal"      = "Weekly Goal";
+"practice.progress.weeklyGoalProgress" = "%d / %d min";
+"practice.progress.goalAchieved"    = "Goal achieved! 🎉";
+"practice.progress.recentSessions"  = "Recent Sessions";
+
+"practice.challenges.title"         = "Challenges";
+"practice.challenge.targetAccuracy" = "Target: %d%% accuracy";
+"practice.challenge.start"          = "Start Challenge";
+
+// MARK: - Map Workspace
+
+"map.controller.picker"     = "Active Hardware Profile";
+"map.controller.connected"  = "Hardware Connected";
+"map.controller.simulation" = "Interactive Simulation";
+"map.tab.modulation"        = "Modulation Matrix";
+"map.tab.controlSchemes"    = "Control Schemes";
+"map.tab.ocds"              = "OCDS Profiles";
+"map.viewMode.picker"       = "View Mode";
+"map.imu.title"             = "6-Axis IMU Motion";
+"map.imu.pitch"             = "Pitch: %.2f";
+"map.imu.roll"              = "Roll: %.2f";
+"map.imu.yaw"               = "Yaw: %.2f";
+"map.stick.left.label"      = "Left Stick (Harmonic Wheel)";
+"map.stick.right.label"     = "Right Stick (Strum)";
+"map.trigger.left.label"    = "L2 (Mute / Tension)";
+"map.trigger.right.label"   = "R2 (Pressure / Drag)";
+
+// MARK: - Expression Map Workspace
+
+"map.section.physical"      = "Physical Input";
+"map.section.gesture"       = "Musical Gesture";
+"map.section.instrument"    = "Instrument";
+"map.section.midi"          = "MIDI Translation";
+"map.section.picker"        = "Section";
+
+"map.techniqueMonitor.title"= "Technique Monitor";
+"map.techniqueMonitor.empty"= "Play a technique to inspect MIDI here.\nThis detail stays out of PLAY.";
+"map.physical.leftStick"    = "Left stick";
+"map.physical.rightStick"   = "Right stick";
+"map.physical.stickNote"    = "Deadzone, response, and smoothing are owned by the stick processors. PLAY never shows these numbers.";
+"map.gesture.pitchAssist"   = "Pitch Assist";
+"map.gesture.realism"       = "Realism";
+"map.gesture.theoryAssist"  = "Theory Assist";
+"map.gesture.chromatic"     = "Chromatic / Free pitch";
+"map.gesture.chordTone"     = "Chord-tone face buttons";
+"map.instrument.family"     = "Family";
+"map.instrument.preset"     = "Preset";
+"map.instrument.bendRange"  = "Bend range";
+"map.instrument.vibrato"    = "Vibrato";
+"map.instrument.hammerOn"   = "Hammer-on window";
+"map.midi.host"             = "Host";
+"map.midi.trackChannel"     = "DAW track MIDI channel";
+"map.midi.channel.any"      = "All / Any";
+"map.midi.channel.numbered" = "Ch %d";
+"map.midi.activeHost"       = "Active host";
+"map.midi.detection"        = "Detection";
+"map.midi.mpeOutput"        = "MPE output";
+"map.midi.mpeZone"          = "MPE zone";
+"map.midi.bendRange"        = "Bend range sent";
+"map.midi.melodyBass"       = "Melody / solo";
+"map.midi.chordsBass"       = "Chords / bass";
+"map.midi.drums"            = "Drums";
+"map.midi.pressure"         = "Pressure";
+"map.midi.articulation"     = "Articulation";
+"map.midi.slide"            = "Slide";
+"map.midi.redetect"         = "Re-detect";
+"map.midi.passthru"         = "MIDI Passthru";
+"map.midi.passthruRouting"  = "Passthru Routing";
+
+// MARK: - OCDS Workspace
+
+"ocds.title"                = "Open Controller Definition Standard (OCDS)";
+"ocds.subtitle"             = "Universal JSON schema for community mapping, tactile resistance & 3D skinning";
+"ocds.schema.button"        = "JSON Schema v1";
+"ocds.export.button"        = "Export JSON";
+"ocds.import.button"        = "Import Profile";
+"ocds.profiles.title"       = "Controller Mapping Profiles";
+"ocds.profiles.picker"      = "Active Profile";
+"ocds.metadata.title"       = "Profile Metadata";
+"ocds.metadata.identifier"  = "Identifier";
+"ocds.metadata.author"      = "Author";
+"ocds.metadata.version"     = "Version";
+"ocds.metadata.category"    = "Category";
+"ocds.metadata.vendor"      = "Vendor";
+"ocds.hardware.title"       = "Hardware Capabilities";
+"ocds.capability.sticks"    = "Sticks: %d";
+"ocds.capability.triggers"  = "Triggers: %d";
+"ocds.capability.buttons"   = "Buttons: %d";
+"ocds.capability.adaptive"  = "Adaptive Triggers";
+"ocds.capability.imu"       = "IMU Motion";
+"ocds.capability.touchpad"  = "Touchpad";
+"ocds.bindings.title"       = "Input Bindings & Curves";
+"ocds.bindings.empty"       = "No custom input overrides defined. Using standard fallback.";
+"ocds.bindings.curveDeadzone" = "Curve: %@ · Deadzone: %.2f";
+"ocds.triggers.title"       = "Adaptive Motor Resistance Specs";
+"ocds.triggers.empty"       = "Standard linear spring triggers (No adaptive motor profile).";
+"ocds.triggers.mode"        = "Mode: %@";
+"ocds.triggers.strengthRange" = "Strength: %.0f%% · Range: %.0f%% - %.0f%%";
+"ocds.skin.title"           = "3D Visual Skinning & Mesh Anchors";
+"ocds.skin.anchors"         = "Mesh Anchors: %d elements attached";
+"ocds.skin.base"            = "Base";
+"ocds.skin.accent"          = "Accent";
+"ocds.skin.led"             = "LED Glow";
+"ocds.schemaSheet.title"    = "OCDS JSON Schema v1.0.0";
+"ocds.exportSheet.title"    = "Exported OCDS Profile JSON";
+"ocds.importSheet.title"    = "Import OCDS JSON Profile";
+"ocds.import.validate"      = "Validate & Import";
+
+// MARK: - Virtual Audio
+
+"virtualAudio.title"                = "CoreAudio Virtual Audio Driver";
+"virtualAudio.subtitle"             = "Direct loopback stream for OBS, DAWs, and system capture";
+"virtualAudio.levelMonitor.title"   = "LOOPBACK LEVEL MONITOR";
+"virtualAudio.levelMonitor.readout" = "L: %.1f dB  |  R: %.1f dB";
+"virtualAudio.bufferLatency.label"  = "Buffer Latency";
+"virtualAudio.sampleRate.label"     = "Sample Rate";
+"virtualAudio.stemCapture.title"    = "Zero-Loss WAV Stem Capture";
+"virtualAudio.stemCapture.recording"= "Recording: %.1fs (%llu frames)";
+"virtualAudio.stemCapture.saved"    = "Saved: %@";
+"virtualAudio.stemCapture.idle"     = "Capture continuous 32-bit float master stream to disk";
+"virtualAudio.stemCapture.stop"     = "Stop Capture";
+"virtualAudio.stemCapture.start"    = "Start Capture";
+"virtualAudio.stemCapture.startError"   = "Failed to start capture: %@";
+"virtualAudio.stemCapture.captureError" = "Capture failed: %@";
+
+// MARK: - Library Workspace
+
+"library.presets.title"     = "Built-In Sound Engine Presets";
+"library.daw.title"         = "DAW Integration, AUv3 / VST3 Hosting & Virtual MIDI";
+"library.daw.subtitle"      = "AUv3 Instrument ('xpii') • AUv3 MIDI FX ('xpim')";
+"library.ocds.title"        = "Open Controller Definition Standard (OCDS)";
+"library.ocds.subtitle"     = "JSON Schema v1.0.0 • 13 Bundled Profiles";
+"library.preset.active"     = "Active";
+"library.preset.select"     = "Select";
+"library.preset.osc.label"  = "Osc: %@ + %@";
+
+// DAW guide cards
+"library.daw.autodetect.title"  = "Auto-Detect DAW";
+"library.daw.logic.title"       = "Logic Pro";
+"library.daw.ableton.title"     = "Ableton Live";
+"library.daw.bitwig.title"      = "Bitwig Studio";
+
+// MARK: - AUv3 Plugin View
+
+"plugin.title"              = "XPI: Game Controller MIDI";
+"plugin.format.badge"       = "AUv3 / VST3";
+"plugin.mpe.badge"          = "MPE Ready (±%dst)";
+"plugin.hal.badge"          = "CoreAudio HAL";
+"plugin.key.label"          = "Key: %@";
+"plugin.voiceLeading.label" = "Voice Leading: %@";
+"plugin.filter.header"      = "FILTER & DRIVE";
+"plugin.filter.cutoff"      = "Cutoff: %d Hz";
+"plugin.filter.resonance"   = "Res: %d%%";
+"plugin.fx.header"          = "MASTER FX";
+"plugin.fx.drive"           = "Drive: %d%%";
+"plugin.fx.reverb"          = "Reverb: %d%%";
+
+// MARK: - Performance Quick Controls
+
+"quickControls.gate.title.full"     = "Chord gate";
+"quickControls.gate.title.compact"  = "Gate";
+"quickControls.gate.help"           = "Choose how played chords release";
+"quickControls.velocity.title"      = "Velocity";
+"quickControls.velocity.title.compact" = "Feel";
+"quickControls.velocity.help"       = "Shape and stabilize performance velocity";
+"quickControls.duo.title"           = "Duo";
+"quickControls.duo.on"              = "Drums on";
+"quickControls.duo.off"             = "Off";
+"quickControls.duo.help"            = "Duo: A kick, X snare, Y closed hat, B open hat; both sticks remain on the instrument";
+"quickControls.solo.title"          = "Solo";
+"quickControls.solo.on"             = "Lead on";
+"quickControls.solo.strum"          = "Strum";
+"quickControls.solo.help"           = "Smart Soloing: Right stick locks to chord tones, passing runs, and blues inflections";
+"quickControls.triggers.title"      = "Triggers";
+"quickControls.triggers.title.compact" = "Trig";
+"quickControls.triggers.help"       = "DualSense motor resistance, string tension and mod-wheel detents";
+"quickControls.synth.title"         = "Synth";
+"quickControls.synth.muted"         = "Muted";
+"quickControls.synth.on"            = "On";
+"quickControls.synth.muted.help"    = "Synth muted — MIDI passthru prioritized";
+"quickControls.synth.help"          = "Mute built-in synthesizer";
+"quickControls.eq.title"            = "EQ";
+"quickControls.compressor.title"    = "Comp";
+"quickControls.compressor.title.full"   = "Compressor";
+"quickControls.reverb.title"        = "Verb";
+"quickControls.reverb.title.full"   = "Reverb";
+
+"quickControls.gate.popover.title"      = "Chord release";
+"quickControls.gate.popover.subtitle"   = "Keep chords musical without leaving notes stuck.";
+"quickControls.gate.releaseMode"        = "Release mode";
+"quickControls.gate.length"             = "Length";
+"quickControls.gate.desc.momentary"     = "Notes release when you lift the button.";
+"quickControls.gate.desc.timed"         = "Notes auto-release after the set duration.";
+"quickControls.gate.desc.latch"         = "Notes latch until explicitly stopped.";
+
+"quickControls.velocity.popover.title"      = "Velocity feel";
+"quickControls.velocity.popover.subtitle"   = "Stabilizes controller variation before it reaches the synth or DAW.";
+"quickControls.velocity.curve"              = "Velocity curve";
+"quickControls.velocity.desc.balanced"      = "Natural and even response across the range.";
+"quickControls.velocity.desc.expressive"    = "Rewards harder strikes with dramatic swells.";
+"quickControls.velocity.desc.even"          = "Fixed velocity — every note hits the same.";
+
+"quickControls.eq.popover.title"        = "Equalizer";
+"quickControls.eq.popover.subtitle"     = "Three broad musical tone controls.";
+"quickControls.eq.toggle"              = "EQ";
+"quickControls.eq.low"                 = "Low";
+"quickControls.eq.mid"                 = "Mid";
+"quickControls.eq.high"                = "High";
+
+"quickControls.compressor.popover.title"    = "Compressor";
+"quickControls.compressor.popover.subtitle" = "Smooths peaks while keeping attacks tactile.";
+"quickControls.compressor.toggle"           = "Compressor";
+"quickControls.compressor.threshold"        = "Threshold";
+"quickControls.compressor.makeup"           = "Makeup";
+"quickControls.compressor.release"          = "Release";
+
+"quickControls.reverb.popover.title"    = "Reverb";
+"quickControls.reverb.popover.subtitle" = "A restrained space after dynamics processing.";
+"quickControls.reverb.toggle"          = "Reverb";
+"quickControls.reverb.space"           = "Space";
+"quickControls.reverb.mix"             = "Mix";
+
+"quickControls.triggers.popover.title"      = "Adaptive Motor Resistance";
+"quickControls.triggers.mode.label"         = "Trigger Resistance Mode";
+"quickControls.triggers.stringGauge.label"  = "String Gauge Tension";
+"quickControls.triggers.motorForce.label"   = "Motor Force Strength";
+
+// MARK: - Controller Scheme Settings
+
+"settings.tab.ergonomics"   = "Feel & Ergonomics";
+"settings.tab.remapping"    = "Action Remapping";
+"settings.tab.liveTest"     = "Live Test Studio";
+"settings.tab.calibration"  = "Hardware Calibration";
+
+"settings.controller.connected"        = "Connected";
+"settings.controller.simulated"        = "Simulated / Disconnected";
+"settings.controller.standardProfile"  = "Standard Extended Gamepad Profile Active";
+"settings.calibrate.button"            = "Calibrate Hardware…";
+
+"settings.scheme.label"     = "Control Scheme:";
+"settings.scheme.builtIn"   = "Built-In Schemes";
+"settings.scheme.custom"    = "Custom User Schemes";
+"settings.scheme.duplicate" = "Duplicate as Custom";
+"settings.scheme.reset"     = "Reset";
+
+"settings.ergonomics.background.title"          = "Background Input & Focus Retention";
+"settings.ergonomics.backgroundInput.toggle"    = "Background Gamepad Input";
+"settings.ergonomics.backgroundInput.note"      = "Allows XPadInput to continuously receive controller inputs even when another app has focus.";
+"settings.ergonomics.handOrientation.title"     = "Hand Orientation & Roles";
+"settings.ergonomics.swapRoles.toggle"          = "Swap Left & Right Controller Roles";
+"settings.ergonomics.swapRoles.note"            = "Reverses thumbstick and trigger tasks between hands. Useful for left-handed players.";
+"settings.ergonomics.stickFeel.title"           = "Thumbstick Feel & Response Curve";
+"settings.ergonomics.stickFeel.picker"          = "Stick Profile";
+"settings.ergonomics.stickFeel.note"            = "• Precise: tight linear response. • Balanced: natural feel with mild expo. • Responsive: aggressive expo for fast movement.";
+"settings.ergonomics.triggerFeel.title"         = "Trigger Pressure Feel";
+"settings.ergonomics.triggerFeel.picker"        = "Trigger Profile";
+"settings.ergonomics.triggerFeel.note"          = "Configures activation depth and pressure curve for L2/R2 triggers.";
+"settings.ergonomics.haptics.title"             = "Tactile Haptics & Motion Sensors";
+"settings.ergonomics.haptics.label"             = "Haptic Feedback:";
+"settings.ergonomics.motion.toggle"             = "Enable 6-Axis Motion / IMU Tilt Expression";
+
+"settings.remapping.coverage.title"    = "Scheme Coverage";
+"settings.remapping.rebind.button"     = "Rebind";
+"settings.remapping.inversion.on"      = "Inversion On";
+"settings.remapping.inversion.label"   = "Invert Axis / Polarity";
+"settings.remapping.heldBehaviour"     = "Held Behaviour";
+"settings.remapping.unassign"          = "Unassign";
+
+"settings.liveTest.leftStick"       = "Left Thumbstick";
+"settings.liveTest.rightStick"      = "Right Thumbstick";
+"settings.liveTest.leftTrigger"     = "Left Trigger (L2 / LT)";
+"settings.liveTest.rightTrigger"    = "Right Trigger (R2 / RT)";
+"settings.liveTest.gesture.title"   = "Active Mapped Gesture Interpretation";
+"settings.liveTest.technique.label" = "Active Technique / Action:";
+"settings.liveTest.bend.label"      = "MPE Channel / Pitch Bend:";
+"settings.liveTest.resting"         = "Resting / Neutral";
+
+"settings.calibration.leftStick"    = "Left Stick Calibration";
+"settings.calibration.rightStick"   = "Right Stick Calibration";
+"settings.calibration.restDrift"    = "Rest Drift Offset: (X: %+.3f, Y: %+.3f)";
+"settings.calibration.driftRadius"  = "Drift Deadzone Radius: %.3f";
+"settings.calibration.maxRadius"    = "Max Reach Radius: %.3f";
+"settings.calibration.wizard.button"= "Run Interactive Calibration Wizard…";
+"settings.calibration.reset"        = "Reset Calibration";
+
+"settings.learn.title"              = "Input Learn Mode";
+"settings.learn.instruction"        = "Press or move the physical controller element you want to map to:";
+"settings.learn.listening"          = "Listening for deliberate action (ignoring resting thumbstick jitter)…";
+
+"settings.calibration.wizard.title"     = "Hardware Calibration Wizard";
+"settings.calibration.wizard.subtitle"  = "Follow the prompt to capture rest drift and full rotation reach.";
+"settings.calibration.wizard.steps"     = "1. Leave thumbsticks untouched for 1 second.\n2. Rotate both thumbsticks fully around their outer perimeter.";
+"settings.calibration.wizard.finish"    = "Finish & Save Calibration";
+
+"settings.warnings.critical"   = "%d critical, %d issue(s)";
+"settings.warnings.summary"    = "%d Mapping Warning(s)";
+
+// MARK: - Solo Mode HUD
+
+"soloHUD.title"             = "Voice-Led Solo Engine";
+"soloHUD.harmonicLock"      = "Harmonic Lock: %@";
+"soloHUD.compass.north"     = "N";
+"soloHUD.compass.south"     = "S";
+"soloHUD.compass.east"      = "E";
+"soloHUD.compass.west"      = "W";
+"soloHUD.octave"            = "Octave %d";
+"soloHUD.ready.title"       = "Voice-Led Solo Ready";
+"soloHUD.ready.subtitle"    = "North: Guide Tones • South: Bass • East: Runs • West: Blues";
+
+// MARK: - Multi-Controller HUD
+
+"multiController.title"         = "4-Player Ensemble Jamming";
+"multiController.sync.label"    = "Sync: %@ %@";
+"multiController.channel"       = "Ch %d";
+"multiController.testTrigger.help" = "Test trigger %@ note";
+
+// MARK: - Input HUDs
+
+"inputHUD.trigger.pos"          = "Pos";
+"inputHUD.trigger.force"        = "Force";
+"inputHUD.trigger.notchLocked"  = "Notch #%d Locked";
+
+// MARK: - Niche Controller Visualizers
+
+"visualizer.guitar.title"       = "Guitar Hero / Rock Band Fretboard";
+"visualizer.guitar.fret.green"  = "GRN (I)";
+"visualizer.guitar.fret.red"    = "RED (ii)";
+"visualizer.guitar.fret.yellow" = "YEL (iii)";
+"visualizer.guitar.fret.blue"   = "BLU (IV)";
+"visualizer.guitar.fret.orange" = "ORG (V)";
+"visualizer.guitar.strumBar"    = "Strum Bar";
+"visualizer.guitar.whammy"      = "Whammy Pitch Bend: %d%%";
+"visualizer.guitar.starPower"   = "Star Power Tilt: %d%%";
+
+"visualizer.sdvx.title"         = "Sound Voltex (SDVX) Arcade Console";
+"visualizer.sdvx.volL"          = "VOL-L (Cutoff)";
+"visualizer.sdvx.volR"          = "VOL-R (Resonance)";
+"visualizer.sdvx.fxL"           = "FX-L (Sub Bass)";
+"visualizer.sdvx.fxR"           = "FX-R (Echo Swell)";
+
+"visualizer.beatmania.title"    = "Beatmania IIDX";
+"visualizer.beatmania.turntable"= "DJ Scratch Platter";
+"visualizer.beatmania.keys"     = "7-Key Deck (1..7)";
+
+"visualizer.taiko.title"        = "Taiko no Tatsujin Drum (Tatacon)";
+"visualizer.taiko.don"          = "DON";
+
+"visualizer.dance.title"        = "Dance Stage 4-Panel Pad";
+
+"visualizer.flight.stick"       = "3D Flight Joystick";
+"visualizer.flight.throttle"    = "Throttle: %d%%";
+"visualizer.flight.rudder"      = "Z-Rudder Twist: %d%%";
+
+"visualizer.wheel.steering"     = "900° Steering Angle";
+"visualizer.wheel.clutch"       = "Clutch";
+"visualizer.wheel.brake"        = "Brake";
+"visualizer.wheel.gas"          = "Gas";
+
+"visualizer.fight.stick"        = "Sanwa 8-Way Stick";
+"visualizer.fight.lp"           = "LP";
+"visualizer.fight.mp"           = "MP";
+"visualizer.fight.hp"           = "HP";
+"visualizer.fight.3p"           = "3P";
+"visualizer.fight.lk"           = "LK";
+"visualizer.fight.mk"           = "MK";
+"visualizer.fight.hk"           = "HK";
+"visualizer.fight.3k"           = "3K";

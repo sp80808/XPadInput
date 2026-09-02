@@ -3,16 +3,13 @@ import PackageDescription
 
 let package = Package(
     name: "XPadInput",
+    defaultLocalization: "en",
     platforms: [
         .macOS(.v14)
     ],
     products: [
         .executable(
             name: "XPI",
-            targets: ["XPadInput"]
-        ),
-        .executable(
-            name: "XPadInput",
             targets: ["XPadInput"]
         ),
         .executable(
@@ -46,6 +43,10 @@ let package = Package(
         .library(
             name: "XPadUI",
             targets: ["XPadUI"]
+        ),
+        .library(
+            name: "XPadPractice",
+            targets: ["XPadPractice"]
         )
     ],
     targets: [
@@ -87,9 +88,18 @@ let package = Package(
                 "XPadController",
                 "XPadMIDI",
                 "XPadAudio",
-                "XPadSequencer"
+                "XPadSequencer",
+                "XPadPractice"
             ],
-            path: "Sources/XPadUI"
+            path: "Sources/XPadUI",
+            resources: [
+                .process("Resources")
+            ]
+        ),
+        .target(
+            name: "XPadPractice",
+            dependencies: ["XPadCore", "XPadTheory"],
+            path: "Sources/XPadPractice"
         ),
         .executableTarget(
             name: "XPadInput",
@@ -104,7 +114,9 @@ let package = Package(
                 "XPadController",
                 "XPadMIDI",
                 "XPadAudio",
-                "XPadSequencer"
+                "XPadSequencer",
+                "XPadPractice",
+                "XPadUI"
             ],
             path: "Sources/XPadTests"
         ),
@@ -137,6 +149,11 @@ let package = Package(
             name: "XPadSequencerTests",
             dependencies: ["XPadCore", "XPadTheory", "XPadMIDI", "XPadSequencer"],
             path: "Tests/XPadSequencerTests"
+        ),
+        .testTarget(
+            name: "XPadPracticeTests",
+            dependencies: ["XPadCore", "XPadTheory", "XPadPractice"],
+            path: "Tests/XPadPracticeTests"
         )
     ]
 )

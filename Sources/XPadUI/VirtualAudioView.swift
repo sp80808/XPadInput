@@ -11,6 +11,7 @@ public struct VirtualAudioView: View {
     @State private var recordingDuration: TimeInterval = 0
     @State private var timer: Timer?
     @State private var showRecordingSuccess: Bool = false
+    @State private var recordingError: String?
     
     public init() {}
     
@@ -119,6 +120,11 @@ public struct VirtualAudioView: View {
                         Text(String(format: "Recording: %.1fs (%llu frames)", recordingDuration, loopbackEngine.recorder.recordedFrames))
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundColor(XTheme.recording)
+                    } else if let error = recordingError {
+                        Text(error)
+                            .font(.system(size: 9))
+                            .foregroundColor(XTheme.warning)
+                            .lineLimit(2)
                     } else if let url = recordedURL {
                         Text("Saved: \(url.lastPathComponent)")
                             .font(.system(size: 9))
@@ -192,6 +198,10 @@ public struct VirtualAudioView: View {
     private func toggleRecording() {
         if isRecordingStem {
             recordedURL = loopbackEngine.stopCapture()
+            if let writeError = loopbackEngine.recorder.lastWriteErrorDescription {
+                recordingError = "Capture failed: \(writeError)"
+                recordedURL = nil
+            }
             isRecordingStem = false
             timer?.invalidate()
             timer = nil
@@ -202,13 +212,24 @@ public struct VirtualAudioView: View {
                     AudioEngine.shared.attachLoopback()
                 }
                 recordedURL = try loopbackEngine.startCapture()
+                recordingError = nil
                 isRecordingStem = true
                 recordingDuration = 0
                 timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
-                    recordingDuration += 0.1
+                    Task { @MainActor in
+                        recordingDuration += 0.1
+                        if let writeError = loopbackEngine.recorder.lastWriteErrorDescription {
+                            recordingError = "Capture failed: \(writeError)"
+                            recordedURL = nil
+                            isRecordingStem = false
+                            timer?.invalidate()
+                            timer = nil
+                        }
+                    }
                 }
             } catch {
                 print("⚠️ Failed to start stem recording: \(error)")
+                recordingError = "Failed to start capture: \(error.localizedDescription)"
             }
         }
     }

@@ -34,6 +34,33 @@ public enum ScaleType: String, CaseIterable, Identifiable, Codable, Sendable {
         case .chromatic: return Array(0...11)
         }
     }
+
+    public var shortName: String {
+        switch self {
+        case .major: return "Major"
+        case .naturalMinor: return "Minor"
+        case .harmonicMinor: return "Harm. Minor"
+        case .melodicMinor: return "Mel. Minor"
+        case .dorian: return "Dorian"
+        case .phrygian: return "Phrygian"
+        case .lydian: return "Lydian"
+        case .mixolydian: return "Mixolydian"
+        case .locrian: return "Locrian"
+        case .pentatonicMajor: return "Maj Pent"
+        case .pentatonicMinor: return "Min Pent"
+        case .blues: return "Blues"
+        case .chromatic: return "Chromatic"
+        }
+    }
+
+    public var isMinor: Bool {
+        switch self {
+        case .naturalMinor, .harmonicMinor, .melodicMinor, .dorian, .phrygian, .locrian, .pentatonicMinor, .blues:
+            return true
+        case .major, .lydian, .mixolydian, .pentatonicMajor, .chromatic:
+            return false
+        }
+    }
 }
 
 /// Represents a musical scale/mode with its root and interval pattern.
@@ -66,6 +93,28 @@ public struct Scale: Hashable, Codable, Sendable, Identifiable {
 
     public var displayName: String {
         type.rawValue
+    }
+
+    public var shortDisplayName: String {
+        type.shortName
+    }
+
+    public var isMinor: Bool {
+        type.isMinor || intervals.contains(3)
+    }
+
+    /// Diatonic scale-relevant bend range (in semitones) based on the scale's interval structure.
+    /// Spans up to the scale's dominant/5th degree or natural modal span (e.g. 7 semitones),
+    /// providing an intuitive, musical range for polyphonic whole-chord diatonic bending.
+    public var scaleRelevantBendRange: Double {
+        if intervals.contains(7) {
+            return 7.0
+        } else if intervals.contains(6) {
+            return 6.0
+        } else if let maxInterval = intervals.filter({ $0 <= 12 }).last, maxInterval > 0 {
+            return Double(maxInterval)
+        }
+        return 7.0
     }
 
     public func pitchClasses(root: PitchClass) -> [PitchClass] {

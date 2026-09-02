@@ -80,20 +80,6 @@ public final class XPadAUInstrument: XPadAudioUnitBase, @unchecked Sendable {
         }
     }
     
-    @inline(__always)
-    private static func polyBLEP(phase: Double, increment: Double) -> Double {
-        guard increment > 0 else { return 0 }
-        if phase < increment {
-            let t = phase / increment
-            return t + t - t * t - 1.0
-        }
-        if phase > 1.0 - increment {
-            let t = (phase - 1.0) / increment
-            return t * t + t + t + 1.0
-        }
-        return 0
-    }
-    
     public override var internalRenderBlock: AUInternalRenderBlock {
         let maxV = self.maxVoices
         let outBus = self.outputBus
@@ -174,10 +160,11 @@ public final class XPadAUInstrument: XPadAudioUnitBase, @unchecked Sendable {
                             }
                         }
                     case 0xE0: // Pitch Bend
-                        let lsb = Double(byte1)
-                        let msb = Double(byte2)
-                        let rawBend = (msb * 128.0 + lsb) - 8192.0
-                        let bendSemitones = (rawBend / 8192.0) * Double(params.mpeBendRange)
+                        let raw14 = UInt16(byte2) << 7 | UInt16(byte1)
+                        let bendSemitones = MIDIValueCodec.semitones(
+                            fromPitchBend14: raw14,
+                            range: Double(params.mpeBendRange)
+                        )
                         for i in 0..<maxV {
                             if self.voices[i].isActive && (self.voices[i].channel == channel || channel == 0) {
                                 self.voices[i].pitchBendSemitones = bendSemitones
@@ -262,13 +249,13 @@ public final class XPadAUInstrument: XPadAudioUnitBase, @unchecked Sendable {
                     
                     // Oscillator 1 (Saw default)
                     let p1 = self.voices[vIdx].osc1Phase
-                    let s1 = (p1 * 2.0 - 1.0) - XPadAUInstrument.polyBLEP(phase: p1, increment: inc1)
+                    let s1 = (p1 * 2.0 - 1.0) - DSPMath.polyBLEP(phase: p1, increment: inc1)
                     
                     // Oscillator 2 (Square default)
                     let p2 = self.voices[vIdx].osc2Phase
                     let raw2 = p2 < 0.5 ? 1.0 : -1.0
                     let shiftedP2 = p2 < 0.5 ? p2 + 0.5 : p2 - 0.5
-                    let s2 = raw2 + XPadAUInstrument.polyBLEP(phase: p2, increment: inc2) - XPadAUInstrument.polyBLEP(phase: shiftedP2, increment: inc2)
+                    let s2 = raw2 + DSPMath.polyBLEP(phase: p2, increment: inc2) - DSPMath.polyBLEP(phase: shiftedP2, increment: inc2)
                     
                     var mixSample = s1 * (1.0 - osc2Lvl) + s2 * osc2Lvl
                     

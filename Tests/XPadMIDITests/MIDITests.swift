@@ -418,4 +418,88 @@ final class MIDITests: XCTestCase {
         XCTAssertFalse(data.isEmpty)
         XCTAssertTrue(data.count >= 22)
     }
+    
+    func testMPEManagerNormalizedPressureDeDuplication() {
+        let midi = MIDIEngine()
+        midi.transportProtocol = .midi2
+        let mpe = MPEManager(midiEngine: midi, bendRangeSemitones: 48)
+        mpe.noteOn(note: 60, velocity: 100)
+        midi.clearMessageLog()
+        
+        // Set normalized pressure values
+        mpe.setPressure(for: 60, normalizedPressure: 0.5)
+        XCTAssertEqual(midi.sentMessages.count, 1)
+        
+        // Same normalized value should be de-duplicated
+        mpe.setPressure(for: 60, normalizedPressure: 0.5)
+        XCTAssertEqual(midi.sentMessages.count, 1)
+        
+        // Different normalized value should send
+        mpe.setPressure(for: 60, normalizedPressure: 0.5001)
+        XCTAssertEqual(midi.sentMessages.count, 2)
+        
+        // Values that collapse to same 7-bit should still be distinct in MIDI 2
+        mpe.setPressure(for: 60, normalizedPressure: 0.5039) // Same 7-bit as 0.5
+        XCTAssertEqual(midi.sentMessages.count, 3)
+    }
+    
+    func testMPEManagerNormalizedTimbreDeDuplication() {
+        let midi = MIDIEngine()
+        midi.transportProtocol = .midi2
+        let mpe = MPEManager(midiEngine: midi, bendRangeSemitones: 48)
+        mpe.noteOn(note: 60, velocity: 100)
+        midi.clearMessageLog()
+        
+        // Set normalized timbre values
+        mpe.setTimbre(for: 60, normalizedValue: 0.7)
+        XCTAssertEqual(midi.sentMessages.count, 1)
+        
+        // Same normalized value should be de-duplicated
+        mpe.setTimbre(for: 60, normalizedValue: 0.7)
+        XCTAssertEqual(midi.sentMessages.count, 1)
+        
+        // Different normalized value should send
+        mpe.setTimbre(for: 60, normalizedValue: 0.7001)
+        XCTAssertEqual(midi.sentMessages.count, 2)
+        
+        // Values that collapse to same 7-bit should still be distinct in MIDI 2
+        mpe.setTimbre(for: 60, normalizedValue: 0.7039) // Same 7-bit as 0.7
+        XCTAssertEqual(midi.sentMessages.count, 3)
+    }
+    
+    func testMPEManagerNormalizedPressureMIDI1Compatibility() {
+        let midi = MIDIEngine()
+        midi.transportProtocol = .midi1
+        let mpe = MPEManager(midiEngine: midi, bendRangeSemitones: 48)
+        mpe.noteOn(note: 60, velocity: 100)
+        midi.clearMessageLog()
+        
+        // In MIDI 1, values that collapse to same 7-bit should be de-duplicated
+        mpe.setPressure(for: 60, normalizedPressure: 0.5)
+        XCTAssertEqual(midi.sentMessages.count, 1)
+        
+        mpe.setPressure(for: 60, normalizedPressure: 0.5039) // Same 7-bit as 0.5
+        XCTAssertEqual(midi.sentMessages.count, 1) // De-duplicated in MIDI 1
+        
+        mpe.setPressure(for: 60, normalizedPressure: 0.5079) // Different 7-bit
+        XCTAssertEqual(midi.sentMessages.count, 2)
+    }
+    
+    func testMPEManagerNormalizedTimbreMIDI1Compatibility() {
+        let midi = MIDIEngine()
+        midi.transportProtocol = .midi1
+        let mpe = MPEManager(midiEngine: midi, bendRangeSemitones: 48)
+        mpe.noteOn(note: 60, velocity: 100)
+        midi.clearMessageLog()
+        
+        // In MIDI 1, values that collapse to same 7-bit should be de-duplicated
+        mpe.setTimbre(for: 60, normalizedValue: 0.7)
+        XCTAssertEqual(midi.sentMessages.count, 1)
+        
+        mpe.setTimbre(for: 60, normalizedValue: 0.7039) // Same 7-bit as 0.7
+        XCTAssertEqual(midi.sentMessages.count, 1) // De-duplicated in MIDI 1
+        
+        mpe.setTimbre(for: 60, normalizedValue: 0.7079) // Different 7-bit
+        XCTAssertEqual(midi.sentMessages.count, 2)
+    }
 }

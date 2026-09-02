@@ -7,7 +7,8 @@ import XPadMIDI
 public struct SequenceWorkspaceView: View {
     @ObservedObject var sequencer: Sequencer
     @State private var exportedMidiURL: URL?
-
+    @State private var exportScale: Bool = false
+    @State private var exportError: String?
     public init(sequencer: Sequencer) {
         self.sequencer = sequencer
     }
@@ -48,8 +49,25 @@ public struct SequenceWorkspaceView: View {
                     .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
+                .scaleEffect(exportScale ? 1.08 : 1.0)
+                .animation(.spring(response: 0.2, dampingFraction: 0.75), value: exportScale)
+                .onChange(of: exportedMidiURL) { _, newURL in
+                    guard newURL != nil else { return }
+                    exportScale = true
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        exportScale = false
+                    }
+                }
             }
             .padding(.horizontal)
+
+            if let exportError {
+                Text(exportError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.horizontal)
+            }
 
             // Multi-track Timeline
             ScrollView {
@@ -110,23 +128,23 @@ public struct SequenceWorkspaceView: View {
     }
 
     private func exportCurrentMIDI() {
-        let events = sequencer.recordedEvents.isEmpty ? [
-            RecordedNoteEvent(note: 60, velocity: 100, startTick: 0, durationTicks: 480),
-            RecordedNoteEvent(note: 64, velocity: 100, startTick: 0, durationTicks: 480),
-            RecordedNoteEvent(note: 67, velocity: 100, startTick: 0, durationTicks: 480),
-            RecordedNoteEvent(note: 71, velocity: 100, startTick: 0, durationTicks: 480)
-        ] : sequencer.recordedEvents
+        guard !sequencer.recordedEvents.isEmpty else {
+            self.exportError = "No recorded MIDI events to export. Enable Record and play a performance first."
+            return
+        }
 
         let exporter = SMFExporter()
-        let midiData = exporter.encode(events: events, bpm: sequencer.transport.bpm)
+        let midiData = exporter.encode(events: sequencer.recordedEvents, bpm: sequencer.transport.bpm)
 
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("XPI Performance.mid")
         do {
             try midiData.write(to: tempURL)
             self.exportedMidiURL = tempURL
+            self.exportError = nil
             NSWorkspace.shared.activateFileViewerSelecting([tempURL])
         } catch {
             print("Failed to save MIDI file: \(error)")
+            self.exportError = "Failed to save MIDI file: \(error.localizedDescription)"
         }
     }
 }

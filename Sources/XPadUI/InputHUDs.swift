@@ -19,6 +19,12 @@ public struct AnalogStickHUD: View {
             Circle()
                 .fill(Color.black.opacity(0.4))
                 .overlay(Circle().stroke(Color.white.opacity(0.1), lineWidth: 1))
+                .overlay {
+                    // Near-edge ring pulse — layout-safe overlay
+                    Circle()
+                        .stroke(Color.orange.opacity(0.0), lineWidth: 1)
+                        .xPulse(isActive: state.isNearEdge, color: .orange, speed: 1.2)
+                }
                 
             // Grid lines
             Path { path in
@@ -114,6 +120,7 @@ public struct AnalogTriggerHUD: View {
                         .fill(Color.white.opacity(Double(min(1.0, state.attackVelocity))))
                         .frame(width: 30, height: CGFloat(state.value) * 100)
                         .blendMode(.overlay)
+                        .animation(.easeOut(duration: 0.12), value: state.attackVelocity)
                 }
             }
         }
@@ -125,26 +132,16 @@ public struct VelocityPulse: View {
     public let color: Color
     public let velocity: Float
     
-    @State private var scale: CGFloat = 1.0
-    @State private var opacity: Double = 0.5
-    
     public init(color: Color, velocity: Float) {
         self.color = color
         self.velocity = velocity
     }
     
     public var body: some View {
+        let intensity = min(1.0, max(0.0, CGFloat(velocity / 8.0)))
         Circle()
-            .stroke(color, lineWidth: 2)
-            .scaleEffect(scale)
-            .opacity(opacity)
-            .onAppear {
-                let intensity = Double(min(1.0, velocity / 10.0))
-                withAnimation(.easeOut(duration: 0.3 * (1.0 - intensity)).repeatForever(autoreverses: false)) {
-                    scale = 1.0 + CGFloat(intensity) * 1.5
-                    opacity = 0.0
-                }
-            }
+            .stroke(color.opacity(Double(intensity) * 0.65), lineWidth: 1.5)
+            .scaleEffect(1.0 + intensity * 0.75)
     }
 }
 
@@ -272,5 +269,6 @@ public struct AdaptiveTriggerVisualizerHUD: View {
             RoundedRectangle(cornerRadius: XTheme.radiusSmall)
                 .stroke(XTheme.border, lineWidth: 1)
         )
+        .xShimmer(isActive: feedbackState.isInDetent)
     }
 }

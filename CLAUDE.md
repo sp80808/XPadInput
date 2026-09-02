@@ -61,18 +61,34 @@ This protocol applies when ending a Beads implementation workflow. It is subordi
 
 ## Build & Test
 
-_Add your build and test commands here_
-
 ```bash
-# Example:
-# npm install
-# npm test
+# Build the project (executable target: XPI)
+swift build
+
+# Build in release mode
+swift build -c release
+
+# Package macOS App, DMG, ZIP with checksums (Alpha 0.0.04)
+./scripts/package-macos.sh 0.0.04
+
+# Run test suite
+swift test
 ```
 
 ## Architecture Overview
 
-_Add a brief overview of your project architecture_
+XPI is a zero-third-party-dependency Swift 6 musical instrument and MPE workstation for macOS:
+- **`XPadCore`**: Pure Swift foundational types (`Note`, `Scale`, `Chord`, `PitchClass`, `Interval`, `InstrumentProfile`).
+- **`XPadTheory`**: Harmonic wheel, voice leading heuristics, progression engine, and chord bender.
+- **`XPadPractice`**: Practice lessons, real-time chord evaluation, and progress tracking.
+- **`XPadController`**: `GameController` hardware abstraction, analog stick/trigger processing, virtual strummer DSP, gesture tracking, adaptive triggers, and CoreHaptics.
+- **`XPadMIDI`**: CoreMIDI virtual sources, MPE zone management, MIDI 2.0 UMP transport, MIDI-CI MPE profile, SMF and SMF2 binary exporters.
+- **`XPadAudio`**: Real-time multi-voice polyphonic DSP synthesizer (`AVAudioSourceNode`), stereo master FX (EQ, compressor, reverb), and 3D spatial audio binaural engine.
+- **`XPadSequencer`**: 960 PPQN multi-track timeline sequencer engine.
+- **`XPadUI`**: Fluid native SwiftUI 6-workspace performance interface (`PLAY`, `HARMONY`, `SEQUENCE`, `MAP`, `LIBRARY`, `PRACTICE`) with `GreenTheme` motion design system.
 
 ## Conventions & Patterns
-
-_Add your project-specific conventions here_
+- **Zero Third-Party Dependencies**: Pure native Apple frameworks (`GameController`, `CoreMIDI`, `AVFAudio`, `AppKit`, `SwiftUI`).
+- **Clean Separation of Concerns**: Zero UI/Audio imports in `XPadCore` and `XPadTheory`.
+- **MainActor Isolation**: UI-bound managers are `@MainActor`; real-time DSP and MIDI queues run on dedicated real-time threads with lock synchronization (`NSLock`).
+- **Motion & Accessibility**: All animations in `XPadUI` are layout-safe and strictly observe `@Environment(\.accessibilityReduceMotion)`.

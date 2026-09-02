@@ -18,27 +18,34 @@
 
 Pre-built native macOS universal releases are packaged directly via GitHub Actions CI.
 
-### Alpha 0.0.02 (CI-Validated Latest)
-Validated automated release build incorporating compact themed context selectors and CoreMIDI 32-bit loopback proof:
-- **Recommended:** [Download XPadInput-0.0.02.dmg](https://github.com/sp80808/XPadInput/releases)
-- **Fallback ZIP:** [Download XPadInput-0.0.02.zip](https://github.com/sp80808/XPadInput/releases)
+### Alpha 0.0.05 (CI-Validated Latest)
+Validated release build introducing real-time interactive guided tutorials (Learn Hub), continuous harmonic drone pad play mode with delta-morphing sustain, the 16-scheme "Ways to Play" quick switcher gallery, integrated arpeggiator engine, MIDI Learn in Map workspace, and strengthened concurrency guarantees:
+- **Recommended:** [Download XPadInput-0.0.05.dmg](https://github.com/sp80808/XPadInput/releases)
+- **Fallback ZIP:** [Download XPadInput-0.0.05.zip](https://github.com/sp80808/XPadInput/releases)
+- **Full Release Notes:** See [CHANGELOG.md](CHANGELOG.md)
 
 SHA-256:
 ```text
-31e83f8a9bf8350f218f97d26aa1011c4b98122b21ea0272f650560f70fb6033  XPadInput-0.0.02.dmg
-85d4fce61dcd91ab4bb587fe7aca3e1e67ed370060ce548266163ea10915b341  XPadInput-0.0.02.zip
+481437081014a218e4e9fe1fdf73e5af137284d2fe987fa55e9b41a6f36e3e34  XPadInput-0.0.05.dmg
+344f09e3c0758bcee354c8d65fa1b784a1b65f1ad804a7b5820188a25dba4ef8  XPadInput-0.0.05.zip
 ```
+
+### Alpha 0.0.04
+- [Download XPadInput-0.0.04.dmg](https://github.com/sp80808/XPadInput/releases)
+- [Download XPadInput-0.0.04.zip](https://github.com/sp80808/XPadInput/releases)
+
+### Alpha 0.0.03
+- [Download XPadInput-0.0.03.dmg](https://github.com/sp80808/XPadInput/releases)
+- [Download XPadInput-0.0.03.zip](https://github.com/sp80808/XPadInput/releases)
+
+### Alpha 0.0.02
+- [Download XPadInput-0.0.02.dmg](https://github.com/sp80808/XPadInput/releases)
+- [Download XPadInput-0.0.02.zip](https://github.com/sp80808/XPadInput/releases)
 
 ### Alpha 0.0.01 (Initial Prerelease)
 - [Download XPadInput-0.0.01.dmg](https://github.com/sp80808/XPadInput/releases/download/macos/XPadInput-0.0.01.dmg)
 - [Download XPadInput-0.0.01.zip](https://github.com/sp80808/XPadInput/releases/download/macos/XPadInput-0.0.01.zip)
 - [View GitHub Prerelease](https://github.com/sp80808/XPadInput/releases/tag/macos)
-
-SHA-256:
-```text
-466d717998b4da7a17aa9a3450f7c5c66cec22132ea998bef036f528939af2b2  XPadInput-0.0.01.dmg
-23994712698cb41af8be6bbd3b916b2db5bc6f3e58d896ce9d20ffa427316cf1  XPadInput-0.0.01.zip
-```
 
 ### Install & test
 
@@ -102,6 +109,29 @@ Please test controller detection, analog sticks, triggers, chord selection, virt
 - Multi-track clip timeline supporting Chords, Melody, Bass, Drums, and Gesture automation.
 - Real-time gesture recording (`GestureRecorder`) capturing stick trajectories and gyro motion.
 - One-click Standard MIDI File (`.mid`) export with native drag-and-drop directly into Ableton Live, Logic Pro, Bitwig Studio, or Finder.
+
+### 7. 🎓 Practice Mode for Chord Progression Learning
+- Interactive lessons for mastering chord progressions and harmonic movement.
+- Real-time chord evaluation with timing accuracy feedback.
+- Progress tracking with session history and improvement metrics.
+
+### 8. 🔌 AUv3 Plugin & Virtual Audio Driver
+- **AUv3 MIDI FX & Instrument**: Package XPI as an Audio Unit v3 plugin for direct hosting inside Logic Pro, Ableton Live, Bitwig Studio, and Cubase.
+- **Virtual Audio Driver**: Direct virtual loopback audio stream for zero-configuration system audio capture.
+- **Built-in Drums**: Dedicated drum synthesis engine for rhythm production.
+
+### 9. 🎧 Spatial Audio Engine
+- Real-time binaural spatial audio rendering with head-related transfer function (HRTF) processing.
+- 3D audio positioning for immersive performance experience.
+
+### 10. 🎛️ Semantic Control Schemes
+- **7 Built-in Control Schemes**: Performance (default), Classic, Low-Fatigue, Left-Handed, One-Hand Left, One-Hand Right, Custom.
+- **Semantic Musical Action Layer**: Decouples physical inputs from instrument profiles for flexible remapping.
+- **Runtime Remapping**: `ControlSurfaceResolver` projects bindings onto canonical performance layout.
+
+### 11. 📋 Open Controller Definition Standard (OCDS)
+- Open-source JSON schema for community controller mapping profiles.
+- Visual 3D skinning support for niche controllers.
 
 ---
 
@@ -210,32 +240,35 @@ XPadInput/
 ├── Sources/
 │   ├── XPadCore/              # Pure 12-TET theory primitives (PitchClass, Note, Scale, Chord)
 │   ├── XPadTheory/            # Harmonic wheel, voice leading, suggestions & progressions
+│   ├── XPadPractice/          # Practice mode for chord progression learning
 │   ├── XPadController/        # GCController abstraction, virtual strummer & gesture DSP
 │   ├── XPadMIDI/              # CoreMIDI virtual ports, MPE zone manager & SMF exporter
-│   ├── XPadAudio/             # PolyBLEP DSP synthesizer & factory presets
+│   ├── XPadAudio/             # PolyBLEP DSP synthesizer, AUv3 plugin & virtual audio driver
 │   ├── XPadSequencer/         # 960 PPQN tick clock, clips, tracks & scenes
-│   ├── XPadUI/                # Native SwiftUI 5-workspace desktop interface
+│   ├── XPadUI/                # Native SwiftUI 6-workspace desktop interface
 │   ├── XPadInput/             # Application main entrypoint
 │   └── XPadTests/             # Universal exhaustive test runner (executable target)
 ├── Tests/
 │   ├── XPadCoreTests/         # Unit tests for theory primitives
 │   ├── XPadTheoryTests/       # Unit tests for harmony engine
+│   ├── XPadPracticeTests/     # Unit tests for practice mode
 │   ├── XPadControllerTests/   # Unit tests for controller abstraction
 │   ├── XPadMIDITests/         # Unit tests for CoreMIDI & MPE
 │   ├── XPadAudioTests/        # Unit tests for DSP synth
 │   └── XPadSequencerTests/    # Unit tests for timeline engine
+├── docs/                      # Central documentation directory
+│   ├── README.md              # Documentation hub index
+│   ├── guides/                # Getting started, controller setup, AUv3 plugin & MPE guides
+│   ├── architecture/          # Architecture overview, tech stack & design specifications
+│   ├── hardware/              # Controller feature matrix & hardware support
+│   ├── specifications/        # MIDI/MPE specification & instrument techniques contract
+│   └── roadmap/               # Product roadmap, MIDI 2.0 specs, improvements & research
 ├── .github/workflows/         # Automated macOS CI & packaging workflow (macos-ci.yml)
 ├── .agents/skills/            # Specialized agent skills and workflow guides
 ├── AGENTS.md                  # Agent operating instructions and modular rules
-├── DESIGN.md                  # Authoritative interaction, feedback, and ergonomic rules
-├── INSTRUMENT_TECHNIQUES.md   # Semantic technique and instrument-profile contract
-├── MIDI2_ROADMAP.md           # MIDI 2.0 & MIDI-CI experimental roadmap
-├── MIDI_MPE_SPEC.md           # CoreMIDI, MPE zone, expression, and fallback contract
-├── PRODUCT_RESEARCH.md        # Competitive and product research
-├── ROADMAP.md                 # 5-phase product development trajectory
+├── CHANGELOG.md               # Version history and detailed changelogs
 ├── SOUL.md                    # Philosophical and artistic instrument manifesto
-├── TECH_STACK.md              # Technical, mathematical & latency specifications
-└── README.md                  # Project documentation and guide
+└── README.md                  # Project documentation and entrypoint guide
 ```
 
 ---

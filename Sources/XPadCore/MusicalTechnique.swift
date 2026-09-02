@@ -66,6 +66,11 @@ public enum TechniqueHaptic: String, Codable, Sendable, Equatable {
     case pinchHarmonic
     case palmMuteThreshold
     case buttonConfirm
+    case strumPluck
+    case chordChange
+    case soloGuideTone
+    case drumHit
+    case octaveShift
 
     public var intensity: Float {
         switch self {
@@ -76,6 +81,11 @@ public enum TechniqueHaptic: String, Codable, Sendable, Equatable {
         case .pinchHarmonic: return 0.8
         case .palmMuteThreshold: return 0.45
         case .buttonConfirm: return 0.3
+        case .strumPluck: return 0.65
+        case .chordChange: return 0.4
+        case .soloGuideTone: return 0.55
+        case .drumHit: return 0.75
+        case .octaveShift: return 0.5
         }
     }
 
@@ -88,6 +98,11 @@ public enum TechniqueHaptic: String, Codable, Sendable, Equatable {
         case .pinchHarmonic: return 0.95
         case .palmMuteThreshold: return 0.4
         case .buttonConfirm: return 0.5
+        case .strumPluck: return 0.7
+        case .chordChange: return 0.45
+        case .soloGuideTone: return 0.85
+        case .drumHit: return 0.6
+        case .octaveShift: return 0.75
         }
     }
 }

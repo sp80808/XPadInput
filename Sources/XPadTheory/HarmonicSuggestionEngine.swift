@@ -54,7 +54,7 @@ public struct HarmonicSuggestionEngine: Sendable {
         let standardNext: [(PitchClass, ChordQuality, String)] = [
             (currentChord.root.transposed(by: 5), .major, "Circle of Fifths motion (Strong root progression)"),
             (currentChord.root.transposed(by: 7), .major, "Dominant movement"),
-            (key, (scale.id.contains("minor") ? .minor : .major), "Resolution to Tonic (I)"),
+            (key, (scale.isMinor ? .minor : .major), "Resolution to Tonic (I)"),
             (key.transposed(by: 5), .major, "Movement to Subdominant (IV)"),
             (key.transposed(by: 9), .minor, "Deceptive resolution to Relative Minor (vi)")
         ]

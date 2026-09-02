@@ -1,5 +1,6 @@
 import Foundation
 import XPadCore
+import XPadTheory
 
 /// One active MPE member-channel voice. Channel is zero-indexed (1...14 = MIDI Ch 2...15).
 public struct MPEVoice: Equatable, Sendable {
@@ -7,11 +8,13 @@ public struct MPEVoice: Equatable, Sendable {
     public let channel: UInt8
     public let timestamp: TimeInterval
     public var currentPitchBend: Double
+    public var microtonalOffset: Double
     public var currentPressure: UInt8
     public var currentTimbre: UInt8
     public var currentPressureNormalized: Double
     public var currentTimbreNormalized: Double
     public var attackVelocity: UInt8
+    public var attackVelocity16: UInt16
     public var technique: MusicalTechnique
     public var legatoSource: UInt8?
     var currentPitchBendValue: UInt16
@@ -24,9 +27,11 @@ public struct MPEVoice: Equatable, Sendable {
         channel: UInt8,
         timestamp: TimeInterval,
         currentPitchBend: Double = 0,
+        microtonalOffset: Double = 0,
         currentPressure: UInt8 = 0,
         currentTimbre: UInt8 = 64,
         attackVelocity: UInt8 = 80,
+        attackVelocity16: UInt16? = nil,
         technique: MusicalTechnique = .normal,
         legatoSource: UInt8? = nil
     ) {
@@ -34,16 +39,20 @@ public struct MPEVoice: Equatable, Sendable {
         let safeTimbre = min(127, currentTimbre)
         let pressureNormalized = Double(safePressure) / 127.0
         let timbreNormalized = Double(safeTimbre) / 127.0
+        let vel7 = min(127, attackVelocity)
+        let vel16 = attackVelocity16 ?? MIDI2UMPEncoder.scale7To16(vel7)
 
         self.note = note
         self.channel = channel
         self.timestamp = timestamp
         self.currentPitchBend = currentPitchBend
+        self.microtonalOffset = microtonalOffset
         self.currentPressure = safePressure
         self.currentTimbre = safeTimbre
         self.currentPressureNormalized = pressureNormalized
         self.currentTimbreNormalized = timbreNormalized
-        self.attackVelocity = min(127, attackVelocity)
+        self.attackVelocity = vel7
+        self.attackVelocity16 = vel16
         self.technique = technique
         self.legatoSource = legatoSource
         self.currentPitchBendValue = 8192
@@ -63,6 +72,12 @@ public final class MPEManager: @unchecked Sendable {
     private var configuredBendRangeSemitones: Double
     private let lock = NSLock()
 
+    // MARK: - Microtonal & Harmonic Temperament State
+    public var temperament: MicrotonalTemperament = .equalTemperament
+    public var scaleRoot: PitchClass = .c
+    public var activeChordRoot: PitchClass?
+    public var isMinorChord: Bool = false
+
     public init(
         midiEngine: MIDIEngine = MIDIEngine(),
         bendRangeSemitones: Double = 48
@@ -72,21 +87,33 @@ public final class MPEManager: @unchecked Sendable {
         self.memberChannels = zoneLayout.memberChannels
     }
 
+    /// Sets the harmonic context used for real-time dynamic microtonal temperaments (e.g. Just Intonation).
+    public func setHarmonicContext(
+        scaleRoot: PitchClass,
+        activeChordRoot: PitchClass? = nil,
+        isMinorChord: Bool = false
+    ) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.scaleRoot = scaleRoot
+        self.activeChordRoot = activeChordRoot
+        self.isMinorChord = isMinorChord
+    }
+
     public var currentZoneLayout: MPEZoneLayout {
         lock.lock()
-        let value = zoneLayout
-        lock.unlock()
-        return value
+        defer { lock.unlock() }
+        return zoneLayout
     }
 
     /// Rebuilds member-channel allocation to match a DAW host zone. Callers must
     /// silence notes first; this resets the round-robin pointer.
     public func applyZoneLayout(_ layout: MPEZoneLayout, sendConfiguration: Bool = true) {
-        lock.lock()
-        zoneLayout = layout
-        memberChannels = layout.memberChannels
-        nextChannelIndex = 0
-        lock.unlock()
+        lock.withLock {
+            zoneLayout = layout
+            memberChannels = layout.memberChannels
+            nextChannelIndex = 0
+        }
         if sendConfiguration {
             sendMPEZoneConfiguration()
         }
@@ -104,31 +131,22 @@ public final class MPEManager: @unchecked Sendable {
 
     public var bendRangeSemitones: Double {
         get {
-            lock.lock()
-            let value = configuredBendRangeSemitones
-            lock.unlock()
-            return value
+            lock.withLock { configuredBendRangeSemitones }
         }
         set {
-            lock.lock()
-            configuredBendRangeSemitones = max(1, newValue)
-            lock.unlock()
+            lock.withLock {
+                configuredBendRangeSemitones = max(1, newValue)
+            }
             sendPitchBendRangeConfiguration()
         }
     }
 
     public var activeVoiceCount: Int {
-        lock.lock()
-        let count = activeVoices.count
-        lock.unlock()
-        return count
+        lock.withLock { activeVoices.count }
     }
 
     public func activeVoice(for note: UInt8) -> MPEVoice? {
-        lock.lock()
-        let voice = activeVoices[note]
-        lock.unlock()
-        return voice
+        lock.withLock { activeVoices[note] }
     }
 
     public func voice(for note: UInt8) -> MPEVoice? {
@@ -137,9 +155,7 @@ public final class MPEManager: @unchecked Sendable {
 
     /// Initializes the active MPE zone (lower: master Ch 1; upper: master Ch 16).
     public func sendMPEZoneConfiguration() {
-        lock.lock()
-        let layout = zoneLayout
-        lock.unlock()
+        let layout = lock.withLock { zoneLayout }
 
         let master = layout.masterChannel
         let members = UInt8(layout.memberCount)
@@ -152,13 +168,10 @@ public final class MPEManager: @unchecked Sendable {
 
     /// Advertises the exact per-note bend range used by semantic pitch expression.
     public func sendPitchBendRangeConfiguration() {
-        lock.lock()
-        let range = configuredBendRangeSemitones
-        let channels = memberChannels
-        lock.unlock()
+        let (range, channels) = lock.withLock { (configuredBendRangeSemitones, memberChannels) }
 
-        let semitones = UInt8(max(1, min(96, Int(range.rounded(.down)))))
-        let cents = UInt8(max(0, min(99, Int(((range - floor(range)) * 100).rounded()))))
+        let semitones = UInt8(Int(range.rounded(.down)).clamped(to: 1...96))
+        let cents = UInt8(Int(((range - floor(range)) * 100).rounded()).clamped(to: 0...99))
 
         for channel in channels {
             midiEngine.sendCC(port: .mpe, channel: channel, controller: 101, value: 0)
@@ -170,12 +183,16 @@ public final class MPEManager: @unchecked Sendable {
     }
 
     /// Starts an MPE note after resetting expression on its allocated member channel.
-    public func noteOn(note: UInt8, velocity: UInt8, technique: MusicalTechnique = .normal, legatoSource: UInt8? = nil) {
+    public func noteOn(
+        note: UInt8,
+        velocity: UInt8,
+        velocity16: UInt16? = nil,
+        technique: MusicalTechnique = .normal,
+        legatoSource: UInt8? = nil
+    ) {
         // CoreMIDI sources do not retain setup traffic for clients that attach later.
         // Re-advertise the lower zone and bend range at the start of every idle phrase.
-        lock.lock()
-        let startsIdlePhrase = activeVoices.isEmpty
-        lock.unlock()
+        let startsIdlePhrase = lock.withLock { activeVoices.isEmpty }
         if startsIdlePhrase && midiEngine.virtualMIDIEnabled {
             sendMPEZoneConfiguration()
         }
@@ -203,24 +220,53 @@ public final class MPEManager: @unchecked Sendable {
             }
         }
 
+        let microtonalOffset = temperament.tuningOffsetInSemitones(
+            for: note,
+            scaleRoot: scaleRoot,
+            activeChordRoot: activeChordRoot,
+            isMinorChord: isMinorChord
+        )
+
         if !channelAlreadyReset {
             resetExpression(on: channel)
+        }
+        if abs(microtonalOffset) > 0.0001 {
+            midiEngine.sendPitchBend(
+                port: .mpe,
+                channel: channel,
+                semitoneOffset: microtonalOffset,
+                bendRangeSemitones: configuredBendRangeSemitones
+            )
         }
         midiEngine.sendNoteOn(
             port: .mpe,
             channel: channel,
             note: note,
-            velocity: velocity
+            velocity: velocity,
+            velocity16: velocity16
         )
 
-        activeVoices[note] = MPEVoice(
+        var voice = MPEVoice(
             note: note,
             channel: channel,
             timestamp: ProcessInfo.processInfo.systemUptime,
+            microtonalOffset: microtonalOffset,
             attackVelocity: velocity,
+            attackVelocity16: velocity16,
             technique: technique,
             legatoSource: legatoSource
         )
+        if abs(microtonalOffset) > 0.0001 {
+            voice.currentPitchBendValue = MIDIEngine.pitchBendValue(
+                semitoneOffset: microtonalOffset,
+                bendRangeSemitones: configuredBendRangeSemitones
+            )
+            voice.currentMIDI2PitchBendValue = MIDI2UMPEncoder.pitchBend32(
+                semitoneOffset: microtonalOffset,
+                bendRangeSemitones: configuredBendRangeSemitones
+            )
+        }
+        activeVoices[note] = voice
     }
 
     /// Releases an MPE note and returns its channel expression to neutral.
@@ -237,9 +283,10 @@ public final class MPEManager: @unchecked Sendable {
         defer { lock.unlock() }
 
         guard var voice = activeVoices[note] else { return }
+        let effectiveOffset = (semitones.isFinite ? semitones : 0) + voice.microtonalOffset
         let clamped = max(
             -configuredBendRangeSemitones,
-            min(configuredBendRangeSemitones, semitones.isFinite ? semitones : 0)
+            min(configuredBendRangeSemitones, effectiveOffset)
         )
         let bendValue = MIDIEngine.pitchBendValue(
             semitoneOffset: clamped,
@@ -258,7 +305,7 @@ public final class MPEManager: @unchecked Sendable {
             wireValueUnchanged = voice.currentMIDI2PitchBendValue == midi2BendValue
         }
 
-        voice.currentPitchBend = clamped
+        voice.currentPitchBend = semitones
         voice.currentPitchBendValue = bendValue
         voice.currentMIDI2PitchBendValue = midi2BendValue
         activeVoices[note] = voice
@@ -412,12 +459,13 @@ public final class MPEManager: @unchecked Sendable {
     }
 
     public func stopAllNotes() {
-        lock.lock()
-        let voices = activeVoices.values.sorted { $0.channel < $1.channel }
-        let channels = memberChannels
-        activeVoices.removeAll()
-        nextChannelIndex = 0
-        lock.unlock()
+        let (voices, channels) = lock.withLock { () -> ([MPEVoice], [UInt8]) in
+            let v = activeVoices.values.sorted { $0.channel < $1.channel }
+            let ch = memberChannels
+            activeVoices.removeAll()
+            nextChannelIndex = 0
+            return (v, ch)
+        }
 
         for voice in voices {
             release(voice)
@@ -447,11 +495,110 @@ public final class MPEManager: @unchecked Sendable {
     }
 
     private static func normalized(_ value: Double) -> Double {
-        guard value.isFinite else { return 0 }
-        return min(1, max(0, value))
+        value.normalizedUnit
     }
 
     private static func midi7(_ normalized: Double) -> UInt8 {
-        UInt8((normalized * 127.0).rounded())
+        MIDIValueCodec.midi7(normalized)
     }
 }
+
+/// Coordinates two simultaneous MPE zones (Lower Zone and Upper Zone).
+///
+/// Typical workflow:
+/// - Lower Zone (Master Ch 1, Members Ch 2...8): Allocated for harmony/chords/left hand.
+/// - Upper Zone (Master Ch 16, Members Ch 15...9): Allocated for expressive lead/right hand/solo.
+public final class DualZoneMPEManager: @unchecked Sendable {
+    public let lowerZone: MPEManager
+    public let upperZone: MPEManager
+    public let midiEngine: MIDIEngine
+
+    public enum ZoneTarget: Sendable {
+        case lower
+        case upper
+        case auto(splitNote: UInt8)
+    }
+
+    public init(
+        midiEngine: MIDIEngine = MIDIEngine(),
+        lowerMemberCount: Int = 7,
+        upperMemberCount: Int = 7,
+        bendRangeSemitones: Double = 48
+    ) {
+        self.midiEngine = midiEngine
+        self.lowerZone = MPEManager(midiEngine: midiEngine, bendRangeSemitones: bendRangeSemitones)
+        self.upperZone = MPEManager(midiEngine: midiEngine, bendRangeSemitones: bendRangeSemitones)
+
+        self.lowerZone.applyZoneLayout(MPEZoneLayout(isLowerZone: true, memberCount: lowerMemberCount), sendConfiguration: false)
+        self.upperZone.applyZoneLayout(MPEZoneLayout(isLowerZone: false, memberCount: upperMemberCount), sendConfiguration: false)
+    }
+
+    public func sendZoneConfigurations() {
+        lowerZone.sendMPEZoneConfiguration()
+        upperZone.sendMPEZoneConfiguration()
+    }
+
+    public func noteOn(
+        note: UInt8,
+        velocity: UInt8,
+        velocity16: UInt16? = nil,
+        technique: MusicalTechnique = .normal,
+        target: ZoneTarget = .auto(splitNote: 60)
+    ) {
+        let manager = resolvedManager(for: note, target: target)
+        manager.noteOn(note: note, velocity: velocity, velocity16: velocity16, technique: technique)
+    }
+
+    public func noteOff(note: UInt8) {
+        if lowerZone.activeVoice(for: note) != nil {
+            lowerZone.noteOff(note: note)
+        }
+        if upperZone.activeVoice(for: note) != nil {
+            upperZone.noteOff(note: note)
+        }
+    }
+
+    public func setPitchBend(for note: UInt8, semitones: Double) {
+        if lowerZone.activeVoice(for: note) != nil {
+            lowerZone.setPitchBend(for: note, semitones: semitones)
+        }
+        if upperZone.activeVoice(for: note) != nil {
+            upperZone.setPitchBend(for: note, semitones: semitones)
+        }
+    }
+
+    public func setPressure(for note: UInt8, normalizedPressure: Double) {
+        if lowerZone.activeVoice(for: note) != nil {
+            lowerZone.setPressure(for: note, normalizedPressure: normalizedPressure)
+        }
+        if upperZone.activeVoice(for: note) != nil {
+            upperZone.setPressure(for: note, normalizedPressure: normalizedPressure)
+        }
+    }
+
+    public func setTimbre(for note: UInt8, normalizedValue: Double) {
+        if lowerZone.activeVoice(for: note) != nil {
+            lowerZone.setTimbre(for: note, normalizedValue: normalizedValue)
+        }
+        if upperZone.activeVoice(for: note) != nil {
+            upperZone.setTimbre(for: note, normalizedValue: normalizedValue)
+        }
+    }
+
+    public func stopAllNotes() {
+        lowerZone.stopAllNotes()
+        upperZone.stopAllNotes()
+    }
+
+    private func resolvedManager(for note: UInt8, target: ZoneTarget) -> MPEManager {
+        switch target {
+        case .lower:
+            return lowerZone
+        case .upper:
+            return upperZone
+        case .auto(let splitNote):
+            return note < splitNote ? lowerZone : upperZone
+        }
+    }
+}
+

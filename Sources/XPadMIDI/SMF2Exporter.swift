@@ -50,6 +50,75 @@ public enum SMF2Exporter {
         return encodeStream(events: allEvents, ppqn: ppqn)
     }
 
+    /// Encodes rich recorded technique events including per-note pitch bends, pressure, and RPNC into SMF2.
+    public static func export(
+        techniqueEvents: [RecordedTechniqueEvent],
+        channel: UInt8 = 0,
+        ppqn: UInt16 = defaultPPQN
+    ) -> Data {
+        var allEvents: [TimedUMPEvent] = []
+
+        for item in techniqueEvents {
+            let tick = item.tick
+            let event = item.event
+            let note = event.note.midiNote
+            let vel16 = MIDI2UMPEncoder.scale7To16(event.velocity)
+
+            if event.phase == .began {
+                // Note On
+                let noteOnUMP = MIDI2UMPEncoder.noteOnMessage(channel: channel, note: note, velocity16: vel16)
+                allEvents.append(TimedUMPEvent(tick: tick, words: [noteOnUMP.word0, noteOnUMP.word1]))
+            }
+
+            if event.phase == .began || event.phase == .changed {
+                // Per-note pitch bend
+                if abs(event.pitchOffset) > 0.001 {
+                    let pbUMP = MIDI2UMPEncoder.perNotePitchBendMessage(
+                        channel: channel,
+                        note: note,
+                        semitoneOffset: event.pitchOffset,
+                        bendRangeSemitones: 48.0
+                    )
+                    allEvents.append(TimedUMPEvent(tick: tick, words: [pbUMP.word0, pbUMP.word1]))
+                }
+
+                // Per-note pressure
+                if event.pressure > 0.01 {
+                    let pressUMP = MIDI2UMPEncoder.perNotePressureMessage(
+                        channel: channel,
+                        note: note,
+                        normalizedPressure: event.pressure
+                    )
+                    allEvents.append(TimedUMPEvent(tick: tick, words: [pressUMP.word0, pressUMP.word1]))
+                }
+
+                // Per-note timbre (RPNC 74)
+                if abs(event.timbre - 0.5) > 0.01 {
+                    let timbreUMP = MIDI2UMPEncoder.perNoteRegisteredControllerMessage(
+                        channel: channel,
+                        note: note,
+                        controller: .brightness,
+                        normalizedValue: event.timbre
+                    )
+                    allEvents.append(TimedUMPEvent(tick: tick, words: [timbreUMP.word0, timbreUMP.word1]))
+                }
+
+                // If event duration is known, schedule Note Off
+                if item.durationTicks > 0 {
+                    let noteOffTick = tick + item.durationTicks
+                    let noteOffUMP = MIDI2UMPEncoder.noteOffMessage(channel: channel, note: note, velocity16: 0)
+                    allEvents.append(TimedUMPEvent(tick: noteOffTick, words: [noteOffUMP.word0, noteOffUMP.word1]))
+                }
+            } else if event.phase == .ended {
+                let noteOffUMP = MIDI2UMPEncoder.noteOffMessage(channel: channel, note: note, velocity16: 0)
+                allEvents.append(TimedUMPEvent(tick: tick, words: [noteOffUMP.word0, noteOffUMP.word1]))
+            }
+        }
+
+        allEvents.sort { $0.tick < $1.tick }
+        return encodeStream(events: allEvents, ppqn: ppqn)
+    }
+
     /// Encodes a list of Timed UMP events into the standard binary SMF2 file structure.
     public static func encodeStream(
         events: [TimedUMPEvent],

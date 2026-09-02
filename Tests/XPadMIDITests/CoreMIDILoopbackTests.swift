@@ -106,6 +106,160 @@ final class CoreMIDILoopbackTests: XCTestCase {
         XCTAssertGreaterThan(expectedPitch, MIDI2UMPEncoder.pitchBendCentre)
     }
 
+    func testMIDI2VirtualSourceDeliversNoteOnNoteOffThroughCoreMIDI() throws {
+        let midi = MIDIEngine()
+        midi.transportProtocol = .midi2
+        midi.virtualMIDIEnabled = true
+        defer { midi.virtualMIDIEnabled = false }
+
+        guard let source = source(named: VirtualPort.main.rawValue) else {
+            XCTFail("CoreMIDI did not expose the XPI Main virtual source")
+            return
+        }
+
+        var receiverClient: MIDIClientRef = 0
+        var inputPort: MIDIPortRef = 0
+        let received = ReceivedEvent()
+
+        XCTAssertEqual(
+            MIDIClientCreateWithBlock("XPI MIDI2 Note Loopback Tests" as CFString, &receiverClient) { _ in },
+            noErr
+        )
+        guard receiverClient != 0 else { return }
+        defer { MIDIClientDispose(receiverClient) }
+
+        let createPortStatus = MIDIInputPortCreateWithProtocol(
+            receiverClient,
+            "XPI MIDI2 Note Test Input" as CFString,
+            ._2_0,
+            &inputPort
+        ) { eventList, _ in
+            guard eventList.pointee.numPackets > 0 else { return }
+            let packet = eventList.pointee.packet
+            let wordCount = Int(packet.wordCount)
+            guard wordCount > 0 else { return }
+
+            let words: [UInt32] = withUnsafePointer(to: packet.words) { tuplePointer in
+                tuplePointer.withMemoryRebound(to: UInt32.self, capacity: 64) { wordPointer in
+                    Array(UnsafeBufferPointer(start: wordPointer, count: min(64, wordCount)))
+                }
+            }
+
+            if received.recordIfEmpty(protocolID: eventList.pointee.protocol, words: words) {
+            }
+        }
+
+        XCTAssertEqual(createPortStatus, noErr)
+        guard inputPort != 0 else { return }
+        defer {
+            MIDIPortDisconnectSource(inputPort, source)
+            MIDIPortDispose(inputPort)
+        }
+
+        XCTAssertEqual(MIDIPortConnectSource(inputPort, source, nil), noErr)
+
+        let note: UInt8 = 60
+        let velocity: UInt8 = 100
+        let channel: UInt8 = 2
+
+        midi.sendNoteOn(port: .main, channel: channel, note: note, velocity: velocity)
+
+        let expectation = expectation(description: "Receive MIDI 2 Note On UMP")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            let snapshot = received.snapshot
+            if snapshot.1.count >= 2 {
+                expectation.fulfill()
+            }
+        }
+        wait(for: [expectation], timeout: 2.0)
+
+        let snapshot = received.snapshot
+        XCTAssertEqual(snapshot.0, ._2_0)
+        XCTAssertGreaterThanOrEqual(snapshot.1.count, 2)
+        guard snapshot.1.count >= 2 else { return }
+
+        XCTAssertEqual(snapshot.1[0] >> 28, 0x4)
+        XCTAssertEqual((snapshot.1[0] >> 16) & 0xFF, (0x90 | channel))
+        XCTAssertEqual((snapshot.1[0] >> 8) & 0xFF, note)
+        XCTAssertEqual(snapshot.1[0] & 0xFF, UInt32(MIDI2UMPEncoder.scale7To16(velocity)))
+    }
+
+    func testMIDI1VirtualSourceProtocolConversion() throws {
+        let midi = MIDIEngine()
+        midi.transportProtocol = .midi1
+        midi.virtualMIDIEnabled = true
+        defer { midi.virtualMIDIEnabled = false }
+
+        guard let source = source(named: VirtualPort.main.rawValue) else {
+            XCTFail("CoreMIDI did not expose the XPI Main virtual source")
+            return
+        }
+
+        var receiverClient: MIDIClientRef = 0
+        var inputPort: MIDIPortRef = 0
+        let received = ReceivedEvent()
+        let expectation = expectation(description: "Receive MIDI 1 from XPI Main")
+
+        XCTAssertEqual(
+            MIDIClientCreateWithBlock("XPI MIDI1 Protocol Tests" as CFString, &receiverClient) { _ in },
+            noErr
+        )
+        guard receiverClient != 0 else { return }
+        defer { MIDIClientDispose(receiverClient) }
+
+        let createPortStatus = MIDIInputPortCreateWithProtocol(
+            receiverClient,
+            "XPI MIDI1 Test Input" as CFString,
+            ._1_0,
+            &inputPort
+        ) { eventList, _ in
+            guard eventList.pointee.numPackets > 0 else { return }
+            let packet = eventList.pointee.packet
+            let wordCount = Int(packet.wordCount)
+            guard wordCount > 0 else { return }
+
+            let words: [UInt32] = withUnsafePointer(to: packet.words) { tuplePointer in
+                tuplePointer.withMemoryRebound(to: UInt32.self, capacity: 64) { wordPointer in
+                    Array(UnsafeBufferPointer(start: wordPointer, count: min(64, wordCount)))
+                }
+            }
+
+            if received.recordIfEmpty(protocolID: eventList.pointee.protocol, words: words) {
+                expectation.fulfill()
+            }
+        }
+
+        XCTAssertEqual(createPortStatus, noErr)
+        guard inputPort != 0 else { return }
+        defer {
+            MIDIPortDisconnectSource(inputPort, source)
+            MIDIPortDispose(inputPort)
+        }
+
+        XCTAssertEqual(MIDIPortConnectSource(inputPort, source, nil), noErr)
+
+        let controller: UInt8 = 1
+        let value: UInt8 = 64
+        let channel: UInt8 = 0
+
+        midi.sendCC(port: .main, channel: channel, controller: controller, value: value)
+
+        wait(for: [expectation], timeout: 2.0)
+
+        let snapshot = received.snapshot
+        XCTAssertEqual(snapshot.0, ._1_0)
+        XCTAssertGreaterThanOrEqual(snapshot.1.count, 1)
+        guard snapshot.1.count >= 1 else { return }
+
+        let statusByte = snapshot.1[0] & 0xFF
+        let ccController = (snapshot.1[0] >> 8) & 0xFF
+        let ccValue = (snapshot.1[0] >> 16) & 0xFF
+
+        XCTAssertEqual(statusByte, 0xB0 | channel)
+        XCTAssertEqual(ccController, controller)
+        XCTAssertEqual(ccValue, value)
+    }
+
     private func source(named expectedName: String) -> MIDIEndpointRef? {
         let count = MIDIGetNumberOfSources()
         guard count > 0 else { return nil }

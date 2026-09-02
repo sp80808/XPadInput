@@ -72,6 +72,23 @@ public struct StickCalibration: Codable, Sendable, Equatable {
 
         return (cx, cy)
     }
+
+    public var isValid: Bool {
+        !restCenterX.isNaN && !restCenterY.isNaN &&
+        !driftRadius.isNaN && driftRadius >= 0.0 && driftRadius < 0.5 &&
+        !maxRadius.isNaN && maxRadius > driftRadius && maxRadius <= 2.0 &&
+        !sensitivityX.isNaN && sensitivityX > 0 &&
+        !sensitivityY.isNaN && sensitivityY > 0
+    }
+
+    public mutating func validateAndRepair() {
+        if restCenterX.isNaN { restCenterX = 0.0 }
+        if restCenterY.isNaN { restCenterY = 0.0 }
+        if driftRadius.isNaN || driftRadius < 0.0 || driftRadius >= 0.5 { driftRadius = 0.04 }
+        if maxRadius.isNaN || maxRadius <= driftRadius || maxRadius > 2.0 { maxRadius = 1.0 }
+        if sensitivityX.isNaN || sensitivityX <= 0.0 { sensitivityX = 1.0 }
+        if sensitivityY.isNaN || sensitivityY <= 0.0 { sensitivityY = 1.0 }
+    }
 }
 
 /// Calibration thresholds for an analog trigger.
@@ -91,6 +108,18 @@ public struct TriggerCalibration: Codable, Sendable, Equatable {
         let travel = max(0.001, travelMax - restMin)
         let normalized = (rawValue - restMin) / travel
         return max(0.0, min(1.0, normalized * sensitivity))
+    }
+
+    public var isValid: Bool {
+        !restMin.isNaN && restMin >= 0.0 && restMin < 0.8 &&
+        !travelMax.isNaN && travelMax > restMin && travelMax <= 1.5 &&
+        !sensitivity.isNaN && sensitivity > 0.0
+    }
+
+    public mutating func validateAndRepair() {
+        if restMin.isNaN || restMin < 0.0 || restMin >= 0.8 { restMin = 0.0 }
+        if travelMax.isNaN || travelMax <= restMin || travelMax > 1.5 { travelMax = 1.0 }
+        if sensitivity.isNaN || sensitivity <= 0.0 { sensitivity = 1.0 }
     }
 }
 
@@ -114,6 +143,13 @@ public struct ControllerHardwareCalibration: Codable, Sendable, Equatable {
         self.rightStick = rightStick
         self.leftTrigger = leftTrigger
         self.rightTrigger = rightTrigger
+    }
+
+    public mutating func validateAndRepair() {
+        leftStick.validateAndRepair()
+        rightStick.validateAndRepair()
+        leftTrigger.validateAndRepair()
+        rightTrigger.validateAndRepair()
     }
 }
 
@@ -183,7 +219,7 @@ public final class CalibrationWizard: @unchecked Sendable {
             }
             cal.leftStick.restCenterX = avgLX
             cal.leftStick.restCenterY = avgLY
-            cal.leftStick.driftRadius = max(0.02, maxDriftL * 1.5)
+            cal.leftStick.driftRadius = max(0.02, min(0.35, maxDriftL * 1.5))
         }
 
         if !restRightSamples.isEmpty {
@@ -199,12 +235,22 @@ public final class CalibrationWizard: @unchecked Sendable {
             }
             cal.rightStick.restCenterX = avgRX
             cal.rightStick.restCenterY = avgRY
-            cal.rightStick.driftRadius = max(0.02, maxDriftR * 1.5)
+            cal.rightStick.driftRadius = max(0.02, min(0.35, maxDriftR * 1.5))
         }
 
-        cal.leftStick.maxRadius = max(0.85, min(1.15, observedMaxLeftRadius))
-        cal.rightStick.maxRadius = max(0.85, min(1.15, observedMaxRightRadius))
+        if observedMaxLeftRadius > 0.4 {
+            cal.leftStick.maxRadius = max(0.85, min(1.15, observedMaxLeftRadius))
+        } else {
+            cal.leftStick.maxRadius = 1.0
+        }
 
+        if observedMaxRightRadius > 0.4 {
+            cal.rightStick.maxRadius = max(0.85, min(1.15, observedMaxRightRadius))
+        } else {
+            cal.rightStick.maxRadius = 1.0
+        }
+
+        cal.validateAndRepair()
         currentStep = .completed
         return cal
     }
@@ -239,12 +285,20 @@ public final class ControllerSettingsStore: @unchecked Sendable {
 
     public func loadCustomSchemes() -> [ControlScheme] {
         guard let data = defaults.data(forKey: customSchemesKey) else { return [] }
-        return (try? JSONDecoder().decode([ControlScheme].self, from: data)) ?? []
+        do {
+            return try JSONDecoder().decode([ControlScheme].self, from: data)
+        } catch {
+            print("⚠️ Failed to decode stored custom control schemes: \(error)")
+            return []
+        }
     }
 
     public func saveCustomSchemes(_ schemes: [ControlScheme]) {
-        if let data = try? JSONEncoder().encode(schemes) {
+        do {
+            let data = try JSONEncoder().encode(schemes)
             defaults.set(data, forKey: customSchemesKey)
+        } catch {
+            print("⚠️ Failed to encode custom control schemes; changes were not saved: \(error)")
         }
     }
 
@@ -268,18 +322,27 @@ public final class ControllerSettingsStore: @unchecked Sendable {
 
     public func loadCalibration(for controllerId: String) -> ControllerHardwareCalibration {
         guard let dict = defaults.dictionary(forKey: calibrationsKey) as? [String: Data],
-              let data = dict[controllerId],
-              let cal = try? JSONDecoder().decode(ControllerHardwareCalibration.self, from: data) else {
+              let data = dict[controllerId] else {
             return ControllerHardwareCalibration(controllerIdentifier: controllerId)
         }
-        return cal
+        do {
+            var cal = try JSONDecoder().decode(ControllerHardwareCalibration.self, from: data)
+            cal.validateAndRepair()
+            return cal
+        } catch {
+            print("⚠️ Failed to decode calibration for \(controllerId); using defaults: \(error)")
+            return ControllerHardwareCalibration(controllerIdentifier: controllerId)
+        }
     }
 
     public func saveCalibration(_ calibration: ControllerHardwareCalibration) {
-        var dict = (defaults.dictionary(forKey: calibrationsKey) as? [String: Data]) ?? [:]
-        if let data = try? JSONEncoder().encode(calibration) {
+        do {
+            let data = try JSONEncoder().encode(calibration)
+            var dict = (defaults.dictionary(forKey: calibrationsKey) as? [String: Data]) ?? [:]
             dict[calibration.controllerIdentifier] = data
             defaults.set(dict, forKey: calibrationsKey)
+        } catch {
+            print("⚠️ Failed to encode calibration for \(calibration.controllerIdentifier); not saved: \(error)")
         }
     }
 
@@ -287,5 +350,20 @@ public final class ControllerSettingsStore: @unchecked Sendable {
         var dict = (defaults.dictionary(forKey: calibrationsKey) as? [String: Data]) ?? [:]
         dict.removeValue(forKey: controllerId)
         defaults.set(dict, forKey: calibrationsKey)
+    }
+
+    // MARK: - Background Monitoring Storage
+
+    private let backgroundMonitoringKey = "com.xpadinput.controls.backgroundMonitoring"
+
+    public func loadBackgroundMonitoring() -> Bool {
+        if defaults.object(forKey: backgroundMonitoringKey) == nil {
+            return true // Default to true so background input works out of the box
+        }
+        return defaults.bool(forKey: backgroundMonitoringKey)
+    }
+
+    public func saveBackgroundMonitoring(_ enabled: Bool) {
+        defaults.set(enabled, forKey: backgroundMonitoringKey)
     }
 }

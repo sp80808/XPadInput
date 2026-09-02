@@ -71,6 +71,7 @@ struct InstrumentSelectorView: View {
 /// beside or beneath the selector when no technique is active.
 struct ActiveTechniqueStatusView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var compact: Bool = false
 

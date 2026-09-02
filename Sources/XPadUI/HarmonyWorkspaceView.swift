@@ -257,6 +257,8 @@ public struct HarmonyWorkspaceView: View {
 private struct ChordBlockCard: View {
     let block: ChordBlock
     let isSelected: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering: Bool = false
 
     var body: some View {
         VStack(spacing: 6) {
@@ -278,5 +280,9 @@ private struct ChordBlockCard: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(isSelected ? Color.accentColor : Color.white.opacity(0.1), lineWidth: 2)
         )
+        .scaleEffect(reduceMotion ? 1 : (isHovering ? 1.03 : 1.0))
+        .shadow(color: .black.opacity(reduceMotion ? 0 : (isHovering ? 0.25 : 0)), radius: reduceMotion ? 0 : (isHovering ? 12 : 0), y: reduceMotion ? 0 : (isHovering ? 4 : 0))
+        .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.8), value: isHovering)
+        .onHover { isHovering = $0 }
     }
 }
