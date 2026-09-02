@@ -16,6 +16,15 @@ struct ExpressionMapWorkspaceView: View {
 
         var id: String { rawValue }
 
+        var compactTitle: String {
+            switch self {
+            case .physical: return "Input"
+            case .gesture: return "Gesture"
+            case .instrument: return "Instrument"
+            case .midi: return "MIDI"
+            }
+        }
+
         var iconName: String {
             switch self {
             case .physical:   return "l.joystick.fill"
@@ -48,12 +57,12 @@ struct ExpressionMapWorkspaceView: View {
         @Bindable var state = appState
         HSplitView {
             VStack(alignment: .leading, spacing: 16) {
-                Picker("Section", selection: $section) {
+                XWidthSafePicker("Section", selection: $section) {
                     ForEach(MapSection.allCases) { item in
-                        Label(item.rawValue, systemImage: item.iconName).tag(item)
+                        Text(item.compactTitle).tag(item)
                     }
                 }
-                .pickerStyle(.segmented)
+                .accessibilityValue(section.rawValue)
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
@@ -180,7 +189,7 @@ struct ExpressionMapWorkspaceView: View {
     private var gestureSection: some View {
         @Bindable var state = appState
         return VStack(alignment: .leading, spacing: 12) {
-            Picker("Pitch Assist", selection: Binding(
+            XWidthSafePicker("Pitch Assist", selection: Binding(
                 get: { state.expressionSettings.pitchAssist },
                 set: { state.setPitchAssist($0) }
             )) {
@@ -188,14 +197,12 @@ struct ExpressionMapWorkspaceView: View {
                     Text(mode.rawValue).tag(mode)
                 }
             }
-            .pickerStyle(.segmented)
 
-            Picker("Realism", selection: $state.expressionSettings.realism) {
+            XWidthSafePicker("Realism", selection: $state.expressionSettings.realism) {
                 ForEach(RealismMode.allCases, id: \.self) { mode in
                     Text(mode.rawValue).tag(mode)
                 }
             }
-            .pickerStyle(.segmented)
 
             Toggle("Theory Assist", isOn: $state.expressionSettings.theoryAssist)
             Toggle("Chromatic / Free pitch", isOn: $state.expressionSettings.chromaticMode)

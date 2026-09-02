@@ -92,11 +92,15 @@ private struct SettingsSheet: View {
                     Text("Controller & Hardware Configuration")
                         .font(XTheme.fontHeadline)
                         .foregroundColor(XTheme.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.75)
                 }
-                Spacer()
+                .layoutPriority(1)
+                Spacer(minLength: 8)
                 Button("Done") { dismiss() }
                     .xButton(.primary, size: .regular)
                     .keyboardShortcut(.defaultAction)
+                    .fixedSize()
             }
             .padding(XTheme.space5)
             .background(XTheme.surface)
@@ -104,8 +108,9 @@ private struct SettingsSheet: View {
             Divider().overlay(XTheme.border)
 
             ControlSchemeSettingsView()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(minWidth: 820, minHeight: 640)
+        .frame(minWidth: 720, idealWidth: 840, minHeight: 560, idealHeight: 680)
         .background(XTheme.surface)
     }
 }

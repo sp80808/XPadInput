@@ -82,6 +82,7 @@ public struct XTheme {
     public static let radiusLarge = radiusL
 
     public static let strokeSubtle = borderThin
+    public static let strokeActive: CGFloat = 2
     public static let borderActive = Color(hue: 0.372, saturation: 0.55, brightness: 0.55).opacity(0.65)
 
     // MARK: - Typography Aliases
@@ -206,6 +207,8 @@ public struct XTheme {
     public static let feedbackFast = Animation.easeOut(duration: 0.09)
     /// Control hover and menu transitions
     public static let quickAnimation = Animation.easeOut(duration: 0.15)
+    /// Hover lift on PLAY pads and tactile chrome
+    public static let hoverAnimation = Animation.easeOut(duration: 0.12)
     /// Subtle disclosure state changes
     public static let transitionShort = Animation.easeOut(duration: 0.18)
     /// Standard UI physics
@@ -571,7 +574,6 @@ public struct XTactileButtonStyle: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     public var isActive: Bool = false
     public var activeColor: Color = XTheme.brand
-    @State private var isHovering = false
 
     public init(isActive: Bool = false, activeColor: Color = XTheme.brand) {
         self.isActive = isActive
@@ -579,39 +581,78 @@ public struct XTactileButtonStyle: ButtonStyle {
     }
 
     public func makeBody(configuration: Configuration) -> some View {
-        let pressed = configuration.isPressed && !reduceMotion
+        XTactileButtonChrome(
+            isActive: isActive,
+            isPressed: configuration.isPressed,
+            isEnabled: isEnabled,
+            activeColor: activeColor
+        ) {
+            configuration.label
+        }
+    }
+}
 
-        configuration.label
+private struct XTactileButtonChrome<Label: View>: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering = false
+
+    var isActive: Bool
+    var isPressed: Bool
+    var isEnabled: Bool
+    var activeColor: Color
+    var label: Label
+
+    init(
+        isActive: Bool,
+        isPressed: Bool,
+        isEnabled: Bool,
+        activeColor: Color,
+        @ViewBuilder label: () -> Label
+    ) {
+        self.isActive = isActive
+        self.isPressed = isPressed
+        self.isEnabled = isEnabled
+        self.activeColor = activeColor
+        self.label = label()
+    }
+
+    var body: some View {
+        label
             .opacity(isEnabled ? 1 : 0.45)
             .background(
-                RoundedRectangle(cornerRadius: XTheme.radiusS)
-                    .fill(fill(pressed: pressed))
+                RoundedRectangle(cornerRadius: XTheme.radiusSmall)
+                    .fill(fill)
                     .overlay(
-                        RoundedRectangle(cornerRadius: XTheme.radiusS)
-                            .stroke(border(pressed: pressed), lineWidth: XTheme.borderThin)
+                        RoundedRectangle(cornerRadius: XTheme.radiusSmall)
+                            .stroke(stroke, lineWidth: XTheme.borderThin)
+                    )
+                    .shadow(
+                        color: isActive ? activeColor.opacity(0.22) : Color.black.opacity(0.22),
+                        radius: isPressed ? 1 : 4,
+                        y: isPressed ? 1 : 3
                     )
             )
-            .scaleEffect(pressed ? 0.97 : 1)
+            .scaleEffect(isPressed && !reduceMotion ? 0.94 : 1)
             .onHover { hovering in
                 guard isEnabled else { return }
                 isHovering = hovering
             }
-            .animation(reduceMotion ? nil : XTheme.feedbackFast, value: configuration.isPressed)
-            .animation(reduceMotion ? nil : XTheme.quickAnimation, value: isHovering)
+            .animation(reduceMotion ? nil : XTheme.feedbackFast, value: isPressed)
+            .animation(reduceMotion ? nil : XTheme.hoverAnimation, value: isHovering)
             .animation(reduceMotion ? nil : XTheme.quickAnimation, value: isActive)
     }
 
-    private func fill(pressed: Bool) -> Color {
-        if isActive { return activeColor.opacity(0.10) }
-        if pressed { return Color.white.opacity(0.08) }
-        if isHovering { return Color.white.opacity(0.05) }
-        return .clear
+    private var fill: AnyShapeStyle {
+        if isPressed { return AnyShapeStyle(XTheme.surfacePressed) }
+        if isActive { return AnyShapeStyle(activeColor.opacity(0.16)) }
+        if isHovering { return AnyShapeStyle(XTheme.surfaceHover) }
+        return AnyShapeStyle(XTheme.controlGradient)
     }
 
-    private func border(pressed: Bool) -> Color {
-        if isActive { return activeColor.opacity(0.28) }
-        if pressed || isHovering { return XTheme.borderEmphasized }
-        return .clear
+    private var stroke: Color {
+        if isActive { return activeColor.opacity(0.62) }
+        if isHovering { return XTheme.borderActive.opacity(0.50) }
+        return Color.white.opacity(0.09)
     }
 }
 

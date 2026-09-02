@@ -280,7 +280,7 @@ private struct ChordGatePopover: View {
             title: "Chord release",
             subtitle: "Keep chords musical without leaving notes stuck."
         ) {
-            Picker("Release mode", selection: Binding(
+            XWidthSafePicker("Release mode", selection: Binding(
                 get: { appState.chordGateConfiguration.mode },
                 set: { appState.setChordHoldMode($0) }
             )) {
@@ -288,7 +288,6 @@ private struct ChordGatePopover: View {
                     Text(mode.rawValue).tag(mode)
                 }
             }
-            .pickerStyle(.segmented)
 
             if appState.chordGateConfiguration.mode == .timed {
                 TactileSliderRow(
@@ -327,7 +326,7 @@ private struct VelocityPopover: View {
             title: "Velocity feel",
             subtitle: "Stabilizes controller variation before it reaches the synth or DAW."
         ) {
-            Picker("Velocity curve", selection: Binding(
+            XWidthSafePicker("Velocity curve", selection: Binding(
                 get: { appState.audioEngine.velocityCurve },
                 set: { appState.setVelocityCurve($0) }
             )) {
@@ -335,7 +334,6 @@ private struct VelocityPopover: View {
                     Text(curve.rawValue).tag(curve)
                 }
             }
-            .pickerStyle(.segmented)
 
             Text(velocityDescription)
                 .font(.system(size: 10))
@@ -420,7 +418,7 @@ private struct ReverbPopover: View {
                 get: { appState.audioEngine.effectsSettings.reverb.isEnabled },
                 set: { value in update { $0.isEnabled = value } }
             ))
-            Picker("Space", selection: Binding(
+            XWidthSafePicker("Space", selection: Binding(
                 get: { appState.audioEngine.effectsSettings.reverb.style },
                 set: { value in update { $0.style = value } }
             )) {
@@ -428,7 +426,6 @@ private struct ReverbPopover: View {
                     Text(style.rawValue).tag(style)
                 }
             }
-            .pickerStyle(.segmented)
             TactileFloatSliderRow(title: "Mix", suffix: "%", value: floatBinding(\.mixPercent), range: 0...35)
         }
     }
@@ -472,7 +469,8 @@ private struct TactilePopoverShell<Content: View>: View {
             content
         }
         .padding(16)
-        .frame(width: 310)
+        .frame(minWidth: 280, idealWidth: 310, maxWidth: 360)
+        .fixedSize(horizontal: false, vertical: true)
         .background(XTheme.surface)
     }
 }
@@ -537,18 +535,23 @@ private struct AdaptiveTriggerQuickPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
+            HStack(alignment: .center, spacing: 8) {
                 Image(systemName: "hand.tap.fill")
                     .foregroundColor(XTheme.primary)
                 Text("Adaptive Motor Resistance")
                     .font(.system(size: 12, weight: .bold))
-                Spacer()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Spacer(minLength: 8)
                 Toggle("", isOn: Binding(
                     get: { appState.controllerManager.adaptiveTriggerEngine.isEnabled },
                     set: { appState.controllerManager.adaptiveTriggerEngine.setEnabled($0) }
                 ))
                 .toggleStyle(.switch)
                 .controlSize(.mini)
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityLabel("Adaptive Motor Resistance")
             }
 
             Divider()
@@ -580,7 +583,7 @@ private struct AdaptiveTriggerQuickPopover: View {
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundColor(XTheme.textSecondary)
 
-                    Picker("", selection: Binding(
+                    XWidthSafePicker("String Gauge Tension", selection: Binding(
                         get: { appState.controllerManager.adaptiveTriggerEngine.leftConfig.stringGauge },
                         set: { gauge in
                             appState.controllerManager.adaptiveTriggerEngine.leftConfig.stringGauge = gauge
@@ -588,10 +591,10 @@ private struct AdaptiveTriggerQuickPopover: View {
                         }
                     )) {
                         ForEach(StringGauge.allCases, id: \.self) { gauge in
-                            Text(gauge.displayName).tag(gauge)
+                            Text(gauge.compactName).tag(gauge)
                         }
                     }
-                    .pickerStyle(.segmented)
+                    .help(appState.controllerManager.adaptiveTriggerEngine.leftConfig.stringGauge.displayName)
                 }
             }
 
@@ -620,7 +623,8 @@ private struct AdaptiveTriggerQuickPopover: View {
             }
         }
         .padding(14)
-        .frame(width: 280)
+        .frame(minWidth: 260, idealWidth: 280, maxWidth: 340)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 

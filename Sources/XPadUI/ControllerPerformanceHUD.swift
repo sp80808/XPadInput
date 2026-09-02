@@ -151,6 +151,7 @@ struct ControllerPerformanceHUD: View {
                             .foregroundStyle(frame == nil ? XTheme.textTertiary : XTheme.accent)
                             .lineLimit(1)
                             .minimumScaleFactor(0.75)
+                            .xMusicalContent(frame?.activeTechnique.playLabel ?? "READY")
                     }
                     .frame(maxWidth: 100)
 
@@ -403,6 +404,7 @@ struct PerformanceFeedbackStrip: View {
                     .foregroundStyle(frame == nil ? XTheme.textSecondary : XTheme.textPrimary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.72)
+                    .xMusicalContent(musicalResult)
             }
 
             Spacer(minLength: 4)
@@ -463,6 +465,7 @@ private struct VirtualStringResponse: View {
                     .fill(XTheme.primary.opacity(stringOpacity(for: index)))
                     .frame(height: 1 + attack * 1.4)
                     .scaleEffect(x: 1 - clampedDamping * 0.52, anchor: direction == .up ? .trailing : .leading)
+                    .offset(y: stringVibration(for: index))
             }
         }
         .padding(.horizontal, 4)
@@ -480,6 +483,12 @@ private struct VirtualStringResponse: View {
         let progress = Double(index) / Double(max(1, visibleStringCount - 1))
         let directional = direction == .up ? 1 - progress : progress
         return min(0.95, 0.20 + attack * 0.42 + attackPulse * (0.18 + directional * 0.22))
+    }
+
+    private func stringVibration(for index: Int) -> CGFloat {
+        guard attackPulse > 0.02 else { return 0 }
+        let sign: CGFloat = index.isMultiple(of: 2) ? -1 : 1
+        return sign * CGFloat(attackPulse) * (1.1 + CGFloat(attack) * 0.8)
     }
 
     private var attackLanguage: String {
@@ -894,6 +903,7 @@ private struct ExpressionCoreView: View {
                 .foregroundStyle(XTheme.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.65)
+                .xMusicalContent(chordName)
 
             ZStack {
                 Circle()
@@ -929,6 +939,7 @@ private struct ExpressionCoreView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.65)
                 .frame(width: scale.expressionWidth)
+                .xMusicalContent(technique ?? "Expression")
         }
         .frame(width: scale.expressionWidth)
         .accessibilityElement(children: .ignore)
@@ -971,6 +982,7 @@ private struct FaceRoleLabels {
 }
 
 private struct FaceRoleButton: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let key: GlyphKey
     let role: String
     let isPressed: Bool
@@ -987,6 +999,8 @@ private struct FaceRoleButton: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .frame(width: scale.roleWidth)
+                .scaleEffect(isPressed && !reduceMotion ? 1.06 : 1)
+                .animation(reduceMotion ? nil : XTheme.feedbackFast, value: isPressed)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(iconPack.glyph(for: key).fullTitle), \(role)")

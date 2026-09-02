@@ -101,13 +101,34 @@ public struct MapWorkspaceView: View {
             // Right: Modulation Matrix, Control Schemes, or OCDS Manager
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
+                ViewThatFits(in: .horizontal) {
                     Picker("View Mode", selection: $selectedTab) {
                         Text("Modulation Matrix").tag(0)
                         Text("Control Schemes").tag(1)
                         Text("OCDS Profiles").tag(2)
                     }
                     .pickerStyle(.segmented)
-                    .frame(maxWidth: 380)
+                    .labelsHidden()
+
+                    Picker("View Mode", selection: $selectedTab) {
+                        Text("Matrix").tag(0)
+                        Text("Schemes").tag(1)
+                        Text("OCDS").tag(2)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+
+                    Picker("View Mode", selection: $selectedTab) {
+                        Text("Modulation Matrix").tag(0)
+                        Text("Control Schemes").tag(1)
+                        Text("OCDS Profiles").tag(2)
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .accessibilityLabel("View Mode")
+                .frame(maxWidth: 420)
 
                     Spacer()
 

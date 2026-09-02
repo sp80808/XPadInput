@@ -92,8 +92,7 @@ struct ActiveTechniqueStatusView: View {
                                 .stroke(XTheme.accent.opacity(0.24), lineWidth: 1)
                         )
                 )
-                .animation(reduceMotion ? nil : XTheme.quickAnimation, value: technique)
-                .transition(reduceMotion ? .identity : .scale(scale: 0.85, anchor: .center).combined(with: .opacity))
+                .xMusicalContent(technique)
                 .accessibilityLabel("Active technique")
                 .accessibilityValue(technique)
         }

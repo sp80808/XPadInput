@@ -32,13 +32,21 @@ public struct ControlSchemeSettingsView: View {
             case .calibration: return "scope"
             }
         }
+
+        public var compactTitle: String {
+            switch self {
+            case .ergonomics: return "Feel"
+            case .remapping: return "Remap"
+            case .liveTest: return "Test"
+            case .calibration: return "Calibrate"
+            }
+        }
     }
 
     public init() {}
 
     public var body: some View {
         VStack(spacing: 0) {
-            // MARK: - Header & Controller Status
             controllerHeader
                 .padding(.horizontal, 20)
                 .padding(.vertical, 14)
@@ -47,7 +55,6 @@ public struct ControlSchemeSettingsView: View {
             Divider()
                 .overlay(XTheme.border)
             
-            // MARK: - Scheme Picker & Primary Actions
             schemeToolbar
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
@@ -56,13 +63,14 @@ public struct ControlSchemeSettingsView: View {
             Divider()
                 .overlay(XTheme.border)
             
-            // MARK: - Tab Selector
             tabSelector
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 16)
                 .padding(.vertical, 8)
                 .background(XTheme.background)
             
-            // MARK: - Active Tab Content
+            Divider()
+                .overlay(XTheme.border)
+            
             ScrollView {
                 VStack(spacing: 16) {
                     switch selectedTab {
@@ -77,10 +85,11 @@ public struct ControlSchemeSettingsView: View {
                     }
                 }
                 .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .background(XTheme.background)
         }
-        .frame(minWidth: 680, minHeight: 520)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear {
             loadSchemes()
             selectedSchemeId = appState.controllerManager.activeScheme.id
@@ -97,6 +106,25 @@ public struct ControlSchemeSettingsView: View {
     // MARK: - 1. Controller Header
     
     private var controllerHeader: some View {
+        ViewThatFits(in: .horizontal) {
+            headerRow(showsCalibrateInline: true)
+            VStack(alignment: .leading, spacing: 10) {
+                headerRow(showsCalibrateInline: false)
+                Button {
+                    isShowingCalibrationWizard = true
+                } label: {
+                    Label("Calibrate Hardware…", systemImage: "scope")
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                }
+                .buttonStyle(.bordered)
+                .tint(XTheme.primary)
+                .disabled(!appState.controllerManager.isConnected)
+            }
+        }
+    }
+
+    private func headerRow(showsCalibrateInline: Bool) -> some View {
         HStack(spacing: 14) {
             ZStack {
                 Circle()
@@ -113,8 +141,9 @@ public struct ControlSchemeSettingsView: View {
                     Text(appState.controllerManager.controllerName)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(XTheme.textPrimary)
+                        .lineLimit(1)
                     
-                    Text(appState.controllerManager.isConnected ? "Connected" : "Simulated / Disconnected")
+                    Text(appState.controllerManager.isConnected ? "Connected" : "Simulated")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(appState.controllerManager.isConnected ? XTheme.primary : XTheme.textTertiary)
                         .padding(.horizontal, 6)
@@ -122,34 +151,42 @@ public struct ControlSchemeSettingsView: View {
                         .background(
                             Capsule().fill(appState.controllerManager.isConnected ? XTheme.primary.opacity(0.15) : Color.white.opacity(0.08))
                         )
+                        .fixedSize()
                 }
                 
-                // Hardware Capabilities Pill Badges
-                HStack(spacing: 6) {
-                    if let caps = appState.controllerManager.capabilityProfile {
-                        if caps.hasHaptics { capabilityBadge("Haptics", icon: "dot.radiowaves.left.and.right") }
-                        if caps.hasMotionIMU { capabilityBadge("Motion IMU", icon: "gyroscope") }
-                        if caps.hasAnalogTriggers { capabilityBadge("Adaptive Triggers", icon: "gauge.with.needle") }
-                        if caps.hasTouchpad { capabilityBadge("Touchpad", icon: "hand.draw") }
-                    } else {
-                        Text("Standard Extended Gamepad Profile Active")
-                            .font(.system(size: 11))
-                            .foregroundStyle(XTheme.textTertiary)
+                XContainedHScroll {
+                    HStack(spacing: 6) {
+                        if let caps = appState.controllerManager.capabilityProfile {
+                            if caps.hasHaptics { capabilityBadge("Haptics", icon: "dot.radiowaves.left.and.right") }
+                            if caps.hasMotionIMU { capabilityBadge("Motion IMU", icon: "gyroscope") }
+                            if caps.hasAnalogTriggers { capabilityBadge("Adaptive Triggers", icon: "gauge.with.needle") }
+                            if caps.hasTouchpad { capabilityBadge("Touchpad", icon: "hand.draw") }
+                        } else {
+                            Text("Standard Extended Gamepad Profile Active")
+                                .font(.system(size: 11))
+                                .foregroundStyle(XTheme.textTertiary)
+                                .lineLimit(1)
+                        }
                     }
                 }
             }
+            .layoutPriority(1)
             
-            Spacer()
-            
-            Button {
-                isShowingCalibrationWizard = true
-            } label: {
-                Label("Calibrate Hardware…", systemImage: "scope")
-                    .font(.system(size: 12, weight: .medium))
+            if showsCalibrateInline {
+                Spacer(minLength: 8)
+                
+                Button {
+                    isShowingCalibrationWizard = true
+                } label: {
+                    Label("Calibrate Hardware…", systemImage: "scope")
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                }
+                .buttonStyle(.bordered)
+                .tint(XTheme.primary)
+                .disabled(!appState.controllerManager.isConnected)
+                .fixedSize()
             }
-            .buttonStyle(.bordered)
-            .tint(XTheme.primary)
-            .disabled(!appState.controllerManager.isConnected)
         }
     }
     
@@ -169,10 +206,24 @@ public struct ControlSchemeSettingsView: View {
     // MARK: - 2. Scheme Toolbar
     
     private var schemeToolbar: some View {
+        ViewThatFits(in: .horizontal) {
+            schemeToolbarRow(compact: false)
+            VStack(alignment: .leading, spacing: 8) {
+                schemeToolbarRow(compact: true)
+                Text(currentScheme.description)
+                    .font(.system(size: 11))
+                    .foregroundStyle(XTheme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func schemeToolbarRow(compact: Bool) -> some View {
         HStack(spacing: 12) {
-            Text("Control Scheme:")
+            Text("Scheme")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(XTheme.textSecondary)
+                .fixedSize()
             
             Picker("", selection: Binding(
                 get: { selectedSchemeId },
@@ -199,15 +250,19 @@ public struct ControlSchemeSettingsView: View {
                 }
             }
             .pickerStyle(.menu)
-            .frame(width: 240)
+            .labelsHidden()
+            .frame(minWidth: 140, maxWidth: compact ? .infinity : 240, alignment: .leading)
+            .layoutPriority(1)
             
-            Text(currentScheme.description)
-                .font(.system(size: 11))
-                .foregroundStyle(XTheme.textTertiary)
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            if !compact {
+                Text(currentScheme.description)
+                    .font(.system(size: 11))
+                    .foregroundStyle(XTheme.textTertiary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             
-            Spacer()
+            Spacer(minLength: 8)
             
             // Import / Export
             Button {
@@ -249,26 +304,40 @@ public struct ControlSchemeSettingsView: View {
             Button {
                 duplicateAsCustom()
             } label: {
-                Label("Duplicate as Custom", systemImage: "plus.square.on.square")
+                Label(compact ? "Duplicate" : "Duplicate as Custom", systemImage: "plus.square.on.square")
                     .font(.system(size: 11))
+                    .lineLimit(1)
             }
             .buttonStyle(.borderless)
             .foregroundStyle(XTheme.primaryLight)
+            .fixedSize()
             
             Button {
                 resetToDefaults()
             } label: {
                 Text("Reset")
                     .font(.system(size: 11))
+                    .lineLimit(1)
             }
             .buttonStyle(.borderless)
             .foregroundStyle(XTheme.textTertiary)
+            .fixedSize()
         }
     }
 
     // MARK: - 3. Tab Selector
     
     private var tabSelector: some View {
+        ViewThatFits(in: .horizontal) {
+            tabRow(compact: false)
+            tabRow(compact: true)
+            XContainedHScroll {
+                tabRow(compact: true)
+            }
+        }
+    }
+
+    private func tabRow(compact: Bool) -> some View {
         HStack(spacing: 8) {
             ForEach(SettingsTab.allCases) { tab in
                 Button {
@@ -279,8 +348,9 @@ public struct ControlSchemeSettingsView: View {
                     HStack(spacing: 6) {
                         Image(systemName: tab.icon)
                             .font(.system(size: 11))
-                        Text(tab.rawValue)
+                        Text(compact ? tab.compactTitle : tab.rawValue)
                             .font(.system(size: 12, weight: selectedTab == tab ? .semibold : .regular))
+                            .lineLimit(1)
                     }
                     .foregroundStyle(selectedTab == tab ? XTheme.textPrimary : XTheme.textTertiary)
                     .padding(.horizontal, 12)
@@ -291,8 +361,10 @@ public struct ControlSchemeSettingsView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .fixedSize()
+                .accessibilityLabel(tab.rawValue)
+                .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
             }
-            Spacer()
             
             if !conflictList.isEmpty || !coverageIssues.isEmpty {
                 HStack(spacing: 4) {
@@ -302,10 +374,13 @@ public struct ControlSchemeSettingsView: View {
                     Text(warningSummary)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(XTheme.warning)
+                        .lineLimit(1)
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
                 .background(Capsule().fill(XTheme.warning.opacity(0.12)))
+                .fixedSize()
+                .help(conflictList.map(\.message).joined(separator: "\n"))
             }
         }
     }
@@ -341,13 +416,14 @@ public struct ControlSchemeSettingsView: View {
                     Text("Reverses thumbstick and trigger tasks at the hardware layer (Left hand drives strumming & bends, Right hand steers harmony). For a fully remappable mirror, choose the Left-Handed Performance scheme.")
                         .font(.system(size: 11))
                         .foregroundStyle(XTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             
             // Analog Stick Feel
             settingsCard(title: "Thumbstick Feel & Response Curve", icon: "circle.grid.cross") {
                 VStack(alignment: .leading, spacing: 10) {
-                    Picker("Stick Profile", selection: Binding(
+                    XWidthSafePicker("Stick Profile", selection: Binding(
                         get: { currentScheme.stickFeel },
                         set: { val in updateScheme { $0.stickFeel = val } }
                     )) {
@@ -355,18 +431,18 @@ public struct ControlSchemeSettingsView: View {
                             Text(preset.rawValue).tag(preset)
                         }
                     }
-                    .pickerStyle(.segmented)
                     
                     Text("• Precise: Expanded resolution near center for fine vibrato.\n• Balanced: Natural proportional response for all-round playing.\n• Responsive: Rapid output from light thumb gestures.")
                         .font(.system(size: 11))
                         .foregroundStyle(XTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             
             // Trigger Feel
             settingsCard(title: "Trigger Pressure Feel", icon: "gauge.with.needle") {
                 VStack(alignment: .leading, spacing: 10) {
-                    Picker("Trigger Profile", selection: Binding(
+                    XWidthSafePicker("Trigger Profile", selection: Binding(
                         get: { currentScheme.triggerFeel },
                         set: { val in updateScheme { $0.triggerFeel = val } }
                     )) {
@@ -374,22 +450,23 @@ public struct ControlSchemeSettingsView: View {
                             Text(preset.rawValue).tag(preset)
                         }
                     }
-                    .pickerStyle(.segmented)
                     
                     Text("Configures activation depth and pressure curve for acoustic muting and continuous dynamic swells.")
                         .font(.system(size: 11))
                         .foregroundStyle(XTheme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             
             // Haptics & Motion
             settingsCard(title: "Tactile Haptics & Motion Sensors", icon: "waveform.path") {
                 VStack(spacing: 12) {
-                    HStack {
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
                         Text("Haptic Feedback:")
                             .font(.system(size: 13))
                             .foregroundStyle(XTheme.textSecondary)
-                        Spacer()
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
                         Picker("", selection: Binding(
                             get: { currentScheme.haptics },
                             set: { val in updateScheme { $0.haptics = val } }
@@ -399,7 +476,9 @@ public struct ControlSchemeSettingsView: View {
                             }
                         }
                         .pickerStyle(.menu)
-                        .frame(width: 200)
+                        .labelsHidden()
+                        .fixedSize()
+                        .accessibilityLabel("Haptic Feedback")
                     }
 
                     Text(currentScheme.haptics.detail)
@@ -453,12 +532,13 @@ public struct ControlSchemeSettingsView: View {
         let boundInput = binding?.input ?? .unassigned
         let conflict = conflictList.first(where: { $0.actions.contains(action) })
         
-        return HStack(spacing: 12) {
+        return HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(action.displayName)
                         .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(XTheme.textPrimary)
+                        .lineLimit(1)
                     
                     if let conflict = conflict {
                         Image(systemName: "exclamationmark.triangle.fill")
@@ -471,16 +551,18 @@ public struct ControlSchemeSettingsView: View {
                 Text(action.description)
                     .font(.system(size: 10))
                     .foregroundStyle(XTheme.textTertiary)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            .layoutPriority(1)
             
-            Spacer()
+            Spacer(minLength: 8)
             
-            // Input Badge with Glyphs
             HStack(spacing: 6) {
                 Text(appState.controllerManager.physicalLabel(for: boundInput))
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(boundInput == .unassigned ? XTheme.textTertiary : XTheme.textPrimary)
+                    .lineLimit(1)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(
@@ -492,12 +574,12 @@ public struct ControlSchemeSettingsView: View {
                             )
                     )
                 
-                // Learn / Rebind Button
                 Button {
                     startLearning(for: action)
                 } label: {
                     Text("Rebind")
                         .font(.system(size: 10, weight: .medium))
+                        .lineLimit(1)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
@@ -548,6 +630,7 @@ public struct ControlSchemeSettingsView: View {
                 .menuStyle(.borderlessButton)
                 .frame(width: 22)
             }
+            .fixedSize()
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 4)
@@ -558,58 +641,75 @@ public struct ControlSchemeSettingsView: View {
     private var liveTestStudioView: some View {
         VStack(spacing: 16) {
             // Live Stick Vectors
-            HStack(spacing: 16) {
-                stickTestBox(
-                    title: "Left Thumbstick",
-                    state: appState.controllerManager.controllerState.leftStick,
-                    mappedAction: appState.controllerManager.activeScheme.actions(mappedTo: .leftStick2D).first
-                )
-                
-                stickTestBox(
-                    title: "Right Thumbstick",
-                    state: appState.controllerManager.controllerState.rightStick,
-                    mappedAction: appState.controllerManager.activeScheme.actions(mappedTo: .rightStick2D).first ?? appState.controllerManager.activeScheme.actions(mappedTo: .rightStickY).first
-                )
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 16) {
+                    stickTestBox(
+                        title: "Left Thumbstick",
+                        state: appState.controllerManager.controllerState.leftStick,
+                        mappedAction: appState.controllerManager.activeScheme.actions(mappedTo: .leftStick2D).first
+                    )
+                    
+                    stickTestBox(
+                        title: "Right Thumbstick",
+                        state: appState.controllerManager.controllerState.rightStick,
+                        mappedAction: appState.controllerManager.activeScheme.actions(mappedTo: .rightStick2D).first ?? appState.controllerManager.activeScheme.actions(mappedTo: .rightStickY).first
+                    )
+                }
+                VStack(spacing: 16) {
+                    stickTestBox(
+                        title: "Left Thumbstick",
+                        state: appState.controllerManager.controllerState.leftStick,
+                        mappedAction: appState.controllerManager.activeScheme.actions(mappedTo: .leftStick2D).first
+                    )
+                    
+                    stickTestBox(
+                        title: "Right Thumbstick",
+                        state: appState.controllerManager.controllerState.rightStick,
+                        mappedAction: appState.controllerManager.activeScheme.actions(mappedTo: .rightStick2D).first ?? appState.controllerManager.activeScheme.actions(mappedTo: .rightStickY).first
+                    )
+                }
             }
             
-            // Live Triggers
-            HStack(spacing: 16) {
-                triggerTestBox(
-                    title: "Left Trigger (L2 / LT)",
-                    state: appState.controllerManager.controllerState.leftTrigger,
-                    mappedAction: appState.controllerManager.activeScheme.actions(mappedTo: .leftTrigger).first
-                )
-                
-                triggerTestBox(
-                    title: "Right Trigger (R2 / RT)",
-                    state: appState.controllerManager.controllerState.rightTrigger,
-                    mappedAction: appState.controllerManager.activeScheme.actions(mappedTo: .rightTrigger).first
-                )
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 16) {
+                    triggerTestBox(
+                        title: "Left Trigger (L2 / LT)",
+                        state: appState.controllerManager.controllerState.leftTrigger,
+                        mappedAction: appState.controllerManager.activeScheme.actions(mappedTo: .leftTrigger).first
+                    )
+                    
+                    triggerTestBox(
+                        title: "Right Trigger (R2 / RT)",
+                        state: appState.controllerManager.controllerState.rightTrigger,
+                        mappedAction: appState.controllerManager.activeScheme.actions(mappedTo: .rightTrigger).first
+                    )
+                }
+                VStack(spacing: 16) {
+                    triggerTestBox(
+                        title: "Left Trigger (L2 / LT)",
+                        state: appState.controllerManager.controllerState.leftTrigger,
+                        mappedAction: appState.controllerManager.activeScheme.actions(mappedTo: .leftTrigger).first
+                    )
+                    
+                    triggerTestBox(
+                        title: "Right Trigger (R2 / RT)",
+                        state: appState.controllerManager.controllerState.rightTrigger,
+                        mappedAction: appState.controllerManager.activeScheme.actions(mappedTo: .rightTrigger).first
+                    )
+                }
             }
             
             // Currently Sounding Action Callout
             settingsCard(title: "Active Mapped Gesture Interpretation", icon: "waveform.badge.magnifyingglass") {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Active Technique / Action:")
-                            .font(.system(size: 11))
-                            .foregroundStyle(XTheme.textTertiary)
-                        
-                        Text(appState.activeTechniqueLabel ?? (appState.lastFrame?.activeTechnique.displayName ?? "Resting / Neutral"))
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(XTheme.primary)
+                ViewThatFits(in: .horizontal) {
+                    HStack {
+                        liveActionCallout
+                        Spacer(minLength: 8)
+                        liveBendCallout
                     }
-                    
-                    Spacer()
-                    
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Text("MPE Channel / Pitch Bend:")
-                            .font(.system(size: 11))
-                            .foregroundStyle(XTheme.textTertiary)
-                        
-                        Text(String(format: "%+.2f semitones", appState.lastFrame?.bend.bendSemitones ?? 0.0))
-                            .font(.system(size: 14, weight: .medium, design: .monospaced))
-                            .foregroundStyle(XTheme.textPrimary)
+                    VStack(alignment: .leading, spacing: 10) {
+                        liveActionCallout
+                        liveBendCallout
                     }
                 }
             }
@@ -647,6 +747,8 @@ public struct ControlSchemeSettingsView: View {
                         .font(.system(size: 10, design: .monospaced))
                 }
                 .foregroundStyle(XTheme.textTertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
                 
                 if let action = mappedAction {
                     Text(action.displayName)
@@ -704,60 +806,26 @@ public struct ControlSchemeSettingsView: View {
         return VStack(spacing: 16) {
             settingsCard(title: "Hardware Offsets & Measured Bounds", icon: "scope") {
                 VStack(spacing: 12) {
-                    HStack(spacing: 20) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Left Stick Calibration")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(XTheme.textPrimary)
-                            Text(String(format: "Rest Drift Offset: (X: %+.3f, Y: %+.3f)", cal.leftStick.restCenterX, cal.leftStick.restCenterY))
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(XTheme.textTertiary)
-                            Text(String(format: "Drift Deadzone Radius: %.3f", cal.leftStick.driftRadius))
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(XTheme.textTertiary)
-                            Text(String(format: "Max Reach Radius: %.3f", cal.leftStick.maxRadius))
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(XTheme.textTertiary)
-                        }
-                        
-                        Divider().frame(height: 60)
-                        
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("Right Stick Calibration")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(XTheme.textPrimary)
-                            Text(String(format: "Rest Drift Offset: (X: %+.3f, Y: %+.3f)", cal.rightStick.restCenterX, cal.rightStick.restCenterY))
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(XTheme.textTertiary)
-                            Text(String(format: "Drift Deadzone Radius: %.3f", cal.rightStick.driftRadius))
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(XTheme.textTertiary)
-                            Text(String(format: "Max Reach Radius: %.3f", cal.rightStick.maxRadius))
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(XTheme.textTertiary)
+                    ViewThatFits(in: .horizontal) {
+                        calibrationColumns(cal)
+                        VStack(alignment: .leading, spacing: 16) {
+                            leftCalibrationSummary(cal)
+                            rightCalibrationSummary(cal)
                         }
                     }
                     
                     Divider().overlay(XTheme.border)
                     
-                    HStack {
-                        Button {
-                            isShowingCalibrationWizard = true
-                        } label: {
-                            Label("Run Interactive Calibration Wizard…", systemImage: "wand.and.stars")
+                    ViewThatFits(in: .horizontal) {
+                        HStack {
+                            calibrationWizardButton
+                            Spacer(minLength: 8)
+                            resetCalibrationButton
                         }
-                        .buttonStyle(.borderedProminent)
-                        .tint(XTheme.primary)
-                        
-                        Spacer()
-                        
-                        Button("Reset Calibration") {
-                            let id = "\(appState.controllerManager.connectedController?.vendorName ?? "generic")_\(appState.controllerManager.connectedController?.productCategory ?? "gamepad")"
-                            ControllerSettingsStore.shared.resetCalibration(for: id)
-                            appState.controllerManager.applyHardwareCalibration(ControllerHardwareCalibration())
+                        VStack(alignment: .leading, spacing: 8) {
+                            calibrationWizardButton
+                            resetCalibrationButton
                         }
-                        .buttonStyle(.borderless)
-                        .foregroundStyle(XTheme.tense)
                     }
                 }
             }
@@ -777,9 +845,11 @@ public struct ControlSchemeSettingsView: View {
                     .font(.system(size: 17, weight: .bold))
                     .foregroundStyle(XTheme.textPrimary)
                 
-                Text("Press or move the physical controller element you want to map to:")
+            Text("Press or move the physical controller element you want to map to:")
                     .font(.system(size: 12))
                     .foregroundStyle(XTheme.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
                 
                 Text(action.displayName)
                     .font(.system(size: 14, weight: .semibold))
@@ -795,6 +865,8 @@ public struct ControlSchemeSettingsView: View {
             Text("Listening for deliberate action (ignoring resting thumbstick jitter)…")
                 .font(.system(size: 11))
                 .foregroundStyle(XTheme.textTertiary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
             
             Button("Cancel") {
                 appState.controllerManager.learningAction = nil
@@ -802,8 +874,7 @@ public struct ControlSchemeSettingsView: View {
             }
             .buttonStyle(.bordered)
         }
-        .padding(30)
-        .frame(width: 420, height: 280)
+        .xSettingsSheetSize()
         .background(XTheme.surfaceElevated)
         .onAppear {
             appState.controllerManager.learningAction = action
@@ -827,6 +898,8 @@ public struct ControlSchemeSettingsView: View {
             Text("Follow the prompt to capture rest drift and full rotation reach.")
                 .font(.system(size: 12))
                 .foregroundStyle(XTheme.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
             
             ZStack {
                 Circle()
@@ -851,25 +924,43 @@ public struct ControlSchemeSettingsView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(XTheme.textTertiary)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
             
-            HStack(spacing: 12) {
-                Button("Cancel") {
-                    appState.controllerManager.calibrationWizard.cancel()
-                    isShowingCalibrationWizard = false
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    Button("Cancel") {
+                        appState.controllerManager.calibrationWizard.cancel()
+                        isShowingCalibrationWizard = false
+                    }
+                    .buttonStyle(.bordered)
+                    
+                    Button("Finish & Save Calibration") {
+                        let result = appState.controllerManager.calibrationWizard.finish()
+                        appState.controllerManager.applyHardwareCalibration(result)
+                        isShowingCalibrationWizard = false
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(XTheme.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 }
-                .buttonStyle(.bordered)
-                
-                Button("Finish & Save Calibration") {
-                    let result = appState.controllerManager.calibrationWizard.finish()
-                    appState.controllerManager.applyHardwareCalibration(result)
-                    isShowingCalibrationWizard = false
+                VStack(spacing: 8) {
+                    Button("Finish & Save Calibration") {
+                        let result = appState.controllerManager.calibrationWizard.finish()
+                        appState.controllerManager.applyHardwareCalibration(result)
+                        isShowingCalibrationWizard = false
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(XTheme.primary)
+                    Button("Cancel") {
+                        appState.controllerManager.calibrationWizard.cancel()
+                        isShowingCalibrationWizard = false
+                    }
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(XTheme.primary)
             }
         }
-        .padding(24)
-        .frame(width: 440, height: 360)
+        .xSettingsSheetSize(minWidth: 380, idealWidth: 440)
         .background(XTheme.surfaceElevated)
         .onAppear {
             appState.controllerManager.calibrationWizard.start()
@@ -1020,6 +1111,7 @@ public struct ControlSchemeSettingsView: View {
             }
             
             content()
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1031,6 +1123,102 @@ public struct ControlSchemeSettingsView: View {
                         .strokeBorder(XTheme.border, lineWidth: 1)
                 )
         )
+    }
+
+    private var liveActionCallout: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Active Technique / Action:")
+                .font(.system(size: 11))
+                .foregroundStyle(XTheme.textTertiary)
+            Text(appState.activeTechniqueLabel ?? (appState.lastFrame?.activeTechnique.displayName ?? "Resting / Neutral"))
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(XTheme.primary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var liveBendCallout: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("MPE Channel / Pitch Bend:")
+                .font(.system(size: 11))
+                .foregroundStyle(XTheme.textTertiary)
+            Text(String(format: "%+.2f semitones", appState.lastFrame?.bend.bendSemitones ?? 0.0))
+                .font(.system(size: 14, weight: .medium, design: .monospaced))
+                .foregroundStyle(XTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+    }
+
+    private func calibrationColumns(_ cal: ControllerHardwareCalibration) -> some View {
+        HStack(spacing: 20) {
+            leftCalibrationSummary(cal)
+            Divider().frame(height: 60)
+            rightCalibrationSummary(cal)
+        }
+    }
+
+    private func leftCalibrationSummary(_ cal: ControllerHardwareCalibration) -> some View {
+        calibrationSummary(
+            title: "Left Stick Calibration",
+            restX: cal.leftStick.restCenterX,
+            restY: cal.leftStick.restCenterY,
+            drift: cal.leftStick.driftRadius,
+            reach: cal.leftStick.maxRadius
+        )
+    }
+
+    private func rightCalibrationSummary(_ cal: ControllerHardwareCalibration) -> some View {
+        calibrationSummary(
+            title: "Right Stick Calibration",
+            restX: cal.rightStick.restCenterX,
+            restY: cal.rightStick.restCenterY,
+            drift: cal.rightStick.driftRadius,
+            reach: cal.rightStick.maxRadius
+        )
+    }
+
+    private func calibrationSummary(title: String, restX: Float, restY: Float, drift: Float, reach: Float) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(XTheme.textPrimary)
+            Text(String(format: "Rest Drift Offset: (X: %+.3f, Y: %+.3f)", restX, restY))
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(XTheme.textTertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(String(format: "Drift Deadzone Radius: %.3f", drift))
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(XTheme.textTertiary)
+            Text(String(format: "Max Reach Radius: %.3f", reach))
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(XTheme.textTertiary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var calibrationWizardButton: some View {
+        Button {
+            isShowingCalibrationWizard = true
+        } label: {
+            Label("Run Interactive Calibration Wizard…", systemImage: "wand.and.stars")
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .buttonStyle(.borderedProminent)
+        .tint(XTheme.primary)
+    }
+
+    private var resetCalibrationButton: some View {
+        Button("Reset Calibration") {
+            let id = "\(appState.controllerManager.connectedController?.vendorName ?? "generic")_\(appState.controllerManager.connectedController?.productCategory ?? "gamepad")"
+            ControllerSettingsStore.shared.resetCalibration(for: id)
+            appState.controllerManager.applyHardwareCalibration(ControllerHardwareCalibration())
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(XTheme.tense)
     }
 
     private func categoryIcon(_ cat: SemanticMusicalAction.ActionCategory) -> String {

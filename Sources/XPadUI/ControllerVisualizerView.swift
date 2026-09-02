@@ -62,6 +62,7 @@ struct ControllerVisualizerView: View {
                     .overlay(
                         Capsule().stroke((isConnected ? XTheme.controllerConnected : XTheme.warning).opacity(0.26), lineWidth: 1)
                     )
+                    .xLivePulse(isActive: isConnected)
             }
 
             ControllerPerformanceHUD(

@@ -46,4 +46,17 @@ final class ControlSchemePresetCodableTests: XCTestCase {
         XCTAssertEqual(TriggerFeelPreset.allCases.map(\.rawValue), ["Soft", "Linear", "Firm"])
         XCTAssertEqual(HapticFeedbackIntensity.allCases.map(\.rawValue), ["Off", "Subtle", "Normal"])
     }
+
+    func testStringGaugeCompactNamesFitSegmentedSettingsControls() {
+        XCTAssertEqual(StringGauge.light009.compactName, "Light")
+        XCTAssertEqual(StringGauge.regular010.compactName, "Regular")
+        XCTAssertEqual(StringGauge.heavy012.compactName, "Heavy")
+        XCTAssertEqual(StringGauge.bass045.compactName, "Bass")
+
+        for gauge in StringGauge.allCases {
+            XCTAssertLessThanOrEqual(gauge.compactName.count, 8, "\(gauge.rawValue) compact label is too wide for settings segments")
+            XCTAssertFalse(gauge.compactName.contains("("))
+            XCTAssertFalse(gauge.compactName.isEmpty)
+        }
+    }
 }

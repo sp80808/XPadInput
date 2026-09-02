@@ -25,6 +25,16 @@ public enum StringGauge: String, Codable, Sendable, CaseIterable, Identifiable {
     public var id: String { rawValue }
     public var displayName: String { rawValue }
 
+    /// Width-safe labels for segmented controls inside compact settings popovers.
+    public var compactName: String {
+        switch self {
+        case .light009: return "Light"
+        case .regular010: return "Regular"
+        case .heavy012: return "Heavy"
+        case .bass045: return "Bass"
+        }
+    }
+
     public var stiffness: Float {
         switch self {
         case .light009: return 0.45

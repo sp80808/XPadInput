@@ -284,6 +284,27 @@ public struct PlayView: View {
 
 // MARK: - Draggable Splitter Components
 
+private struct ContextualHintSlot: View {
+    @Environment(AppState.self) private var appState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack {
+            if let hint = appState.contextualHint, !appState.activeNotes.isEmpty {
+                TechniqueHintBanner(text: hint)
+                    .transition(reduceMotion ? .opacity : .asymmetric(
+                        insertion: .move(edge: .leading).combined(with: .opacity),
+                        removal: .opacity
+                    ))
+            }
+            Spacer()
+        }
+        .frame(height: 36)
+        .animation(reduceMotion ? nil : XTheme.transitionShort, value: appState.contextualHint)
+        .animation(reduceMotion ? nil : XTheme.transitionShort, value: appState.activeNotes.isEmpty)
+    }
+}
+
 struct VerticalSplitterHandle: View {
     @Binding var ratio: CGFloat
     let containerWidth: CGFloat
@@ -491,11 +512,13 @@ struct EnhancedChordDisplayView: View {
     @Environment(\.viewportMetrics) private var viewport
     @State private var previousChordName: String?
     @State private var chordFlash: Bool = false
-    
+
+    private var isSounding: Bool { !appState.activeNotes.isEmpty }
+
     var body: some View {
         let currentName = appState.currentChord?.displayName ?? "-"
         let isCompact = viewport.isCompactHeight
-        
+
         HStack(spacing: isCompact ? 10 : 16) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(currentName)
@@ -504,6 +527,8 @@ struct EnhancedChordDisplayView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .frame(height: isCompact ? 30 : 38)
+                    .xMusicalContent(currentName)
+                    .xGlow(isActive: isSounding, color: XTheme.primary)
                     .overlay {
                         if chordFlash && !reduceMotion {
                             RoundedRectangle(cornerRadius: 4)
@@ -518,12 +543,16 @@ struct EnhancedChordDisplayView: View {
                                 .font(.system(size: isCompact ? 13 : 15, weight: .semibold, design: .monospaced))
                                 .monospacedDigit()
                                 .foregroundColor(XTheme.primary)
+                                .xMusicalContent(roman)
                         }
                         TensionBadge(tension: chord.tension(in: appState.currentKey, scale: appState.currentScale))
                     }
                     .frame(height: isCompact ? 18 : 22)
                 } else {
-                    Spacer().frame(height: isCompact ? 18 : 22)
+                    Text("Move the left stick to choose a chord")
+                        .font(.system(size: isCompact ? 11 : 12, weight: .medium))
+                        .foregroundColor(XTheme.textTertiary)
+                        .frame(height: isCompact ? 18 : 22, alignment: .leading)
                 }
             }
             Spacer()
@@ -564,16 +593,32 @@ struct EnhancedChordDisplayView: View {
                         .lineLimit(1)
                 }
                 .frame(height: isCompact ? 22 : 28)
+                .xMusicalContent(appState.currentScale.id)
             }
         }
         .padding(.horizontal, isCompact ? 10 : 14)
-        .xCard(isActive: appState.currentChord != nil)
+        .xCard(isActive: isSounding || appState.currentChord != nil)
+        .animation(reduceMotion ? nil : XTheme.transitionShort, value: isSounding)
+        .animation(reduceMotion ? nil : XTheme.transitionShort, value: appState.currentChord?.symbol)
         .onChange(of: currentName) { _, newName in
             previousChordName = newName
             guard !reduceMotion else { return }
             chordFlash = true
             withAnimation(.easeOut(duration: 0.35)) { chordFlash = false }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityChordLabel)
+    }
+
+    private var accessibilityChordLabel: String {
+        if let chord = appState.currentChord {
+            let roman = chord.romanNumeral(in: appState.currentKey, scale: appState.currentScale) ?? ""
+            let character = HarmonicTensionCharacter(
+                tension: chord.tension(in: appState.currentKey, scale: appState.currentScale)
+            )
+            return "Current chord \(chord.displayName), \(roman), \(character.label)"
+        }
+        return "No chord selected. Move the left stick to choose a chord."
     }
 }
 
@@ -618,7 +663,10 @@ private struct HarmonicTabbedWorkspace: View {
                     })
                 }
             }
+            .id(tab)
+            .transition(.opacity)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(XTheme.transitionShort, value: tab)
         }
         .padding(8)
         .background(XTheme.surface.opacity(0.4))
@@ -653,7 +701,10 @@ private struct DSPTabbedWorkspace: View {
                 case .spatial: SpatialAudioVisualizerView()
                 }
             }
+            .id(tab)
+            .transition(.opacity)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(XTheme.transitionShort, value: tab)
         }
         .padding(8)
         .background(XTheme.surface.opacity(0.4))
@@ -669,7 +720,9 @@ private struct TabButton: View {
     var namespaceID: String = ""
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            withAnimation(XTheme.transitionShort) { action() }
+        } label: {
             Text(title)
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundColor(isSelected ? XTheme.primary : XTheme.textTertiary)
@@ -690,6 +743,7 @@ private struct TabButton: View {
         .buttonStyle(.plain)
         .scaleEffect(isSelected ? 1.02 : 1.0)
         .animation(XTheme.snappy, value: isSelected)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -889,11 +943,10 @@ private struct ToggleButton: View {
                 Text(label).font(.system(size: 10, weight: .semibold))
             }
             .padding(.horizontal, 8).padding(.vertical, 4)
-            .background(isOn ? color.opacity(0.2) : XTheme.surface)
             .foregroundColor(isOn ? color : XTheme.textSecondary)
-            .clipShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(XMusicalPadButtonStyle(isSelected: isOn, tint: color, cornerRadius: 12))
+        .help("\(label) \(isOn ? "on" : "off")")
     }
 }
 
@@ -913,9 +966,6 @@ struct DiatonicChordPadsRow: View {
             }
         }
         .padding(10).background(XTheme.surface.opacity(0.5)).clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-    private func romanNumeral(for degree: Int) -> String {
-        ["I","ii","iii","IV","V","vi","vii°"][degree-1] ?? "\(degree)"
     }
 }
 
@@ -951,6 +1001,9 @@ private struct ChordPadButton: View {
         .scaleEffect(isActive && !reduceMotion ? 0.94 : 1.0)
         .animation(reduceMotion ? nil : XTheme.feedbackFast, value: isActive)
         .xRipple(trigger: rippleTrigger, color: XTheme.primary, size: 54)
+        .help("Audition \(chord.symbol)")
+        .accessibilityLabel("\(romanNumeral(for: index + 1)), \(chord.symbol)")
+        .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 }
 
@@ -965,20 +1018,24 @@ struct ChordProgressionBuilderSection: View {
                     Text("CHORD PROGRESSION").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(XTheme.textPrimary)
                 }
                 Spacer()
-                Button { withAnimation(XTheme.springAnimation) { progression = progression.mutated(complexity: 0.35) } } label: {
+                Button { withAnimation(XTheme.springSnappy) { progression = progression.mutated(complexity: 0.35) } } label: {
                     HStack(spacing: 4) { Image(systemName: "wand.and.stars").font(.system(size: 10)); Text("Mutate").font(.system(size: 10, weight: .semibold)) }
-                    .padding(.horizontal, 8).padding(.vertical, 4).background(XTheme.surfaceElevated).foregroundColor(XTheme.primary).clipShape(Capsule())
+                        .padding(.horizontal, 8).padding(.vertical, 4).foregroundColor(XTheme.primary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(XTactileButtonStyle(isActive: false))
+                .help("Mutate the progression")
                 Button { togglePlay() } label: {
                     HStack(spacing: 4) { Image(systemName: isPlaying ? "stop.fill" : "play.fill").font(.system(size: 9)); Text(isPlaying ? "Stop" : "Play").font(.system(size: 10, weight: .semibold)) }
-                    .padding(.horizontal, 8).padding(.vertical, 4).background(isPlaying ? XTheme.recording.opacity(0.3) : XTheme.primary.opacity(0.2)).foregroundColor(isPlaying ? XTheme.recording : XTheme.primary).clipShape(Capsule())
+                        .padding(.horizontal, 8).padding(.vertical, 4)
+                        .foregroundColor(isPlaying ? XTheme.recording : XTheme.primary)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(XTactileButtonStyle(isActive: isPlaying, activeColor: XTheme.recording))
+                .help(isPlaying ? "Stop progression" : "Play progression")
                 Button { onSendToSequencer() } label: {
-                    Image(systemName: "arrow.right.to.line.compact").font(.system(size: 10, weight: .bold)).foregroundColor(XTheme.textSecondary).padding(5).background(XTheme.surfaceElevated).clipShape(Circle())
+                    Image(systemName: "arrow.right.to.line.compact").font(.system(size: 10, weight: .bold)).foregroundColor(XTheme.textSecondary).padding(5)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(XTactileButtonStyle())
+                .help("Send progression to sequencer")
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -991,17 +1048,17 @@ struct ChordProgressionBuilderSection: View {
                                 Text("\(Int(block.durationBeats))b").font(.system(size: 8, weight: .medium, design: .monospaced)).foregroundColor(XTheme.textTertiary)
                             }
                             .frame(width: 72, height: 60)
-                            .background(isSelected ? XTheme.primary.opacity(0.22) : XTheme.surface)
-                            .xShimmer(isActive: isSelected)
-                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(isSelected ? XTheme.primary : XTheme.border, lineWidth: 1.5))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
-                        .buttonStyle(.plain)
-                        .animation(XTheme.snappy, value: isSelected)
+                        .buttonStyle(XMusicalPadButtonStyle(isSelected: isSelected, cornerRadius: 8))
+                        .help("Audition \(block.chord.symbol)")
+                        .accessibilityLabel("\(block.romanNumeral), \(block.chord.symbol)")
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
                     }
                     Button {
-                        progression.blocks.append(ChordBlock(chord: currentChord, durationBeats: 4.0))
-                        selectedBlockIndex = progression.blocks.count - 1
+                        withAnimation(XTheme.springSnappy) {
+                            progression.blocks.append(ChordBlock(chord: currentChord, durationBeats: 4.0))
+                            selectedBlockIndex = progression.blocks.count - 1
+                        }
                         onAuditionChord(currentChord)
                     } label: {
                         VStack(spacing: 4) { Image(systemName: "plus").font(.system(size: 14, weight: .bold)).foregroundColor(XTheme.primary); Text("Add").font(.system(size: 9, weight: .bold)).foregroundColor(XTheme.textSecondary) }
@@ -1036,29 +1093,47 @@ struct HarmonicSuggestionsStrip: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(suggestions.prefix(6)) { item in
-                        HStack(spacing: 6) {
-                            Button { onAudition(item.chord) } label: {
-                                VStack(alignment: .leading, spacing: 1) {
-                                    HStack(spacing: 4) {
-                                        Text(item.chord.symbol).font(.system(size: 12, weight: .bold)).foregroundColor(XTheme.textPrimary).lineLimit(1).fixedSize(horizontal: true, vertical: false)
-                                        Text(item.category.rawValue).font(.system(size: 7, weight: .semibold)).padding(.horizontal, 4).padding(.vertical, 1).background(XTheme.primary.opacity(0.2)).foregroundColor(XTheme.primary).clipShape(Capsule()).fixedSize(horizontal: true, vertical: false)
-                                    }
-                                    Text(item.reason).font(.system(size: 8)).foregroundColor(XTheme.textTertiary).lineLimit(1).fixedSize(horizontal: true, vertical: false)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            Button { onAdd(item.chord) } label: { Image(systemName: "plus.circle.fill").font(.system(size: 13)).foregroundColor(XTheme.primary) }
-                            .buttonStyle(.plain)
-                        }
-                        .padding(.horizontal, 8).padding(.vertical, 6).background(XTheme.surface)
-                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(XTheme.border, lineWidth: 1))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        SuggestionChip(item: item, onAudition: onAudition, onAdd: onAdd)
                     }
                 }
                 .padding(.vertical, 1)
             }
         }
         .padding(10).background(XTheme.surface.opacity(0.4)).clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct SuggestionChip: View {
+    let item: ChordSuggestion
+    let onAudition: (Chord) -> Void
+    let onAdd: (Chord) -> Void
+    @State private var isHovering = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button { onAudition(item.chord) } label: {
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 4) {
+                        Text(item.chord.symbol).font(.system(size: 12, weight: .bold)).foregroundColor(XTheme.textPrimary).lineLimit(1).fixedSize(horizontal: true, vertical: false)
+                        Text(item.category.rawValue).font(.system(size: 7, weight: .semibold)).padding(.horizontal, 4).padding(.vertical, 1).background(XTheme.primary.opacity(0.2)).foregroundColor(XTheme.primary).clipShape(Capsule()).fixedSize(horizontal: true, vertical: false)
+                    }
+                    Text(item.reason).font(.system(size: 8)).foregroundColor(XTheme.textTertiary).lineLimit(1).fixedSize(horizontal: true, vertical: false)
+                }
+            }
+            .buttonStyle(.plain)
+            .help(item.reason)
+            Button { onAdd(item.chord) } label: { Image(systemName: "plus.circle.fill").font(.system(size: 13)).foregroundColor(XTheme.primary) }
+            .buttonStyle(.plain)
+            .help("Add \(item.chord.symbol) to the progression")
+        }
+        .padding(.horizontal, 8).padding(.vertical, 6)
+        .background(isHovering ? XTheme.surfaceHover : XTheme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(isHovering ? XTheme.primary.opacity(0.45) : XTheme.border, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .offset(y: isHovering && !reduceMotion ? -1 : 0)
+        .onHover { isHovering = $0 }
+        .animation(reduceMotion ? nil : XTheme.hoverAnimation, value: isHovering)
     }
 }
 
@@ -1086,16 +1161,22 @@ struct MasterDSPStrip: View {
 
 struct ActiveNotesView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         HStack(spacing: 6) {
-            ForEach(appState.activeNotes, id: \.midiNote) { note in ExpressiveNoteGlyph(note: note) }
+            ForEach(appState.activeNotes, id: \.midiNote) { note in
+                ExpressiveNoteGlyph(note: note)
+                    .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
+            }
             if appState.activeNotes.isEmpty { Text("No notes playing").font(.caption).foregroundColor(XTheme.textTertiary) }
             Spacer()
             if let theory = appState.lastFrame?.theoryExplanation {
                 Text(theory).font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundColor(XTheme.accent).lineLimit(1).fixedSize(horizontal: true, vertical: false)
+                    .xMusicalContent(theory)
             }
         }
         .padding(.horizontal, 4).frame(maxWidth: .infinity, minHeight: 44, maxHeight: 44, alignment: .leading)
+        .animation(reduceMotion ? nil : XTheme.springSnappy, value: appState.activeNotes.map(\.midiNote))
     }
 }
 
@@ -1122,7 +1203,17 @@ struct ExpressiveNoteGlyph: View {
 struct TechniqueHintBanner: View {
     let text: String
     var body: some View {
-        Text(text).font(.system(size: 11, weight: .medium)).foregroundColor(XTheme.textSecondary).padding(.horizontal, 10).padding(.vertical, 6).background(Capsule().fill(XTheme.surfaceElevated))
+        HStack(spacing: 6) {
+            Image(systemName: "hand.draw.fill")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(XTheme.accent)
+            Text(text)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(XTheme.textSecondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Capsule().fill(XTheme.surfaceElevated).overlay(Capsule().stroke(XTheme.accent.opacity(0.22), lineWidth: 1)))
     }
 }
 
@@ -1137,15 +1228,29 @@ struct StrumIndicatorView: View {
 
 struct TensionBadge: View {
     let tension: Double
-    var label: String {
-        if tension < 0.15 { return "Stable" }
-        if tension < 0.3 { return "Natural" }
-        if tension < 0.5 { return "Colourful" }
-        if tension < 0.7 { return "Adventurous" }
-        return "Outside"
-    }
+
+    private var character: HarmonicTensionCharacter { HarmonicTensionCharacter(tension: tension) }
+    private var color: Color { XTheme.tensionColor(tension) }
+
     var body: some View {
-        Text(label).font(.system(size: 10, weight: .semibold)).foregroundColor(XTheme.tensionColor(tension)).padding(.horizontal, 8).padding(.vertical, 3).background(Capsule().fill(XTheme.tensionColor(tension).opacity(0.15)))
+        HStack(spacing: 4) {
+            Image(systemName: character.symbolName)
+                .font(.system(size: 9, weight: .bold))
+            Text(character.label)
+                .font(.system(size: 10, weight: .semibold))
+        }
+        .foregroundColor(color)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(
+            Capsule()
+                .fill(color.opacity(0.15))
+                .overlay(
+                    Capsule()
+                        .stroke(color.opacity(0.35 + Double(character.ringWeight) * 0.12), lineWidth: CGFloat(character.ringWeight))
+                )
+        )
+        .accessibilityLabel("Harmonic character \(character.label)")
     }
 }
 
