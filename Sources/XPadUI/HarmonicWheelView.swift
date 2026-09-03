@@ -230,8 +230,8 @@ struct HarmonicWheelView: View {
             if !reduceMotion {
                 ForEach([0.75, 0.50, 0.28], id: \.self) { fraction in
                     let trailRadius = indicatorRadius * fraction
-                    let tx = center.x + cos(CGFloat(angle)) * trailRadius
-                    let ty = center.y - sin(CGFloat(angle)) * trailRadius
+                    let tx = center.x + CGFloat(cos(angle as Double)) * trailRadius
+                    let ty = center.y - CGFloat(sin(angle as Double)) * trailRadius
                     Circle()
                         .fill(XTheme.accent.opacity(0.18 * fraction))
                         .frame(width: dotSize * 0.7, height: dotSize * 0.7)
