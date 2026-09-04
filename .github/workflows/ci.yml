@@ -42,7 +42,7 @@ jobs:
         run: swift build
 
       - name: Test (XCTest with Code Coverage)
-        run: swift test --enable-code-coverage || true
+        run: swift test --enable-code-coverage
 
       - name: Universal Exhaustive Test Runner (141+ tests)
         run: swift run XPadTests
