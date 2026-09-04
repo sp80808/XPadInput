@@ -42,21 +42,21 @@ jobs:
         run: swift build
 
       - name: Test (XCTest with Code Coverage)
-        run: swift test --enable-code-coverage || true
+        run: swift test --enable-code-coverage
 
       - name: Universal Exhaustive Test Runner (141+ tests)
         run: swift run XPadTests
 
       - name: Package macOS alpha
-        run: bash scripts/package-macos.sh 0.0.02
+        run: bash scripts/package-macos.sh
 
       - name: Upload distributable alpha artifacts
         uses: actions/upload-artifact@v4
         with:
           name: XPI-macOS-${{ github.sha }}
           path: |
-            dist/XPadInput-0.0.02.dmg
-            dist/XPadInput-0.0.02.zip
+            dist/XPadInput-*.dmg
+            dist/XPadInput-*.zip
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 14
