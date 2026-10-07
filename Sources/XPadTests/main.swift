@@ -2751,6 +2751,38 @@ final class TestRunner {
         }
 
         // ==================================================
+        // SUITE: Scala (.scl) Microtuning Importer
+        // ==================================================
+        suite("Scala (.scl) Microtuning Importer") {
+            let justMajor = "! just.scl\nPtolemaic diatonic\n 7\n 9/8\n 5/4\n 4/3\n 3/2\n 5/3\n 15/8\n 2/1\n"
+
+            test("Parses ratios into cents and maps keys onto scale steps") {
+                let tuning = try ScalaTuning.parse(justMajor)
+                assertEqual(tuning.name, "Ptolemaic diatonic")
+                assertEqual(tuning.notesPerPeriod, 7)
+                assertTrue(tuning.isOctaveRepeating)
+                assertEqual(tuning.centsOffset(forMIDINote: 60), 0.0)
+                assertEqual(round(tuning.centsOffset(forMIDINote: 62) * 1000) / 1000, 186.314)
+                assertEqual(round(tuning.centsOffset(forMIDINote: 59) * 1000) / 1000, -11.731)
+            }
+
+            test("Rejects truncated and malformed files") {
+                do {
+                    _ = try ScalaTuning.parse("desc\n3\n9/8\n2/1")
+                    assertTrue(false, "Expected pitch count mismatch")
+                } catch {
+                    assertEqual(error as? ScalaTuningError, .pitchCountMismatch(expected: 3, found: 2))
+                }
+                do {
+                    _ = try ScalaTuning.parse("desc\n1\n3/0")
+                    assertTrue(false, "Expected invalid pitch")
+                } catch {
+                    assertEqual(error as? ScalaTuningError, .invalidPitch("3/0"))
+                }
+            }
+        }
+
+        // ==================================================
         // SUITE: Native MIDI 2 Per-Note Expression & Note Attributes Evaluation
         // ==================================================
         suite("Native MIDI 2 Per-Note Expression & Note Attributes Evaluation") {
