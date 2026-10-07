@@ -71,7 +71,7 @@ This document outlines the multi-phase vision, milestones, and technical traject
 ## Phase 2: DAW Plugin & Inter-App Audio Routing (Q3 2026)
 - [x] **AUv3 / VST3 Plugin Targets**: Package XPI as an Audio Unit v3 MIDI FX and Instrument plugin for direct hosting inside Logic Pro, Ableton Live, Bitwig Studio, Reaper, and Cubase.
 - [x] **CoreAudio Virtual Audio Driver**: Provide a direct virtual loopback audio stream for zero-configuration system audio capture.
-- [ ] **Custom Scale & Microtuning Importer**: Support Scala (`.scl`) and MIDI Tuning Standard (MTS / MTS-ESP) for microtonal, just intonation, and non-Western harmonic wheels.
+- [ ] **Custom Scale & Microtuning Importer**: Support Scala (`.scl`) and MIDI Tuning Standard (MTS / MTS-ESP) for microtonal, just intonation, and non-Western harmonic wheels. *(Scala `.scl` parser and note-offset mapping done in `ScalaTuning.swift`; UI/audio wiring, `.kbm` keyboard maps and MTS pending.)*
 - [ ] **Preset Cloud Synchronization & Community Exchange**: Sharing progression templates, custom chord wheels, and controller mapping profiles.
 
 ---

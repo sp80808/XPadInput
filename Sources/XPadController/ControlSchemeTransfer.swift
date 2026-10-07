@@ -16,7 +16,7 @@ public struct ControlSchemeArchive: Codable, Sendable, Equatable {
     public init(
         schemaVersion: Int = currentSchemaVersion,
         exportedAt: Date = Date(),
-        appVersion: String = "0.0.05",
+        appVersion: String = XPadVersion.current,
         scheme: ControlScheme,
         metadata: [String: String] = [:]
     ) {
@@ -92,7 +92,7 @@ public enum ControlSchemeTransfer {
     /// Exports a ControlScheme wrapped in a versioned archive as UTF-8 JSON Data.
     public static func exportArchive(
         _ scheme: ControlScheme,
-        appVersion: String = "0.0.04",
+        appVersion: String = XPadVersion.current,
         metadata: [String: String] = [:]
     ) throws -> Data {
         let archive = ControlSchemeArchive(
@@ -108,7 +108,7 @@ public enum ControlSchemeTransfer {
     /// Exports a ControlScheme wrapped in a versioned archive as a UTF-8 JSON string.
     public static func exportJSON(
         _ scheme: ControlScheme,
-        appVersion: String = "0.0.04",
+        appVersion: String = XPadVersion.current,
         metadata: [String: String] = [:]
     ) throws -> String {
         let data = try exportArchive(scheme, appVersion: appVersion, metadata: metadata)
