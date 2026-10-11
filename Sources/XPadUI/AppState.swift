@@ -116,9 +116,13 @@ public final class AppState: @unchecked Sendable {
     // MARK: - Workspace Layout & Section Visibility
 
     /// Horizontal split ratio between Left (Harmonic) and Right (Controller/DSP) columns.
+    /// Design-spec §11.1 targets ~55–60% musical space.
     public var playSplitRatio: CGFloat = {
         let stored = UserDefaults.standard.double(forKey: "xpi_play_split_ratio")
-        return stored > 0.15 && stored < 0.85 ? CGFloat(stored) : 0.38
+        guard stored > 0.15 && stored < 0.85 else { return 0.58 }
+        // Migrate inverted pre-coherence default (~38% musical).
+        if abs(stored - 0.38) < 0.021 { return 0.58 }
+        return CGFloat(stored)
     }() {
         didSet {
             UserDefaults.standard.set(Double(playSplitRatio), forKey: "xpi_play_split_ratio")
@@ -164,13 +168,13 @@ public final class AppState: @unchecked Sendable {
     }
 
     public var showPerformanceMonitor: Bool = {
-        UserDefaults.standard.object(forKey: "xpi_show_perf_monitor") != nil ? UserDefaults.standard.bool(forKey: "xpi_show_perf_monitor") : true
+        UserDefaults.standard.object(forKey: "xpi_show_perf_monitor") != nil ? UserDefaults.standard.bool(forKey: "xpi_show_perf_monitor") : false
     }() {
         didSet { UserDefaults.standard.set(showPerformanceMonitor, forKey: "xpi_show_perf_monitor") }
     }
 
     public var showDSPWorkspace: Bool = {
-        UserDefaults.standard.object(forKey: "xpi_show_dsp_workspace") != nil ? UserDefaults.standard.bool(forKey: "xpi_show_dsp_workspace") : true
+        UserDefaults.standard.object(forKey: "xpi_show_dsp_workspace") != nil ? UserDefaults.standard.bool(forKey: "xpi_show_dsp_workspace") : false
     }() {
         didSet { UserDefaults.standard.set(showDSPWorkspace, forKey: "xpi_show_dsp_workspace") }
     }
@@ -188,16 +192,34 @@ public final class AppState: @unchecked Sendable {
     }
 
     public func resetPlayLayout() {
-        playSplitRatio = 0.38
-        leftVerticalSplitRatio = 0.58
-        rightVerticalSplitRatio = 0.58
+        playSplitRatio = 0.58
+        leftVerticalSplitRatio = 0.68
+        rightVerticalSplitRatio = 0.78
         showHarmonicPanel = true
         showControllerVisualizer = true
         showPerformanceQuickControls = true
-        showPerformanceMonitor = true
-        showDSPWorkspace = true
+        showPerformanceMonitor = false
+        showDSPWorkspace = false
         showStrumMidiBar = true
         showHarmonicTabSection = true
+        UserDefaults.standard.set(3, forKey: "xpi_play_layout_defaults_version")
+    }
+
+    /// Aggressive layout migration: musical hero + no stacked telemetry by default.
+    /// v3 re-applies even if v2 already ran, because stored toggles often left monitor/DSP on.
+    public func migratePlayLayoutDefaultsIfNeeded() {
+        let key = "xpi_play_layout_defaults_version"
+        let version = UserDefaults.standard.integer(forKey: key)
+        guard version < 3 else { return }
+        if playSplitRatio < 0.52 {
+            playSplitRatio = 0.58
+        }
+        if leftVerticalSplitRatio < 0.55 {
+            leftVerticalSplitRatio = 0.68
+        }
+        showPerformanceMonitor = false
+        showDSPWorkspace = false
+        UserDefaults.standard.set(3, forKey: key)
     }
 
     // MARK: Learn Hub — guided interactive tutorials
@@ -249,15 +271,20 @@ public final class AppState: @unchecked Sendable {
         selectedWorkspace == .practice
     }
 
+    public func selectWorkspace(_ workspace: Workspace) {
+        if selectedWorkspace == .practice && workspace != .practice,
+           practiceEngine.isPracticeActive {
+            practiceEngine.stopPractice()
+        }
+        selectedWorkspace = workspace
+    }
+
     public func requestPractice() {
-        selectedWorkspace = .practice
+        selectWorkspace(.practice)
     }
 
     public func dismissPractice() {
-        if practiceEngine.isPracticeActive {
-            practiceEngine.stopPractice()
-        }
-        selectedWorkspace = .play
+        selectWorkspace(.play)
     }
 
     public func togglePractice() {
@@ -365,6 +392,7 @@ public final class AppState: @unchecked Sendable {
         ProcessInfo.processInfo.disableSuddenTermination()
         _ = backgroundActivity // Force evaluation of the lazy activity token
 
+        migratePlayLayoutDefaultsIfNeeded()
         updateDiatonicChords()
         audioEngine.start()
         XPadPluginRegistrar.registerPluginComponents()

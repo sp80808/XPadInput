@@ -8,19 +8,17 @@ public struct ControlSchemeSettingsView: View {
     
     @State private var selectedTab: SettingsTab = .ergonomics
     @State private var customSchemes: [ControlScheme] = []
-    @State private var selectedSchemeId: String = ""
     @State private var isShowingCalibrationWizard = false
     @State private var learningTargetAction: SemanticMusicalAction? = nil
     @State private var conflictList: [MappingConflict] = []
     @State private var coverageIssues: [SchemeCoverageIssue] = []
-    @State private var customSchemeName: String = ""
-    @State private var isCreatingCustom = false
+    @State private var showsDeleteConfirmation = false
     
     public enum SettingsTab: String, CaseIterable, Identifiable {
-        case ergonomics = "Feel & Ergonomics"
-        case remapping = "Action Remapping"
-        case liveTest = "Live Test Studio"
-        case calibration = "Hardware Calibration"
+        case ergonomics = "Feel"
+        case remapping = "Remap"
+        case liveTest = "Live test"
+        case calibration = "Calibration"
 
         public var id: String { rawValue }
         
@@ -32,25 +30,30 @@ public struct ControlSchemeSettingsView: View {
             case .calibration: return "scope"
             }
         }
-
-        public var compactTitle: String {
-            switch self {
-            case .ergonomics: return "Feel"
-            case .remapping: return "Remap"
-            case .liveTest: return "Test"
-            case .calibration: return "Calibrate"
-            }
-        }
     }
 
     public init() {}
 
     public var body: some View {
         VStack(spacing: 0) {
-            controllerHeader
-                .padding(.horizontal, 20)
-                .padding(.vertical, 14)
-                .background(XTheme.surface)
+            VStack(alignment: .leading, spacing: XTheme.space2) {
+                controllerHeader
+                if !appState.controllerManager.isConnected {
+                    HStack(spacing: XTheme.space3) {
+                        Text("Connect with USB or pair in macOS Bluetooth settings.")
+                            .font(XTheme.fontCaption)
+                            .foregroundStyle(XTheme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: XTheme.space2)
+                        Button("Refresh") { appState.controllerManager.scanForControllers() }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
+            .background(XTheme.surface)
             
             Divider()
                 .overlay(XTheme.border)
@@ -92,8 +95,19 @@ public struct ControlSchemeSettingsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onAppear {
             loadSchemes()
-            selectedSchemeId = appState.controllerManager.activeScheme.id
             validateConflicts()
+        }
+        .onChange(of: appState.controllerManager.activeScheme) { _, _ in
+            loadSchemes()
+            validateConflicts()
+        }
+        .onChange(of: appState.controllerManager.controllerKind) { _, _ in
+            validateConflicts()
+        }
+        .confirmationDialog("Delete \(currentScheme.name)?", isPresented: $showsDeleteConfirmation) {
+            Button("Delete Custom Scheme", role: .destructive, action: resetToDefaults)
+        } message: {
+            Text("The saved mapping will be removed. XPI Performance will become active.")
         }
         .sheet(item: $learningTargetAction) { action in
             inputLearnSheet(for: action)
@@ -143,7 +157,7 @@ public struct ControlSchemeSettingsView: View {
                         .foregroundStyle(XTheme.textPrimary)
                         .lineLimit(1)
                     
-                    Text(appState.controllerManager.isConnected ? "Connected" : "Simulated")
+                    Text(appState.controllerManager.isConnected ? "Connected" : "Preview")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(appState.controllerManager.isConnected ? XTheme.primary : XTheme.textTertiary)
                         .padding(.horizontal, 6)
@@ -206,181 +220,71 @@ public struct ControlSchemeSettingsView: View {
     // MARK: - 2. Scheme Toolbar
     
     private var schemeToolbar: some View {
-        ViewThatFits(in: .horizontal) {
-            schemeToolbarRow(compact: false)
-            VStack(alignment: .leading, spacing: 8) {
-                schemeToolbarRow(compact: true)
-                Text(currentScheme.description)
-                    .font(.system(size: 11))
-                    .foregroundStyle(XTheme.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
+        VStack(alignment: .leading, spacing: XTheme.space2) {
+            HStack(spacing: XTheme.space3) {
+                ControlSchemePicker()
+                    .frame(maxWidth: 320)
 
-    private func schemeToolbarRow(compact: Bool) -> some View {
-        HStack(spacing: 12) {
-            Text("Scheme")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(XTheme.textSecondary)
-                .fixedSize()
-            
-            Picker("", selection: Binding(
-                get: { selectedSchemeId },
-                set: { newId in
-                    selectedSchemeId = newId
-                    if let scheme = allSchemes.first(where: { $0.id == newId }) {
-                        appState.controllerManager.selectControlScheme(scheme)
-                        validateConflicts()
-                    }
+                Spacer(minLength: XTheme.space2)
+
+                Button {
+                    duplicateAsCustom()
+                    selectedTab = .remapping
+                } label: {
+                    Label("Customize", systemImage: "plus.square.on.square")
                 }
-            )) {
-                Section("Built-In Schemes") {
-                    ForEach(ControlSchemePreset.allBuiltIn) { scheme in
-                        Text(scheme.name).tag(scheme.id)
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .help("Create an editable copy of the active scheme")
+
+                Menu {
+                    if let suggested = suggestedSchemeForCurrentController() {
+                        Button("Use \(suggested.name)") { applySuggestedScheme(suggested) }
+                        Divider()
                     }
-                }
-                
-                if !customSchemes.isEmpty {
-                    Section("Custom User Schemes") {
-                        ForEach(customSchemes) { scheme in
-                            Text(scheme.name).tag(scheme.id)
+                    Button("Import Scheme…", action: importScheme)
+                    Button("Export Scheme…", action: exportCurrentScheme)
+                    if !currentScheme.isBuiltIn {
+                        Divider()
+                        Button("Delete Custom Scheme…", role: .destructive) {
+                            showsDeleteConfirmation = true
                         }
                     }
-                }
-            }
-            .pickerStyle(.menu)
-            .labelsHidden()
-            .frame(minWidth: 140, maxWidth: compact ? .infinity : 240, alignment: .leading)
-            .layoutPriority(1)
-            
-            if !compact {
-                Text(currentScheme.description)
-                    .font(.system(size: 11))
-                    .foregroundStyle(XTheme.textTertiary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            
-            Spacer(minLength: 8)
-            
-            // Import / Export
-            Button {
-                exportCurrentScheme()
-            } label: {
-                Label("Export…", systemImage: "square.and.arrow.up")
-                    .font(.system(size: 11))
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(currentScheme.isBuiltIn)
-            
-            Button {
-                importScheme()
-            } label: {
-                Label("Import…", systemImage: "square.and.arrow.down")
-                    .font(.system(size: 11))
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            
-            // Suggested scheme hint
-            if let suggested = suggestedSchemeForCurrentController() {
-                Menu {
-                    Button {
-                        applySuggestedScheme(suggested)
-                    } label: {
-                        Label("Apply \"\(suggested.name)\"", systemImage: "wand.and.stars")
-                    }
                 } label: {
-                    Label("Suggested: \(suggested.name)", systemImage: "lightbulb.fill")
-                        .font(.system(size: 11, weight: .medium))
+                    Label("Scheme", systemImage: "ellipsis.circle")
                 }
                 .menuStyle(.borderlessButton)
-                .foregroundStyle(XTheme.accent)
+                .fixedSize()
+                .help("Import, export and manage control schemes")
             }
-            
-            // Actions
-            Button {
-                duplicateAsCustom()
-            } label: {
-                Label(compact ? "Duplicate" : "Duplicate as Custom", systemImage: "plus.square.on.square")
-                    .font(.system(size: 11))
-                    .lineLimit(1)
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(XTheme.primaryLight)
-            .fixedSize()
-            
-            Button {
-                resetToDefaults()
-            } label: {
-                Text("Reset")
-                    .font(.system(size: 11))
-                    .lineLimit(1)
-            }
-            .buttonStyle(.borderless)
-            .foregroundStyle(XTheme.textTertiary)
-            .fixedSize()
+
+            Text(currentScheme.description)
+                .font(XTheme.fontCaption)
+                .foregroundStyle(XTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     // MARK: - 3. Tab Selector
-    
-    private var tabSelector: some View {
-        ViewThatFits(in: .horizontal) {
-            tabRow(compact: false)
-            tabRow(compact: true)
-            XContainedHScroll {
-                tabRow(compact: true)
-            }
-        }
-    }
 
-    private func tabRow(compact: Bool) -> some View {
-        HStack(spacing: 8) {
-            ForEach(SettingsTab.allCases) { tab in
+    private var tabSelector: some View {
+        HStack(spacing: XTheme.space3) {
+            XWidthSafePicker("Controller settings", selection: $selectedTab) {
+                ForEach(SettingsTab.allCases) { tab in
+                    Label(tab.rawValue, systemImage: tab.icon).tag(tab)
+                }
+            }
+
+            if !conflictList.isEmpty || !coverageIssues.isEmpty {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        selectedTab = tab
-                    }
+                    selectedTab = .remapping
                 } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: tab.icon)
-                            .font(.system(size: 11))
-                        Text(compact ? tab.compactTitle : tab.rawValue)
-                            .font(.system(size: 12, weight: selectedTab == tab ? .semibold : .regular))
-                            .lineLimit(1)
-                    }
-                    .foregroundStyle(selectedTab == tab ? XTheme.textPrimary : XTheme.textTertiary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(selectedTab == tab ? XTheme.surfaceElevated : Color.clear)
-                    )
+                    Label(warningSummary, systemImage: "exclamationmark.triangle.fill")
+                        .font(XTheme.fontCaptionSmall)
+                        .foregroundStyle(XTheme.warning)
                 }
                 .buttonStyle(.plain)
-                .fixedSize()
-                .accessibilityLabel(tab.rawValue)
-                .accessibilityAddTraits(selectedTab == tab ? .isSelected : [])
-            }
-            
-            if !conflictList.isEmpty || !coverageIssues.isEmpty {
-                HStack(spacing: 4) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 10))
-                        .foregroundStyle(XTheme.warning)
-                    Text(warningSummary)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(XTheme.warning)
-                        .lineLimit(1)
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(Capsule().fill(XTheme.warning.opacity(0.12)))
-                .fixedSize()
-                .help(conflictList.map(\.message).joined(separator: "\n"))
+                .help("Review mapping conflicts and missing actions")
             }
         }
     }
@@ -388,7 +292,7 @@ public struct ControlSchemeSettingsView: View {
     // MARK: - 4. Feel & Ergonomics View
     
     private var ergonomicsView: some View {
-        VStack(spacing: 16) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), alignment: .top)], spacing: XTheme.space4) {
             // Focus & Background Input
             settingsCard(title: "Background Input & Focus Retention", icon: "macwindow.on.rectangle") {
                 VStack(alignment: .leading, spacing: 10) {
@@ -974,7 +878,7 @@ public struct ControlSchemeSettingsView: View {
     }
     
     private var currentScheme: ControlScheme {
-        allSchemes.first(where: { $0.id == selectedSchemeId }) ?? ControlSchemePreset.xpiPerformance
+        appState.controllerManager.activeScheme
     }
     
     private func loadSchemes() {
@@ -988,7 +892,6 @@ public struct ControlSchemeSettingsView: View {
             scheme = scheme.makeCustomCopy()
             modifier(&scheme)
             customSchemes.append(scheme)
-            selectedSchemeId = scheme.id
             ControllerSettingsStore.shared.saveCustomScheme(scheme)
         } else {
             modifier(&scheme)
@@ -1004,7 +907,6 @@ public struct ControlSchemeSettingsView: View {
     private func duplicateAsCustom() {
         let copy = currentScheme.makeCustomCopy()
         customSchemes.append(copy)
-        selectedSchemeId = copy.id
         ControllerSettingsStore.shared.saveCustomScheme(copy)
         appState.controllerManager.selectControlScheme(copy)
         validateConflicts()
@@ -1017,7 +919,6 @@ public struct ControlSchemeSettingsView: View {
             ControllerSettingsStore.shared.deleteCustomScheme(id: currentScheme.id)
             customSchemes.removeAll(where: { $0.id == currentScheme.id })
             let fallback = ControlSchemePreset.xpiPerformance
-            selectedSchemeId = fallback.id
             appState.controllerManager.selectControlScheme(fallback)
         }
         validateConflicts()
@@ -1053,7 +954,6 @@ public struct ControlSchemeSettingsView: View {
                 var importedScheme = result.scheme
                 importedScheme = importedScheme.makeCustomCopy()
                 customSchemes.append(importedScheme)
-                selectedSchemeId = importedScheme.id
                 ControllerSettingsStore.shared.saveCustomScheme(importedScheme)
                 appState.controllerManager.selectControlScheme(importedScheme)
                 validateConflicts()
@@ -1076,7 +976,6 @@ public struct ControlSchemeSettingsView: View {
     private func applySuggestedScheme(_ scheme: ControlScheme) {
         let copy = scheme.makeCustomCopy()
         customSchemes.append(copy)
-        selectedSchemeId = copy.id
         ControllerSettingsStore.shared.saveCustomScheme(copy)
         appState.controllerManager.selectControlScheme(copy)
         validateConflicts()
@@ -1229,6 +1128,48 @@ public struct ControlSchemeSettingsView: View {
         case .articulation: return "hand.tap"
         case .directVoices: return "music.note.list"
         case .utility: return "wrench.and.screwdriver"
+        }
+    }
+}
+
+/// Both the performance header and editor select through the same controller path.
+struct ControlSchemePicker: View {
+    @Environment(AppState.self) private var appState
+    @State private var customSchemes: [ControlScheme] = []
+
+    private var schemes: [ControlScheme] {
+        var available = ControlSchemePreset.allBuiltIn + customSchemes
+        let active = appState.controllerManager.activeScheme
+        if !available.contains(where: { $0.id == active.id }) {
+            available.append(active)
+        }
+        return available
+    }
+
+    var body: some View {
+        Picker("Control scheme", selection: Binding(
+            get: { appState.controllerManager.activeScheme.id },
+            set: { id in
+                if let scheme = schemes.first(where: { $0.id == id }) {
+                    appState.controllerManager.selectControlScheme(scheme)
+                }
+            }
+        )) {
+            Section("Built-in") {
+                ForEach(schemes.filter(\.isBuiltIn)) { scheme in
+                    Text(scheme.name).tag(scheme.id)
+                }
+            }
+            Section("Custom") {
+                ForEach(schemes.filter { !$0.isBuiltIn }) { scheme in
+                    Text(scheme.name).tag(scheme.id)
+                }
+            }
+        }
+        .pickerStyle(.menu)
+        .onAppear { customSchemes = ControllerSettingsStore.shared.loadCustomSchemes() }
+        .onChange(of: appState.controllerManager.activeScheme) { _, _ in
+            customSchemes = ControllerSettingsStore.shared.loadCustomSchemes()
         }
     }
 }

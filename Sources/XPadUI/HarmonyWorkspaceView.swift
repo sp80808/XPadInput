@@ -46,21 +46,22 @@ public struct HarmonyWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Text("Chord Progression Builder")
-                            .font(.headline)
+                            .font(XTheme.fontHeadline)
+                            .foregroundStyle(XTheme.textPrimary)
                         Spacer()
                         Button {
                             activeProgression = activeProgression.mutated(complexity: 0.4)
                         } label: {
                             Label("Mutate", systemImage: "wand.and.stars")
                         }
-                        .buttonStyle(.bordered)
+                        .xButton(.secondary, size: .small)
 
                         Button {
                             playProgression()
                         } label: {
                             Label(isPlayingProgression ? "Stop" : "Play All", systemImage: isPlayingProgression ? "stop.fill" : "play.fill")
                         }
-                        .buttonStyle(.borderedProminent)
+                        .xButton(.primary, size: .small)
                     }
 
                     // Chord Blocks Row
@@ -85,8 +86,8 @@ public struct HarmonyWorkspaceView: View {
                                 Image(systemName: "plus")
                                     .font(.title2)
                                     .frame(width: 60, height: 100)
-                                    .background(Material.ultraThinMaterial)
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    .background(XTheme.surfaceRaised)
+                                    .clipShape(RoundedRectangle(cornerRadius: XTheme.radiusM))
                             }
                             .buttonStyle(.plain)
                         }
@@ -94,14 +95,15 @@ public struct HarmonyWorkspaceView: View {
                     }
                 }
                 .padding()
-                .background(Material.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .background(XTheme.surfaceRaised)
+                .clipShape(RoundedRectangle(cornerRadius: XTheme.radiusL))
 
                 // Modulation Explorer
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Text("Modulation Explorer: \(appState.currentKey.standardName) → ")
-                            .font(.headline)
+                            .font(XTheme.fontHeadline)
+                            .foregroundStyle(XTheme.textPrimary)
                         Picker("Target Key", selection: $modulationTargetKey) {
                             ForEach(PitchClass.allCases) { pc in
                                 Text(pc.standardName).tag(pc)
@@ -116,36 +118,35 @@ public struct HarmonyWorkspaceView: View {
                                 Text(path.type.rawValue)
                                     .font(.subheadline)
                                     .fontWeight(.bold)
-                                    .foregroundStyle(Color.accentColor)
+                                    .foregroundStyle(XTheme.brand)
                                 Spacer()
                                 Button("Audition Path") {
                                     playModulationPath(path)
                                 }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
+                                .xButton(.secondary, size: .small)
                             }
                             Text(path.explanation)
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(XTheme.textSecondary)
                             HStack(spacing: 8) {
                                 ForEach(path.intermediateChords) { chord in
                                     Text(chord.symbol)
                                         .font(.caption.monospaced())
                                         .padding(.horizontal, 8)
                                         .padding(.vertical, 4)
-                                        .background(Color.white.opacity(0.1))
-                                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                                        .background(XTheme.surfaceHigh)
+                                        .clipShape(RoundedRectangle(cornerRadius: XTheme.radiusS))
                                 }
                             }
                         }
                         .padding(10)
-                        .background(Color.black.opacity(0.2))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .background(XTheme.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: XTheme.radiusM))
                     }
                 }
                 .padding()
-                .background(Material.ultraThinMaterial)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .background(XTheme.surfaceRaised)
+                .clipShape(RoundedRectangle(cornerRadius: XTheme.radiusL))
             }
             .padding()
             .frame(minWidth: 420)
@@ -154,7 +155,8 @@ public struct HarmonyWorkspaceView: View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
                     Text("Harmonic Suggestions for \(selectedChord.symbol)")
-                        .font(.headline)
+                        .font(XTheme.fontHeadline)
+                            .foregroundStyle(XTheme.textPrimary)
                     Spacer()
                     Picker("Voice Leading", selection: $voiceLeadingStrategy) {
                         ForEach(VoiceLeadingStrategy.allCases) { strat in
@@ -176,29 +178,27 @@ public struct HarmonyWorkspaceView: View {
                                             .font(.caption2)
                                             .padding(.horizontal, 6)
                                             .padding(.vertical, 2)
-                                            .background(Color.accentColor.opacity(0.2))
+                                            .background(XTheme.brand.opacity(0.2))
                                             .clipShape(Capsule())
                                     }
                                     Text(item.reason)
                                         .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(XTheme.textSecondary)
                                 }
                                 Spacer()
                                 Button("Audition") {
                                     auditionChord(item.chord)
                                 }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
+                                .xButton(.secondary, size: .small)
 
                                 Button("Add") {
                                     activeProgression.blocks.append(ChordBlock(chord: item.chord, durationBeats: 4.0))
                                 }
-                                .buttonStyle(.borderedProminent)
-                                .controlSize(.small)
+                                .xButton(.primary, size: .small)
                             }
                             .padding(12)
-                            .background(Material.ultraThinMaterial)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .background(XTheme.surfaceRaised)
+                            .clipShape(RoundedRectangle(cornerRadius: XTheme.radiusM))
                         }
                     }
                 }
@@ -206,6 +206,8 @@ public struct HarmonyWorkspaceView: View {
             .padding()
             .frame(minWidth: 380)
         }
+        .padding(XTheme.space3)
+        .background(XTheme.canvas)
     }
 
     private func auditionChord(_ chord: Chord) {
@@ -264,22 +266,18 @@ private struct ChordBlockCard: View {
         VStack(spacing: 6) {
             Text(block.romanNumeral)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(XTheme.textSecondary)
             Text(block.chord.symbol)
                 .font(.system(size: 20, weight: .bold, design: .rounded))
-                .foregroundStyle(isSelected ? Color.accentColor : Color.primary)
+                .foregroundStyle(isSelected ? XTheme.brand : XTheme.textPrimary)
             Text("\(Int(block.durationBeats)) beats")
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(XTheme.textSecondary)
         }
         .padding(14)
         .frame(width: 110, height: 100)
-        .background(isSelected ? Color.accentColor.opacity(0.15) : Color.white.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(isSelected ? Color.accentColor : Color.white.opacity(0.1), lineWidth: 2)
-        )
+        .background(isSelected ? XTheme.brand.opacity(0.15) : XTheme.control)
+        .clipShape(RoundedRectangle(cornerRadius: XTheme.radiusM))
         .scaleEffect(reduceMotion ? 1 : (isHovering ? 1.03 : 1.0))
         .shadow(color: .black.opacity(reduceMotion ? 0 : (isHovering ? 0.25 : 0)), radius: reduceMotion ? 0 : (isHovering ? 12 : 0), y: reduceMotion ? 0 : (isHovering ? 4 : 0))
         .animation(reduceMotion ? nil : .spring(response: 0.25, dampingFraction: 0.8), value: isHovering)

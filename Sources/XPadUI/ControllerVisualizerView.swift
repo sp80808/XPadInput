@@ -14,7 +14,7 @@ struct ControllerVisualizerView: View {
         let isConnected = appState.controllerManager.isConnected
         let hasLiveInput = isConnected || displayState.input.hasVisiblePerformanceInput
         
-        VStack(spacing: 18) {
+        VStack(spacing: 10) {
             // Header
             HStack {
                 Image(systemName: isConnected ? "gamecontroller.fill" : "gamecontroller")
@@ -79,8 +79,11 @@ struct ControllerVisualizerView: View {
                 showsMappingOverlay: showsMappingOverlay
             )
         }
-        .padding(18)
-        .xCard(isActive: isConnected)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: XTheme.radiusL)
+                .fill(XTheme.surface.opacity(isConnected ? 0.62 : 0.48))
+        )
         .xRipple(trigger: connectTrigger, color: XTheme.controllerConnected, size: 140)
         .onChange(of: isConnected) { _, connected in
             if connected && !wasConnected {

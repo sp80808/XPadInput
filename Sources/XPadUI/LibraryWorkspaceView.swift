@@ -16,7 +16,8 @@ public struct LibraryWorkspaceView: View {
                 // Sound Presets
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Built-In Sound Engine Presets")
-                        .font(.headline)
+                        .font(XTheme.fontHeadline)
+                        .foregroundStyle(XTheme.textPrimary)
 
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 180))], spacing: 12) {
                         ForEach(SynthPreset.allPresets, id: \.id) { preset in
@@ -48,7 +49,8 @@ public struct LibraryWorkspaceView: View {
                             .foregroundColor(XTheme.primary)
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Learn Hub — Guided Interactive Tutorials")
-                                .font(.headline)
+                                .font(XTheme.fontHeadline)
+                        .foregroundStyle(XTheme.textPrimary)
                                 .foregroundColor(XTheme.textPrimary)
                             Text("Five missions that watch your controller input in real time and coach you through strumming, MPE expression, harmony navigation, finger drumming and sustain technique.")
                                 .font(.caption)
@@ -61,7 +63,7 @@ public struct LibraryWorkspaceView: View {
                     }
                     .padding(14)
                     .background(XTheme.surface)
-                    .overlay(RoundedRectangle(cornerRadius: XTheme.radiusMedium).strokeBorder(XTheme.primary.opacity(0.35), lineWidth: 1))
+
                 }
                 .buttonStyle(.plain)
 
@@ -76,7 +78,8 @@ public struct LibraryWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Text("DAW Integration, AUv3 / VST3 Hosting & Virtual MIDI")
-                            .font(.headline)
+                            .font(XTheme.fontHeadline)
+                        .foregroundStyle(XTheme.textPrimary)
                         Spacer()
                         Text("AUv3 Instrument ('xpii') • AUv3 MIDI FX ('xpim')")
                             .font(.caption.monospaced())
@@ -117,7 +120,8 @@ public struct LibraryWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Text("Open Controller Definition Standard (OCDS)")
-                            .font(.headline)
+                            .font(XTheme.fontHeadline)
+                        .foregroundStyle(XTheme.textPrimary)
                         Spacer()
                         Text("JSON Schema v1.0.0 • 13 Bundled Profiles")
                             .font(.caption.monospaced())
@@ -129,6 +133,7 @@ public struct LibraryWorkspaceView: View {
             }
             .padding()
         }
+        .background(XTheme.canvas)
     }
 
     private func dawGuideCard(daw: String, steps: String) -> some View {
@@ -153,19 +158,19 @@ private struct DAWGuideCard: View {
     let steps: String
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering: Bool = false
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(daw)
                 .font(.subheadline.bold())
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(XTheme.brand)
             Text(steps)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(XTheme.textSecondary)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Material.ultraThinMaterial)
+        .background(XTheme.surfaceRaised)
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .scaleEffect(reduceMotion ? 1 : (isHovering ? 1.01 : 1.0))
         .shadow(color: .black.opacity(reduceMotion ? 0 : (isHovering ? 0.2 : 0)), radius: reduceMotion ? 0 : (isHovering ? 8 : 0), y: reduceMotion ? 0 : (isHovering ? 3 : 0))
@@ -180,7 +185,7 @@ private struct PresetCard: View {
     let onSelect: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering: Bool = false
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(preset.name)
@@ -188,20 +193,20 @@ private struct PresetCard: View {
                 .fontWeight(.bold)
             Text("Osc: \(preset.osc1Type.rawValue) + \(preset.osc2Type.rawValue)")
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(XTheme.textSecondary)
             if isSelected {
                 Button("Active", action: onSelect)
-                    .buttonStyle(.borderedProminent)
+                    .xButton(.primary, size: .small)
                     .controlSize(.small)
             } else {
                 Button("Select", action: onSelect)
-                    .buttonStyle(.bordered)
+                    .xButton(.secondary, size: .small)
                     .controlSize(.small)
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Material.ultraThinMaterial)
+        .background(XTheme.surfaceRaised)
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .scaleEffect(reduceMotion ? 1 : (isHovering ? 1.02 : 1.0))
         .shadow(color: .black.opacity(reduceMotion ? 0 : (isHovering ? 0.2 : 0)), radius: reduceMotion ? 0 : (isHovering ? 8 : 0), y: reduceMotion ? 0 : (isHovering ? 3 : 0))

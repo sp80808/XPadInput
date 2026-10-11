@@ -55,7 +55,7 @@ struct HarmonicWheelView: View {
         let risk = CGFloat(magnitude)
 
         Circle()
-            .stroke(XTheme.border.opacity(0.4), lineWidth: 1)
+            .stroke(XTheme.border.opacity(0.35), lineWidth: XTheme.borderHairline)
             .frame(width: maxRadius * 2, height: maxRadius * 2)
             .position(center)
 
@@ -65,7 +65,7 @@ struct HarmonicWheelView: View {
             .position(center)
 
         Circle()
-            .stroke(XTheme.border.opacity(0.6), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+            .stroke(XTheme.border.opacity(0.40), style: StrokeStyle(lineWidth: XTheme.borderHairline, dash: [3, 5]))
             .frame(width: chordRadius * 2, height: chordRadius * 2)
             .position(center)
             .rotationEffect(.degrees(orbitalRotation))
@@ -142,8 +142,8 @@ struct HarmonicWheelView: View {
                     path.addLine(to: CGPoint(x: x, y: y))
                 }
                 .stroke(
-                    isSelected ? XTheme.primary.opacity(0.65) : XTheme.border.opacity(0.55),
-                    lineWidth: isSelected ? 2 : 1
+                    isSelected ? XTheme.primary.opacity(0.18) : XTheme.border.opacity(0.45),
+                    lineWidth: XTheme.borderHairline
                 )
                 .animation(XTheme.snappy, value: isSelected)
 
@@ -176,7 +176,7 @@ struct HarmonicWheelView: View {
                 .fill(XTheme.surface)
                 .overlay(
                     Circle()
-                        .stroke(XTheme.borderActive, lineWidth: 2)
+                        .stroke(XTheme.border.opacity(0.5), lineWidth: XTheme.borderHairline)
                 )
                 .overlay(
                     Circle()

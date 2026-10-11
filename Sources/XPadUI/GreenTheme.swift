@@ -83,7 +83,8 @@ public struct XTheme {
 
     public static let strokeSubtle = borderThin
     public static let strokeActive: CGFloat = 2
-    public static let borderActive = Color(hue: 0.372, saturation: 0.55, brightness: 0.55).opacity(0.65)
+    /// Quiet focus hint — not a loud brand ring.
+    public static let borderActive = Color(hue: 0.372, saturation: 0.40, brightness: 0.50).opacity(0.18)
 
     // MARK: - Typography Aliases
 
@@ -92,9 +93,16 @@ public struct XTheme {
     
     // MARK: - Borders & Dividers
     
-    public static let border = Color.white.opacity(0.06)
-    public static let borderEmphasized = Color.white.opacity(0.12)
-    public static let borderBrand = Color(hue: 0.372, saturation: 0.55, brightness: 0.45).opacity(0.5)
+    /// Idle hairline — nearly invisible; prefer no stroke.
+    public static let border = Color.white.opacity(0.05)
+    public static let borderEmphasized = Color.white.opacity(0.08)
+    /// Soft brand tint if a hairline is unavoidable on active — never a loud ring.
+    public static let borderBrand = Color(hue: 0.372, saturation: 0.40, brightness: 0.55).opacity(0.12)
+
+    /// Very subtle bevel edges (only when fill alone is not enough).
+    public static let bevelLight = Color.white.opacity(0.06)
+    public static let bevelDark = Color.black.opacity(0.16)
+    public static let bevelWidth: CGFloat = 0.5
     
     // MARK: - Text Hierarchy
     
@@ -183,14 +191,14 @@ public struct XTheme {
     
     // MARK: - Elevation (Subtle Depth)
     
-    public static let elevation1 = (color: Color.black.opacity(0.25), radius: CGFloat(2), y: CGFloat(1))
-    public static let elevation2 = (color: Color.black.opacity(0.30), radius: CGFloat(6), y: CGFloat(3))
-    public static let elevation3 = (color: Color.black.opacity(0.35), radius: CGFloat(12), y: CGFloat(6))
-    public static let elevation4 = (color: Color.black.opacity(0.40), radius: CGFloat(20), y: CGFloat(10))
-    
-    // Brand-tinted elevation for active/selected
-    public static let elevationBrand1 = (color: brand.opacity(0.18), radius: CGFloat(4), y: CGFloat(2))
-    public static let elevationBrand2 = (color: brand.opacity(0.22), radius: CGFloat(10), y: CGFloat(4))
+    public static let elevation1 = (color: Color.black.opacity(0.18), radius: CGFloat(1), y: CGFloat(1))
+    public static let elevation2 = (color: Color.black.opacity(0.22), radius: CGFloat(3), y: CGFloat(2))
+    public static let elevation3 = (color: Color.black.opacity(0.28), radius: CGFloat(8), y: CGFloat(4))
+    public static let elevation4 = (color: Color.black.opacity(0.32), radius: CGFloat(14), y: CGFloat(8))
+
+    // Soft active elevation — fill shift, not a glow halo
+    public static let elevationBrand1 = (color: Color.black.opacity(0.20), radius: CGFloat(2), y: CGFloat(1))
+    public static let elevationBrand2 = (color: Color.black.opacity(0.24), radius: CGFloat(4), y: CGFloat(2))
     
     // MARK: - Animation Curves
 
@@ -262,27 +270,51 @@ public struct XTheme {
 
 // MARK: - View Modifiers
 
-/// Flat card with subtle border and optional brand accent on active
+/// Clean surface card — fill/elevation only. No idle rings. Active = soft fill shift.
 public struct XCardModifier: ViewModifier {
     public var elevated: Bool = false
     public var isActive: Bool = false
-    public var borderColor: Color = XTheme.border
-    
+    /// API compatibility; strokes intentionally unused.
+    public var borderColor: Color = .clear
+
     public func body(content: Content) -> some View {
+        let fill: Color = {
+            if isActive { return XTheme.surfaceHigh }
+            return elevated ? XTheme.surfaceRaised : XTheme.surface
+        }()
         content
             .background(
                 RoundedRectangle(cornerRadius: XTheme.radiusM)
-                    .fill(elevated ? XTheme.surfaceRaised : XTheme.surface)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: XTheme.radiusM)
-                            .stroke(isActive ? XTheme.borderBrand : borderColor, lineWidth: XTheme.borderThin)
-                    )
+                    .fill(fill)
                     .shadow(
                         color: isActive ? XTheme.elevationBrand1.color : XTheme.elevation1.color,
                         radius: isActive ? XTheme.elevationBrand1.radius : XTheme.elevation1.radius,
                         y: isActive ? XTheme.elevationBrand1.y : XTheme.elevation1.y
                     )
             )
+    }
+}
+
+/// Optional hairline bevel — almost invisible; prefer omitting entirely.
+public struct XBevelModifier: ViewModifier {
+    public var cornerRadius: CGFloat = XTheme.radiusM
+    public var enabled: Bool = true
+
+    public func body(content: Content) -> some View {
+        content.overlay {
+            if enabled {
+                RoundedRectangle(cornerRadius: cornerRadius)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [XTheme.bevelLight, XTheme.bevelDark],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: XTheme.bevelWidth
+                    )
+                    .allowsHitTesting(false)
+            }
+        }
     }
 }
 
@@ -337,7 +369,7 @@ public struct XButtonStyle: ButtonStyle {
             textColor = XTheme.textInverse
         case .secondary:
             bgColor = pressed ? XTheme.surfaceRaised : XTheme.surface
-            borderColor = pressed ? XTheme.brandStrong : XTheme.borderBrand
+            borderColor = .clear
             textColor = XTheme.brand
         case .ghost:
             bgColor = pressed ? XTheme.brand.opacity(0.12) : .clear
@@ -349,7 +381,7 @@ public struct XButtonStyle: ButtonStyle {
             textColor = .white
         case .subtle:
             bgColor = pressed ? XTheme.surfaceRaised : XTheme.control
-            borderColor = pressed ? XTheme.borderEmphasized : XTheme.border
+            borderColor = .clear
             textColor = XTheme.textPrimary
         }
         
@@ -396,14 +428,6 @@ public struct XToolButtonStyle: ButtonStyle {
                         pressed ? activeColor.opacity(0.12) :
                         XTheme.control
                     )
-                    .overlay(
-                        Capsule()
-                            .stroke(
-                                isActive ? .clear :
-                                pressed ? activeColor.opacity(0.4) : XTheme.border,
-                                lineWidth: XTheme.borderThin
-                            )
-                    )
             )
             .scaleEffect(pressed ? 0.94 : 1)
             .animation(reduceMotion ? nil : XTheme.easeOutFast, value: configuration.isPressed)
@@ -419,7 +443,7 @@ public struct XFocusRing: ViewModifier {
         content
             .overlay(
                 RoundedRectangle(cornerRadius: XTheme.radiusS)
-                    .stroke(isFocused ? color : .clear, lineWidth: 2)
+                    .stroke(isFocused ? color.opacity(0.30) : .clear, lineWidth: XTheme.borderHairline)
                     .padding(2)
             )
             .animation(XTheme.easeOutFast, value: isFocused)
@@ -431,6 +455,19 @@ public struct XFocusRing: ViewModifier {
 public extension View {
     func xCard(elevated: Bool = false, isActive: Bool = false) -> some View {
         modifier(XCardModifier(elevated: elevated, isActive: isActive))
+    }
+
+    /// Hairline bevel (~0.5pt, ~0.06 opacity). Prefer omitting entirely.
+    func xBevel(cornerRadius: CGFloat = XTheme.radiusM, enabled: Bool = true) -> some View {
+        modifier(XBevelModifier(cornerRadius: cornerRadius, enabled: enabled))
+    }
+
+    /// Quiet fill surface with no stroke.
+    func xSurface(elevated: Bool = false, cornerRadius: CGFloat = XTheme.radiusM) -> some View {
+        background(
+            RoundedRectangle(cornerRadius: cornerRadius)
+                .fill(elevated ? XTheme.surfaceRaised : XTheme.surface)
+        )
     }
     
     func xButton(_ variant: XButtonStyle.Variant = .primary, size: XButtonStyle.Size = .regular) -> some View {

@@ -118,39 +118,14 @@ struct TransportBar: View {
             // 2. BPM & Tap Tempo
             bpmSection(compact: density == .compact)
             
-            // 3. Middle selectors: Contextually show Key/Scale & Instrument on wider viewports
-            if density == .expanded {
-                divider()
-                HStack(spacing: 8) {
-                    KeySelectorView()
-                    ScaleSelectorView()
-                    TemperamentSelectorView()
-                }
-                
-                divider()
-                HStack(spacing: 8) {
-                    InstrumentSelectorView(minWidth: 92)
-                    ActiveTechniqueStatusView(compact: true)
-                }
-            } else if density == .regular {
-                divider()
-                HStack(spacing: 6) {
-                    InstrumentSelectorView(minWidth: 80)
-                    ActiveTechniqueStatusView(compact: true)
-                }
-            }
-            
-            divider()
-            
-            // 4. MIDI Activity & Wire Protocol
-            midiSection(compact: density == .compact)
-            
-            // 5. Controller Status
             if density != .compact {
                 divider()
-                controllerStatusSection()
+                ActiveTechniqueStatusView(compact: true)
             }
-            
+
+            divider()
+            midiSection(compact: density == .compact)
+
             Spacer(minLength: 4)
             
             // 6. Master Volume & Mini Stereo VU Meter
@@ -327,21 +302,6 @@ struct TransportBar: View {
                     .frame(width: 26)
                     .labelsHidden()
             }
-        }
-    }
-    
-    @ViewBuilder
-    private func controllerStatusSection() -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: appState.controllerManager.isConnected ? "gamecontroller.fill" : "gamecontroller")
-                .font(.system(size: 11))
-                .foregroundColor(appState.controllerManager.isConnected ? XTheme.controllerConnected : XTheme.controllerDisconnected)
-            
-            Text(appState.controllerManager.isConnected ? appState.controllerManager.controllerName : "Preview")
-                .font(.system(size: 10))
-                .foregroundColor(XTheme.textSecondary)
-                .lineLimit(1)
-                .frame(maxWidth: 95)
         }
     }
     

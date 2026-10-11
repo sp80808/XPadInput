@@ -77,18 +77,13 @@ public struct PlayView: View {
             let hasLeft = appState.showHarmonicPanel
             let hasRight = appState.showControllerVisualizer || appState.showDSPWorkspace || appState.showPerformanceMonitor || appState.showPerformanceQuickControls || appState.showStrumMidiBar
 
-            let leftWidth: CGFloat = {
-                if !hasLeft { return 0 }
-                if !hasRight { return geo.size.width }
-                let clampedRatio = max(0.22, min(0.78, appState.playSplitRatio))
-                return max(280, min(geo.size.width - 320, geo.size.width * clampedRatio))
-            }()
-
-            let rightWidth: CGFloat = {
-                if !hasRight { return 0 }
-                if !hasLeft { return geo.size.width }
-                return max(320, geo.size.width - leftWidth - 8)
-            }()
+            let columns = metrics.playColumnWidths(
+                splitRatio: appState.playSplitRatio,
+                harmonyVisible: hasLeft,
+                performanceVisible: hasRight
+            )
+            let leftWidth = columns.harmony
+            let rightWidth = columns.performance
 
             let chordDisplayHeight: CGFloat = isCompactH ? 58 : (isExpandedH ? 80 : 72)
             let quickControlsH: CGFloat = isCompactH ? 42 : 48
@@ -96,6 +91,14 @@ public struct PlayView: View {
             let strumMidiH: CGFloat = isCompactH ? 48 : (isExpandedH ? 60 : 54)
 
             HStack(spacing: 0) {
+                if !hasLeft && !hasRight {
+                    ContentUnavailableView(
+                        "Play panels hidden",
+                        systemImage: "rectangle.split.2x1",
+                        description: Text("Choose panels or reset the layout from View in the header.")
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
                 // LEFT COLUMN: Harmonic Workspace
                 if hasLeft {
                     VStack(spacing: colSpacing) {
@@ -122,9 +125,10 @@ public struct PlayView: View {
                                 .transition(.opacity)
                         }
 
-                        // Harmonic Wheel - chord selection via stick
+                        // Harmonic Wheel — primary musical surface
                         HarmonicWheelView()
-                            .frame(minHeight: 160, maxHeight: .infinity)
+                            .frame(minHeight: 180, maxHeight: .infinity)
+                            .layoutPriority(10)
                             .padding(.vertical, isCompactH ? 2 : 4)
 
                         // Splitter between wheel and tabbed workspace
@@ -132,7 +136,7 @@ public struct PlayView: View {
                             HorizontalSplitterHandle(ratio: Binding(
                                 get: { appState.leftVerticalSplitRatio },
                                 set: { appState.leftVerticalSplitRatio = $0 }
-                            ), defaultRatio: 0.58)
+                            ), defaultRatio: 0.68)
 
                             // Tabbed: Chords | Progression | Suggestions
                             HarmonicTabbedWorkspace(
@@ -146,11 +150,14 @@ public struct PlayView: View {
                                 onAuditionChord: auditionChord,
                                 onSendToSequencer: sendProgressionToSequencer
                             )
-                            .frame(minHeight: 120, maxHeight: .infinity)
+                            .frame(minHeight: 100, maxHeight: .infinity)
+                            .layoutPriority(4)
                         }
 
-                        // Active Notes
+                        // Active Notes — compact footer, not a void panel
                         ActiveNotesView()
+                            .frame(minHeight: 28, maxHeight: 40)
+                            .layoutPriority(1)
                     }
                     .padding(colPadding)
                     .frame(width: leftWidth)
@@ -168,69 +175,62 @@ public struct PlayView: View {
                             set: { appState.playSplitRatio = $0 }
                         ),
                         containerWidth: geo.size.width,
-                        defaultRatio: 0.38
+                        defaultRatio: 0.58
                     )
                 }
 
-                // RIGHT COLUMN: Controller & Performance Workspace
+                // RIGHT COLUMN: Controller primary; secondary strips scroll so they never crush/overlap.
                 if hasRight {
-                    VStack(spacing: colSpacing) {
-                        // Section Header / Quick View Toggles Bar
-                        HStack {
-                            Spacer()
-                            ViewLayoutMenuButton()
-                        }
-                        .frame(height: 20)
+                    let showSecondaryTelemetry = appState.showPerformanceMonitor || appState.showDSPWorkspace
 
-                        // Controller Visualizer - Prominent & dynamically scaled
+                    VStack(spacing: colSpacing) {
                         if appState.showControllerVisualizer {
                             ControllerVisualizerView()
-                                .frame(minHeight: isCompactH ? 230 : (isExpandedH ? 320 : 270), maxHeight: .infinity)
+                                .frame(minHeight: isCompactH ? 170 : (isExpandedH ? 240 : 200), maxHeight: .infinity)
+                                .layoutPriority(10)
                         }
 
-                        // Splitter between Controller HUD and lower DSP section
-                        if appState.showControllerVisualizer && (appState.showDSPWorkspace || appState.showPerformanceMonitor) {
-                            HorizontalSplitterHandle(ratio: Binding(
-                                get: { appState.rightVerticalSplitRatio },
-                                set: { appState.rightVerticalSplitRatio = $0 }
-                            ), defaultRatio: 0.58)
-                        }
-
-                        // Performance Quick Controls
                         if appState.showPerformanceQuickControls {
                             PerformanceQuickControlsView()
                                 .frame(height: quickControlsH)
+                                .layoutPriority(6)
                         }
 
-                        // Real-time Performance Monitor
-                        if appState.showPerformanceMonitor {
-                            PerformanceMonitorView()
-                                .frame(height: perfMonitorH)
+                        if showSecondaryTelemetry {
+                            ScrollView(.vertical, showsIndicators: false) {
+                                VStack(spacing: colSpacing) {
+                                    if appState.showPerformanceMonitor {
+                                        PerformanceMonitorView()
+                                            .frame(height: perfMonitorH)
+                                    }
+                                    if appState.showDSPWorkspace {
+                                        DSPTabbedWorkspace(
+                                            tab: $dspWorkspaceTab,
+                                            cutoff: $filterCutoff,
+                                            resonance: $filterResonance,
+                                            drive: $saturation,
+                                            reverb: $reverbMix
+                                        )
+                                        .frame(minHeight: 120)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity, alignment: .top)
+                            }
+                            .frame(maxHeight: isCompactH ? 120 : (isExpandedH ? 200 : 150))
+                            .layoutPriority(1)
                         }
 
-                        // Tabbed: Performance | Synth | FX | Spatial 3D
-                        if appState.showDSPWorkspace {
-                            DSPTabbedWorkspace(
-                                tab: $dspWorkspaceTab,
-                                cutoff: $filterCutoff,
-                                resonance: $filterResonance,
-                                drive: $saturation,
-                                reverb: $reverbMix
-                            )
-                            .frame(minHeight: 110, maxHeight: .infinity)
-                        }
-
-                        // Strum Indicator & MIDI Activity
                         if appState.showStrumMidiBar {
-                            HStack(spacing: 8) {
+                            HStack(spacing: XTheme.space2) {
                                 StrumIndicatorView()
                                 MIDIActivityView()
                             }
                             .frame(height: strumMidiH)
+                            .layoutPriority(5)
                         }
                     }
                     .padding(colPadding)
-                    .frame(width: rightWidth)
+                    .frame(width: rightWidth, alignment: .top)
                     .animation(XTheme.snappy, value: appState.showControllerVisualizer)
                     .animation(XTheme.snappy, value: appState.showDSPWorkspace)
                     .animation(XTheme.snappy, value: appState.showPerformanceMonitor)
@@ -332,7 +332,7 @@ struct VerticalSplitterHandle: View {
                 .fill(isDragging ? XTheme.primary : (isHovering ? XTheme.primary.opacity(0.8) : XTheme.surfaceElevated))
                 .overlay(
                     RoundedRectangle(cornerRadius: 2)
-                        .stroke(isDragging ? XTheme.primary : (isHovering ? XTheme.primary.opacity(0.5) : XTheme.border), lineWidth: 1)
+                        .stroke(isDragging ? XTheme.primary.opacity(0.35) : Color.clear, lineWidth: XTheme.borderHairline)
                 )
                 .frame(width: 5, height: 32)
                 .shadow(color: isHovering || isDragging ? XTheme.primary.opacity(0.35) : Color.clear, radius: 4)
@@ -398,7 +398,7 @@ struct HorizontalSplitterHandle: View {
                     .fill(isDragging ? XTheme.primary : (isHovering ? XTheme.primary.opacity(0.8) : XTheme.surfaceElevated))
                     .overlay(
                         RoundedRectangle(cornerRadius: 2)
-                            .stroke(isDragging ? XTheme.primary : (isHovering ? XTheme.primary.opacity(0.5) : XTheme.border), lineWidth: 1)
+                            .stroke(isDragging ? XTheme.primary.opacity(0.35) : Color.clear, lineWidth: XTheme.borderHairline)
                     )
                     .frame(width: 32, height: 5)
                     .shadow(color: isHovering || isDragging ? XTheme.primary.opacity(0.35) : Color.clear, radius: 4)
@@ -446,6 +446,15 @@ struct ViewLayoutMenuButton: View {
     
     var body: some View {
         Menu {
+            Button("Reset Clean Layout") {
+                withAnimation(XTheme.snappy) {
+                    appState.resetPlayLayout()
+                }
+            }
+            .help("58% musical / HUD + mode pills + strum. Hides stacked telemetry.")
+
+            Divider()
+
             Section("Panels & Sections") {
                 Toggle("Harmonic Wheel & Theory", isOn: Binding(
                     get: { appState.showHarmonicPanel },
@@ -463,7 +472,7 @@ struct ViewLayoutMenuButton: View {
                     get: { appState.showPerformanceQuickControls },
                     set: { appState.showPerformanceQuickControls = $0 }
                 ))
-                Toggle("Performance Monitor & Lanes", isOn: Binding(
+                Toggle("Performance Monitor (telemetry)", isOn: Binding(
                     get: { appState.showPerformanceMonitor },
                     set: { appState.showPerformanceMonitor = $0 }
                 ))
@@ -475,14 +484,6 @@ struct ViewLayoutMenuButton: View {
                     get: { appState.showStrumMidiBar },
                     set: { appState.showStrumMidiBar = $0 }
                 ))
-            }
-            
-            Divider()
-            
-            Button("Reset Workspace Layout") {
-                withAnimation(XTheme.snappy) {
-                    appState.resetPlayLayout()
-                }
             }
         } label: {
             HStack(spacing: 4) {
@@ -496,7 +497,7 @@ struct ViewLayoutMenuButton: View {
             .padding(.vertical, 2)
             .background(XTheme.surface.opacity(0.5))
             .clipShape(RoundedRectangle(cornerRadius: 4))
-            .overlay(RoundedRectangle(cornerRadius: 4).stroke(XTheme.border, lineWidth: 1))
+            // fill-only
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
@@ -668,9 +669,9 @@ private struct HarmonicTabbedWorkspace: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(XTheme.transitionShort, value: tab)
         }
-        .padding(8)
-        .background(XTheme.surface.opacity(0.4))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal, 4)
+        .padding(.vertical, 6)
+        .background(XTheme.surface.opacity(0.14), in: RoundedRectangle(cornerRadius: XTheme.radiusM))
     }
 }
 
@@ -706,9 +707,9 @@ private struct DSPTabbedWorkspace: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .animation(XTheme.transitionShort, value: tab)
         }
-        .padding(8)
-        .background(XTheme.surface.opacity(0.4))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .padding(.horizontal, 4)
+        .padding(.vertical, 6)
+        .background(XTheme.surface.opacity(0.14), in: RoundedRectangle(cornerRadius: XTheme.radiusM))
     }
 }
 
@@ -733,7 +734,7 @@ private struct TabButton: View {
                     if isSelected {
                         Capsule()
                             .fill(XTheme.primary.opacity(0.18))
-                            .overlay(Capsule().stroke(XTheme.primary, lineWidth: 1))
+                            // selected = fill only
                             .matchedGeometryEffect(id: namespaceID, in: namespace ?? Namespace().wrappedValue)
                     } else {
                         Capsule().fill(Color.clear)
@@ -834,7 +835,7 @@ private struct RegisterLaneStepper: View {
                 .fill(XTheme.surfaceElevated.opacity(0.78))
                 .overlay(
                     RoundedRectangle(cornerRadius: XTheme.radiusSmall)
-                        .stroke(accent.opacity(0.24), lineWidth: 1)
+                        .stroke(Color.clear, lineWidth: 0)
                 )
         )
         .accessibilityLabel("\(title) register")
@@ -899,7 +900,7 @@ private struct PerformanceOutputStatus: View {
                 .fill(XTheme.surface.opacity(0.72))
                 .overlay(
                     RoundedRectangle(cornerRadius: XTheme.radiusSmall)
-                        .stroke(XTheme.border, lineWidth: 1)
+                        .stroke(Color.clear, lineWidth: 0)
                 )
         )
         .accessibilityElement(children: .ignore)
@@ -994,7 +995,6 @@ private struct ChordPadButton: View {
             .frame(maxWidth: .infinity, minHeight: 54, maxHeight: 54)
             .background(isActive ? XTheme.primary.opacity(0.3) : XTheme.surface)
             .xShimmer(isActive: isActive)
-            .overlay(RoundedRectangle(cornerRadius: 6).stroke(isActive ? XTheme.primary : XTheme.border, lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
@@ -1064,7 +1064,7 @@ struct ChordProgressionBuilderSection: View {
                         VStack(spacing: 4) { Image(systemName: "plus").font(.system(size: 14, weight: .bold)).foregroundColor(XTheme.primary); Text("Add").font(.system(size: 9, weight: .bold)).foregroundColor(XTheme.textSecondary) }
                         .frame(width: 54, height: 60)
                         .background(XTheme.surface.opacity(0.6))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(XTheme.border, style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
+                        .overlay(RoundedRectangle(cornerRadius: XTheme.radiusS).stroke(XTheme.border, style: StrokeStyle(lineWidth: XTheme.borderHairline, dash: [3, 4])))
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
                     .buttonStyle(.plain)
@@ -1338,10 +1338,9 @@ struct PerformanceMonitorView: View {
                 .frame(width: 40)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(XTheme.surface.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(XTheme.surface.opacity(0.22), in: RoundedRectangle(cornerRadius: XTheme.radiusS))
     }
 }
 
@@ -1495,7 +1494,7 @@ struct MIDIActivityView: View {
                     .fill(noteOnFlash ? XTheme.primary : XTheme.surface)
                     .frame(width: 8, height: 8)
                     .overlay(
-                        Circle().stroke(XTheme.primary.opacity(0.4), lineWidth: 1)
+                        Circle().stroke(Color.clear, lineWidth: 0)
                     )
                 
                 // Note count
@@ -1511,7 +1510,7 @@ struct MIDIActivityView: View {
                     .fill(noteOffFlash ? XTheme.tense : XTheme.surface)
                     .frame(width: 8, height: 8)
                     .overlay(
-                        Circle().stroke(XTheme.tense.opacity(0.4), lineWidth: 1)
+                        Circle().stroke(Color.clear, lineWidth: 0)
                     )
                 
                 Spacer()

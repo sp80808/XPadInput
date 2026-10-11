@@ -18,7 +18,8 @@ public struct SequenceWorkspaceView: View {
             // Scenes Header
             HStack(spacing: 12) {
                 Text("Scenes:")
-                    .font(.headline)
+                    .font(XTheme.fontHeadline)
+                    .foregroundStyle(XTheme.textPrimary)
                 ForEach(Array(sequencer.scenes.enumerated()), id: \.offset) { index, scene in
                     Button {
                         sequencer.activeSceneIndex = index
@@ -26,8 +27,8 @@ public struct SequenceWorkspaceView: View {
                         Text(scene.name)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 6)
-                            .background(sequencer.activeSceneIndex == index ? Color.accentColor : Color.white.opacity(0.1))
-                            .foregroundStyle(sequencer.activeSceneIndex == index ? Color.white : Color.primary)
+                            .background(sequencer.activeSceneIndex == index ? XTheme.brand : XTheme.surfaceHigh)
+                            .foregroundStyle(sequencer.activeSceneIndex == index ? XTheme.textInverse : XTheme.textPrimary)
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -44,8 +45,8 @@ public struct SequenceWorkspaceView: View {
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
-                    .background(Color.green.opacity(0.2))
-                    .foregroundStyle(.green)
+                    .background(XTheme.brand.opacity(0.18))
+                    .foregroundStyle(XTheme.brand)
                     .clipShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -64,7 +65,7 @@ public struct SequenceWorkspaceView: View {
             if let exportError {
                 Text(exportError)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(XTheme.danger)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .padding(.horizontal)
             }
@@ -83,28 +84,28 @@ public struct SequenceWorkspaceView: View {
                                         .fontWeight(.semibold)
                                     Text(track.type.rawValue)
                                         .font(.caption2)
-                                        .foregroundStyle(.secondary)
+                                        .foregroundStyle(XTheme.textSecondary)
                                 }
                                 .frame(width: 120, alignment: .leading)
 
                                 // Track Lane / Ruler
                                 ZStack(alignment: .leading) {
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(Color.black.opacity(0.25))
+                                    RoundedRectangle(cornerRadius: XTheme.radiusS)
+                                        .fill(XTheme.canvas)
                                         .frame(height: 60)
 
                                     // Grid Lines (4 bars)
                                     HStack(spacing: 0) {
                                         ForEach(0..<4) { bar in
                                             Rectangle()
-                                                .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                                                .stroke(XTheme.border, lineWidth: XTheme.borderHairline)
                                                 .frame(maxWidth: .infinity)
                                         }
                                     }
 
                                     // Clip Representation
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(Color.accentColor.opacity(0.35))
+                                    RoundedRectangle(cornerRadius: XTheme.radiusXS)
+                                        .fill(XTheme.brand.opacity(0.35))
                                         .frame(width: 200, height: 44)
                                         .padding(.leading, 8)
                                         .overlay(
@@ -116,15 +117,16 @@ public struct SequenceWorkspaceView: View {
                                 }
                             }
                             .padding(10)
-                            .background(Material.ultraThinMaterial)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .background(XTheme.surfaceRaised)
+                            .clipShape(RoundedRectangle(cornerRadius: XTheme.radiusM))
                         }
                     }
                 }
                 .padding(.horizontal)
             }
         }
-        .padding(.vertical)
+        .padding(XTheme.space4)
+        .background(XTheme.canvas)
     }
 
     private func exportCurrentMIDI() {

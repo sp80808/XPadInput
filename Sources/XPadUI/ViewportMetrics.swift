@@ -82,6 +82,22 @@ public struct ViewportMetrics: Sendable, Equatable {
     public var isCompact: Bool { isCompactWidth || isCompactHeight }
     public var isExpanded: Bool { widthClass == .expanded && heightClass == .expanded }
 
+    /// Keeps Play's panes and its 8-point divider inside the available width.
+    public func playColumnWidths(
+        splitRatio: CGFloat,
+        harmonyVisible: Bool,
+        performanceVisible: Bool
+    ) -> (harmony: CGFloat, performance: CGFloat) {
+        let width = max(0, size.width)
+        guard harmonyVisible else { return (0, performanceVisible ? width : 0) }
+        guard performanceVisible else { return (width, 0) }
+        let available = max(0, width - 8)
+        let minimum = min(320, available / 2)
+        let ratio = max(0.45, min(0.72, splitRatio))
+        let harmony = max(minimum, min(available - minimum, available * ratio))
+        return (harmony, available - harmony)
+    }
+
     /// Proportionally scales a baseline point dimension, clamped to safe readability bounds.
     public func scaled(_ value: CGFloat, minScale: CGFloat = 0.80, maxScale: CGFloat = 1.30) -> CGFloat {
         let clampedFactor = max(minScale, min(maxScale, scaleFactor))

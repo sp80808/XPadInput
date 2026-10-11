@@ -52,6 +52,20 @@ struct ScaleSelectorView: View {
                     }
                 }
             }
+            Divider()
+            Menu("Tuning") {
+                ForEach(MicrotonalTemperament.allCases) { temperament in
+                    Button {
+                        appState.setTemperament(temperament)
+                    } label: {
+                        if temperament == appState.currentTemperament {
+                            Label(temperament.rawValue, systemImage: "checkmark")
+                        } else {
+                            Text(temperament.rawValue)
+                        }
+                    }
+                }
+            }
         } label: {
             CompactTransportMenuLabel(
                 prefix: "Scale",
@@ -62,42 +76,9 @@ struct ScaleSelectorView: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize(horizontal: true, vertical: false)
-        .help("Choose scale")
+        .help("Choose scale and tuning for the built-in synth and MPE output.")
         .accessibilityLabel("Scale")
-        .accessibilityValue(appState.currentScale.displayName)
-    }
-}
-
-/// Compact XPI-themed microtonal temperament selector for the persistent transport bar.
-struct TemperamentSelectorView: View {
-    @Environment(AppState.self) private var appState
-
-    var body: some View {
-        Menu {
-            ForEach(MicrotonalTemperament.allCases) { temperament in
-                Button {
-                    appState.setTemperament(temperament)
-                } label: {
-                    if temperament == appState.currentTemperament {
-                        Label(temperament.rawValue, systemImage: "checkmark")
-                    } else {
-                        Text(temperament.rawValue)
-                    }
-                }
-            }
-        } label: {
-            CompactTransportMenuLabel(
-                prefix: "Tuning",
-                value: appState.currentTemperament.rawValue,
-                minWidth: 96
-            )
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize(horizontal: true, vertical: false)
-        .help("Choose microtonal temperament")
-        .accessibilityLabel("Temperament")
-        .accessibilityValue(appState.currentTemperament.rawValue)
+        .accessibilityValue("\(appState.currentScale.displayName), tuning \(appState.currentTemperament.rawValue)")
     }
 }
 

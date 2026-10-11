@@ -6,55 +6,58 @@ import XPadController
 public struct ContentView: View {
     @Environment(AppState.self) private var appState
     @State private var isShowingSettings = false
-    @State private var workspaceDirection: WorkspaceTransitionDirection = .forward
-
-    private enum WorkspaceTransitionDirection { case forward, backward }
 
     public init() {}
+
+    @ViewBuilder
+    private var workspaceHost: some View {
+        @Bindable var appState = appState
+        switch appState.selectedWorkspace {
+        case .play:
+            PlayView(onOpenSettings: { isShowingSettings = true })
+        case .harmony:
+            HarmonyWorkspaceView(currentScale: $appState.currentScale)
+        case .sequence:
+            SequenceWorkspaceView(sequencer: appState.sequencer)
+        case .map:
+            MapWorkspaceView(controllerManager: appState.controllerManager)
+        case .library:
+            LibraryWorkspaceView()
+        case .practice:
+            PracticeWorkspaceView()
+        }
+    }
 
     public var body: some View {
         @Bindable var appState = appState
         GeometryReader { geo in
             let metrics = ViewportMetrics(size: geo.size)
 
-            VStack(spacing: 0) {
-                // Top Performance Header Bar
-                TopPerformanceHeaderView(onOpenSettings: { isShowingSettings = true })
+            HStack(spacing: 0) {
+                WorkspaceSidebarView()
 
-                Divider()
-                    .overlay(XTheme.border)
+                VStack(spacing: 0) {
+                    TopPerformanceHeaderView(onOpenSettings: { isShowingSettings = true })
 
-                // Play is the launch workspace. Practice is swapped in only after
-                // an explicit request (View > Show Practice) so it never occupies
-                // first-launch screenspace.
-                if appState.isPracticeRequested {
-                    PracticeWorkspaceView()
+                    Divider()
+                        .overlay(XTheme.border)
+
+                    workspaceHost
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .move(edge: .trailing)),
-                            removal:   .opacity.combined(with: .move(edge: .leading))
-                        ))
-                } else {
-                    PlayView(onOpenSettings: { isShowingSettings = true })
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .move(edge: .leading)),
-                            removal:   .opacity.combined(with: .move(edge: .trailing))
-                        ))
-                }
+                        .background(XTheme.canvas)
 
-                Divider()
-                    .overlay(XTheme.border)
+                    Divider()
+                        .overlay(XTheme.border)
 
-                // Transport Bar (toggleable / docked at bottom)
-                if appState.showTransportBar {
-                    TransportBar()
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                    if appState.showTransportBar {
+                        TransportBar()
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
                 }
             }
             .environment(\.viewportMetrics, metrics)
         }
-        .animation(XTheme.easeInOut, value: appState.isPracticeRequested)
+        .animation(XTheme.easeInOut, value: appState.selectedWorkspace)
         .animation(XTheme.easeInOut, value: appState.showTransportBar)
         .sheet(isPresented: $isShowingSettings) {
             SettingsSheet()
@@ -75,6 +78,7 @@ public struct ContentView: View {
         }
         .preferredColorScheme(.dark)
     }
+
 }
 
 // MARK: - Settings Sheet
@@ -122,47 +126,16 @@ struct TopPerformanceHeaderView: View {
     @Environment(\.viewportMetrics) private var viewport
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var onOpenSettings: () -> Void = {}
-    @State private var gearHovered = false
     @State private var badgeHovered = false
     @State private var connectRippleTrigger = 0
     @State private var wasConnected = false
 
     var body: some View {
-        @Bindable var state = appState
         let isCompact = viewport.isCompactWidth
 
         HStack(spacing: isCompact ? XTheme.space3 : XTheme.space4) {
-            // App Branding
-            HStack(spacing: isCompact ? XTheme.space2 : XTheme.space3) {
-                Image(systemName: "gamecontroller.fill")
-                    .font(.system(size: isCompact ? 16 : 18, weight: .bold))
-                    .foregroundColor(XTheme.brand)
-                    .scaleEffect(appState.controllerManager.isConnected ? 1.03 : 1.0)
-                    .animation(
-                        appState.controllerManager.isConnected
-                            ? .easeInOut(duration: 1.8).repeatForever(autoreverses: true)
-                            : XTheme.easeOut,
-                        value: appState.controllerManager.isConnected
-                    )
-                    .xPulse(isActive: appState.controllerManager.isConnected, color: XTheme.connected)
-
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("XPI")
-                        .font(.system(size: isCompact ? 14 : 16, weight: .black, design: .rounded))
-                        .foregroundColor(XTheme.textPrimary)
-                    if !isCompact {
-                        Text("MPE INSTRUMENT")
-                            .font(XTheme.fontMonoTiny)
-                            .foregroundColor(XTheme.brand)
-                    }
-                }
-            }
-
-            Divider()
-                .frame(height: 20)
-                .overlay(XTheme.border)
-
-            // Instrument Profile Switcher
+            // Instrument, key, and scale stay in the header. App identity
+            // lives in the sidebar so this bar can stay a performance strip.
             InstrumentSelectorView(minWidth: isCompact ? 92 : 128)
 
             Divider()
@@ -176,6 +149,12 @@ struct TopPerformanceHeaderView: View {
             }
 
             Spacer(minLength: XTheme.space3)
+
+            ControlSchemePicker()
+                .labelsHidden()
+                .controlSize(.small)
+                .frame(minWidth: 140, idealWidth: 200, maxWidth: 240)
+                .help(appState.controllerManager.activeScheme.description)
 
             // Controller Hardware Status Badge
             Button {
@@ -200,20 +179,12 @@ struct TopPerformanceHeaderView: View {
                 .padding(.horizontal, isCompact ? XTheme.space3 : XTheme.space4)
                 .padding(.vertical, XTheme.space1)
                 .background(badgeHovered ? XTheme.surfaceHover : XTheme.control)
-                .overlay(
-                    RoundedRectangle(cornerRadius: XTheme.radiusS)
-                        .stroke(
-                            appState.controllerManager.isConnected ? XTheme.borderBrand : XTheme.border,
-                            lineWidth: XTheme.borderThin
-                        )
-                        .opacity(badgeHovered ? 1.0 : 0.8)
-                        .animation(XTheme.easeOut, value: appState.controllerManager.isConnected)
-                )
                 .clipShape(RoundedRectangle(cornerRadius: XTheme.radiusS))
                 .xRipple(trigger: connectRippleTrigger, color: XTheme.connected, size: 56)
             }
             .buttonStyle(.plain)
-            .help("Configure Controller Scheme, Calibrate Deadzones, and Remap Buttons")
+            .help("Connect, calibrate or remap a controller")
+            .accessibilityLabel("Controller setup")
             .onHover { badgeHovered = $0 }
             .animation(reduceMotion ? nil : XTheme.quickAnimation, value: badgeHovered)
             .onChange(of: appState.controllerManager.isConnected) { _, isConnected in
@@ -221,25 +192,9 @@ struct TopPerformanceHeaderView: View {
                 wasConnected = isConnected
             }
 
-            // Settings Button
-            Button {
-                onOpenSettings()
-            } label: {
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(gearHovered ? XTheme.brand : XTheme.textSecondary)
-                    .rotationEffect(.degrees(gearHovered ? 45 : 0))
-                    .animation(reduceMotion ? nil : XTheme.springSnappy, value: gearHovered)
-                    .padding(XTheme.space2)
-                    .background(
-                        RoundedRectangle(cornerRadius: XTheme.radiusS)
-                            .fill(gearHovered ? AnyShapeStyle(XTheme.surfaceHover) : AnyShapeStyle(XTheme.control))
-                            .animation(reduceMotion ? nil : XTheme.quickAnimation, value: gearHovered)
-                    )
+            if appState.selectedWorkspace == .play {
+                ViewLayoutMenuButton()
             }
-            .buttonStyle(.plain)
-            .help("Open Settings")
-            .onHover { gearHovered = $0 }
         }
         .padding(.horizontal, isCompact ? XTheme.space4 : XTheme.space5)
         .padding(.vertical, isCompact ? XTheme.space2 : XTheme.space3)
@@ -248,7 +203,7 @@ struct TopPerformanceHeaderView: View {
 
     private func controllerBadgeText(isCompact: Bool) -> String {
         guard appState.controllerManager.isConnected else {
-            return isCompact ? "Sim Pad" : "Simulated Gamepad"
+            return isCompact ? "Connect" : "Connect controller"
         }
         if isCompact {
             switch appState.controllerManager.controllerKind {

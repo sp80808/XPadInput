@@ -194,7 +194,6 @@ struct ControllerPerformanceHUD: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)
                     .background(XTheme.warning.opacity(0.07), in: Capsule())
-                    .overlay(Capsule().stroke(XTheme.warning.opacity(0.18), lineWidth: 1))
                     .accessibilityElement(children: .combine)
                 }
             }
@@ -212,21 +211,9 @@ struct ControllerPerformanceHUD: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.98)))
             }
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: XTheme.radiusLarge)
-                .fill(
-                    LinearGradient(
-                        colors: [XTheme.surfacePressed.opacity(0.94), XTheme.background.opacity(0.88)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: XTheme.radiusLarge)
-                        .stroke(showsMappingOverlay ? XTheme.primary.opacity(0.4) : Color.white.opacity(0.07), lineWidth: 1)
-                )
-        )
+        .padding(.top, 4)
+        // No nested card: parent ControllerVisualizerView owns the single surface.
+        // Mapping mode: soft dim only — no outline ring.
     }
 
     @ViewBuilder
@@ -370,7 +357,7 @@ struct PerformanceFeedbackStrip: View {
             ZStack {
                 Circle()
                     .fill(XTheme.surfacePressed)
-                    .overlay(Circle().stroke(direction == .none ? XTheme.border : XTheme.primary.opacity(0.5), lineWidth: 1))
+                    .overlay(Circle().stroke(direction == .none ? Color.clear : XTheme.primary.opacity(0.22), lineWidth: XTheme.borderHairline))
                 Image(systemName: direction == .down ? "arrow.down" : direction == .up ? "arrow.up" : "minus")
                     .font(.system(size: 14, weight: .black))
                     .foregroundStyle(direction == .none ? XTheme.textTertiary : XTheme.primary)
@@ -414,8 +401,7 @@ struct PerformanceFeedbackStrip: View {
                 .foregroundStyle(frame == nil ? XTheme.textTertiary : XTheme.accent)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 5)
-                .background(XTheme.controlGradient, in: Capsule())
-                .overlay(Capsule().stroke(frame == nil ? XTheme.border : XTheme.accent.opacity(0.30), lineWidth: 1))
+                .background(XTheme.control.opacity(0.9), in: Capsule())
         }
         .padding(12)
         .xCard(isActive: frame != nil)
@@ -472,7 +458,6 @@ private struct VirtualStringResponse: View {
         .background(
             RoundedRectangle(cornerRadius: 7)
                 .fill(Color.black.opacity(0.26))
-                .overlay(RoundedRectangle(cornerRadius: 7).stroke(XTheme.border, lineWidth: 1))
         )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Virtual strings")
@@ -573,7 +558,7 @@ private struct TactileShoulderControl: View {
                 .fill(isPressed ? AnyShapeStyle(tint.opacity(0.60)) : AnyShapeStyle(XTheme.controlGradient))
                 .overlay(
                     RoundedRectangle(cornerRadius: 5)
-                        .stroke(isPressed ? tint : XTheme.border, lineWidth: isPressed ? 1.5 : 1)
+                        .stroke(Color.clear, lineWidth: 0)
                 )
                 .shadow(color: isPressed ? tint.opacity(0.25) : Color.black.opacity(0.18), radius: isPressed ? 4 : 2, y: 1)
         )
@@ -647,7 +632,7 @@ private struct TactileTriggerControl: View {
                 .fill(value > 0.05 ? AnyShapeStyle(tint.opacity(0.14)) : AnyShapeStyle(XTheme.controlGradient))
                 .overlay(
                     RoundedRectangle(cornerRadius: 5)
-                        .stroke(value > 0.1 ? tint.opacity(0.4) : XTheme.border, lineWidth: 1)
+                        .stroke(Color.clear, lineWidth: 0)
                 )
         )
         .accessibilityElement(children: .ignore)
@@ -692,10 +677,10 @@ private struct TactileStickView: View {
                             endRadius: diameter / 2
                         )
                     )
-                    .overlay(Circle().stroke(state.isNearEdge ? tint.opacity(0.75) : XTheme.border, lineWidth: state.isNearEdge ? 1.5 : 1))
+                    .overlay(Circle().stroke(state.isNearEdge ? tint.opacity(0.28) : Color.clear, lineWidth: XTheme.borderHairline))
 
                 Circle()
-                    .stroke(Color.white.opacity(0.055), lineWidth: 1)
+                    .stroke(Color.white.opacity(0.04), lineWidth: XTheme.borderHairline)
                     .frame(width: diameter * 0.30, height: diameter * 0.30)
 
                 if showsStrings {
@@ -713,7 +698,7 @@ private struct TactileStickView: View {
                         path.move(to: CGPoint(x: diameter * 0.14, y: center))
                         path.addLine(to: CGPoint(x: diameter * 0.86, y: center))
                     }
-                    .stroke(Color.white.opacity(0.055), lineWidth: 1)
+                    .stroke(Color.white.opacity(0.04), lineWidth: XTheme.borderHairline)
                     .frame(width: diameter, height: diameter)
                 }
 
@@ -741,7 +726,7 @@ private struct TactileStickView: View {
                         width: state.isNearEdge ? (scale == .expanded ? 25 : 18) : (scale == .expanded ? 21 : 15),
                         height: state.isNearEdge ? (scale == .expanded ? 25 : 18) : (scale == .expanded ? 21 : 15)
                     )
-                    .overlay(Circle().stroke(Color.white.opacity(0.55), lineWidth: 1))
+                    .overlay(Circle().stroke(Color.white.opacity(0.08), lineWidth: XTheme.borderHairline))
                     .shadow(color: tint.opacity(radius * 0.55), radius: 7)
                     .offset(x: xOffset, y: yOffset)
 
@@ -872,7 +857,7 @@ private struct DPadKey: View {
                             ? AnyShapeStyle(XTheme.primary.opacity(0.72))
                             : AnyShapeStyle(XTheme.controlGradient)
                     )
-                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(isPressed ? XTheme.primary : XTheme.border, lineWidth: 1))
+                    // fill-only pressed state
                     .shadow(color: isPressed ? XTheme.primary.opacity(0.28) : Color.black.opacity(0.22), radius: 3, y: isPressed ? 1 : 2)
             )
             .offset(y: isPressed && !reduceMotion ? 1 : 0)
@@ -908,7 +893,7 @@ private struct ExpressionCoreView: View {
             ZStack {
                 Circle()
                     .fill(Color.black.opacity(0.38))
-                    .overlay(Circle().stroke(XTheme.border, lineWidth: 1))
+                    .overlay(Circle().stroke(Color.clear, lineWidth: 0))
                 Circle()
                     .trim(from: 0, to: clampedTimbre)
                     .stroke(XTheme.expression.opacity(0.72), style: StrokeStyle(lineWidth: scale == .expanded ? 4 : 3, lineCap: .round))
@@ -1118,7 +1103,7 @@ struct HUDMappingOverlayView: View {
                 .background(
                     RoundedRectangle(cornerRadius: 8)
                         .fill(XTheme.primary.opacity(0.12))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(XTheme.primary.opacity(0.35), lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.clear, lineWidth: 0))
                 )
 
                 // D-Pad
@@ -1136,7 +1121,7 @@ struct HUDMappingOverlayView: View {
                 .background(
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Color.white.opacity(0.05))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.12), lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.clear, lineWidth: 0))
                 )
 
                 // Face buttons
@@ -1154,7 +1139,7 @@ struct HUDMappingOverlayView: View {
                 .background(
                     RoundedRectangle(cornerRadius: 8)
                         .fill(XTheme.colourful.opacity(0.12))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(XTheme.colourful.opacity(0.35), lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.clear, lineWidth: 0))
                 )
 
                 // Right Stick
@@ -1173,7 +1158,7 @@ struct HUDMappingOverlayView: View {
                 .background(
                     RoundedRectangle(cornerRadius: 8)
                         .fill(XTheme.expression.opacity(0.12))
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(XTheme.expression.opacity(0.35), lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.clear, lineWidth: 0))
                 )
             }
 
@@ -1194,7 +1179,7 @@ struct HUDMappingOverlayView: View {
                 .fill(XTheme.surfaceElevated.opacity(0.96))
                 .overlay(
                     RoundedRectangle(cornerRadius: XTheme.radiusMedium)
-                        .stroke(XTheme.primary.opacity(0.3), lineWidth: 1)
+                        .stroke(Color.clear, lineWidth: 0)
                 )
                 .shadow(color: Color.black.opacity(0.45), radius: 12)
         )

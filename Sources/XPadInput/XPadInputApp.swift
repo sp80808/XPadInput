@@ -26,6 +26,16 @@ struct XPadInputApp: App {
 
             CommandGroup(replacing: .sidebar) {
                 Section("Workspaces") {
+                    ForEach(Array(Workspace.persistentCases.enumerated()), id: \.element.id) { index, workspace in
+                        Button(workspace.rawValue) {
+                            appState.selectWorkspace(workspace)
+                        }
+                        .keyboardShortcut(
+                            KeyEquivalent(Character("\(index + 1)")),
+                            modifiers: .command
+                        )
+                    }
+
                     Button(appState.isPracticeRequested ? "Exit Practice Workspace" : "Open Practice Workspace") {
                         appState.togglePractice()
                     }

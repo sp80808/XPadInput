@@ -610,6 +610,30 @@ final class TestRunner {
 
         }
 
+        suite("XPadUI: Play pane sizing") {
+            test("Visible panes conserve width at every supported split and visibility") {
+                for width: CGFloat in [320, 640, 800, 1004, 1200, 1800] {
+                    let viewport = ViewportMetrics(size: CGSize(width: width, height: 700))
+                    for ratio: CGFloat in [0, 0.45, 0.58, 0.72, 1] {
+                        let panes = viewport.playColumnWidths(splitRatio: ratio, harmonyVisible: true, performanceVisible: true)
+                        assertTrue(abs(panes.harmony + panes.performance + 8 - width) < 0.001)
+                        assertTrue(panes.harmony >= 0 && panes.performance >= 0)
+                        if width >= 648 {
+                            assertTrue(panes.harmony >= 320 && panes.performance >= 320)
+                        }
+                    }
+                    let harmony = viewport.playColumnWidths(splitRatio: 0.58, harmonyVisible: true, performanceVisible: false)
+                    assertEqual(harmony.harmony, width)
+                    assertEqual(harmony.performance, 0)
+                    let performance = viewport.playColumnWidths(splitRatio: 0.58, harmonyVisible: false, performanceVisible: true)
+                    assertEqual(performance.harmony, 0)
+                    assertEqual(performance.performance, width)
+                    let hidden = viewport.playColumnWidths(splitRatio: 0.58, harmonyVisible: false, performanceVisible: false)
+                    assertEqual(hidden.harmony + hidden.performance, 0)
+                }
+            }
+        }
+
         // MARK: - Arcade Preferences Tests
         suite("XPadUI: ArcadePreferences persistence") {
             func reset(_ name: String) {

@@ -72,17 +72,15 @@ public struct MenuBarContentView: View {
 
             // MARK: - Workspace Navigation
             Menu("Switch Workspace") {
-                ForEach(WorkspaceTab.persistentCases) { tab in
+                ForEach(Workspace.persistentCases) { workspace in
                     Button {
-                        if let ws = Workspace(rawValue: tab.rawValue) {
-                            appState.selectedWorkspace = ws
-                            focusMainWindow()
-                        }
+                        appState.selectWorkspace(workspace)
+                        focusMainWindow()
                     } label: {
-                        if appState.selectedWorkspace.rawValue == tab.rawValue {
-                            Label(tab.rawValue, systemImage: "checkmark")
+                        if appState.selectedWorkspace == workspace {
+                            Label(workspace.rawValue, systemImage: "checkmark")
                         } else {
-                            Text(tab.rawValue)
+                            Text(workspace.rawValue)
                         }
                     }
                 }

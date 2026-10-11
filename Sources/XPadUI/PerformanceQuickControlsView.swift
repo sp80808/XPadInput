@@ -6,69 +6,28 @@ import XPadController
 /// Compact, performance-safe disclosure for the controls that shape a live take.
 struct PerformanceQuickControlsView: View {
     @Environment(AppState.self) private var appState
-    @State private var showsGate = false
-    @State private var showsVelocity = false
+    @State private var selectedControl: ShapeControl?
     @State private var showsArp = false
-    @State private var showsTriggers = false
-    @State private var showsEQ = false
-    @State private var showsCompressor = false
-    @State private var showsReverb = false
     @State private var soloOffset: CGFloat = 0
     @State private var duoFlip: Double = 0
-    @State private var gateWiggle: Double = 0
-    @State private var velocityWiggle: Double = 0
     @State private var arpWiggle: Double = 0
-    @State private var triggerWiggle: Double = 0
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
             controls(compact: false)
             controls(compact: true)
         }
-        .padding(6)
+        .padding(.horizontal, 2)
+        .padding(.vertical, 4)
         .background(
-            RoundedRectangle(cornerRadius: XTheme.radiusMedium)
-                .fill(XTheme.surface.opacity(0.72))
-                .overlay(
-                    RoundedRectangle(cornerRadius: XTheme.radiusMedium)
-                        .stroke(XTheme.border, lineWidth: 1)
-                )
+            RoundedRectangle(cornerRadius: XTheme.radiusS)
+                .fill(XTheme.surface.opacity(0.28))
         )
         .accessibilityElement(children: .contain)
     }
 
     private func controls(compact: Bool) -> some View {
         HStack(spacing: compact ? 5 : 7) {
-            Button { showsGate.toggle(); wiggle { gateWiggle = $0 } } label: {
-                QuickControlLabel(
-                    icon: "timer",
-                    title: compact ? "Gate" : "Chord gate",
-                    value: gateValue,
-                    compact: compact
-                )
-            }
-            .buttonStyle(XTactileButtonStyle(isActive: appState.chordGateConfiguration.mode != .momentary))
-            .popover(isPresented: $showsGate, arrowEdge: .bottom) {
-                ChordGatePopover()
-            }
-            .help("Choose how played chords release")
-            .rotationEffect(.degrees(gateWiggle))
-
-            Button { showsVelocity.toggle(); wiggle { velocityWiggle = $0 } } label: {
-                QuickControlLabel(
-                    icon: "dial.medium",
-                    title: compact ? "Feel" : "Velocity",
-                    value: appState.audioEngine.velocityCurve.rawValue,
-                    compact: compact
-                )
-            }
-            .buttonStyle(XTactileButtonStyle())
-            .popover(isPresented: $showsVelocity, arrowEdge: .bottom) {
-                VelocityPopover()
-            }
-            .help("Shape and stabilize performance velocity")
-            .rotationEffect(.degrees(velocityWiggle))
-
             Button {
                 let next: DuoPerformanceMode = appState.duoPerformanceMode == .instrumentOnly
                     ? .drumsAndInstrument
@@ -118,7 +77,8 @@ struct PerformanceQuickControlsView: View {
                     activeColor: .orange
                 )
             )
-            .help("Smart Soloing: Right stick locks to chord tones, passing runs, and blues inflections")
+            .help("Smart Soloing: \(appState.controllerManager.controlLabel(for: .primaryExcitation)) plays chord tones, passing runs, and blues inflections")
+            .accessibilityValue(appState.isSoloModeActive ? "On" : "Off")
 
             Button { showsArp.toggle(); wiggle { arpWiggle = $0 } } label: {
                 QuickControlLabel(
@@ -140,21 +100,6 @@ struct PerformanceQuickControlsView: View {
             .help("Arpeggiator: Step chord tones to BPM across customizable patterns and octaves")
             .rotationEffect(.degrees(arpWiggle))
 
-            Button { showsTriggers.toggle(); wiggle { triggerWiggle = $0 } } label: {
-                QuickControlLabel(
-                    icon: "hand.tap.fill",
-                    title: compact ? "Trig" : "Triggers",
-                    value: compact ? nil : appState.controllerManager.adaptiveTriggerEngine.leftConfig.mode.displayName,
-                    compact: compact
-                )
-            }
-            .buttonStyle(XTactileButtonStyle(isActive: appState.controllerManager.adaptiveTriggerEngine.isEnabled))
-            .popover(isPresented: $showsTriggers, arrowEdge: .bottom) {
-                AdaptiveTriggerQuickPopover()
-            }
-            .help("DualSense motor resistance, string tension and mod-wheel detents")
-            .rotationEffect(.degrees(triggerWiggle))
-
             Button {
                 withAnimation(XTheme.springAnimation) {
                     appState.toggleSynthMute()
@@ -175,45 +120,38 @@ struct PerformanceQuickControlsView: View {
             )
             .help(appState.isSynthMuted ? "Synth muted — MIDI passthru prioritized" : "Mute built-in synthesizer")
 
-            Spacer(minLength: compact ? 2 : 8)
-
-            Button { showsEQ.toggle() } label: {
+            Menu {
+                Section("Performance feel") {
+                    ForEach([ShapeControl.gate, .velocity, .triggers]) { control in
+                        Button(control.rawValue) { selectedControl = control }
+                    }
+                }
+                Section("Sound") {
+                    ForEach([ShapeControl.equalizer, .compressor, .reverb]) { control in
+                        Button(control.rawValue) { selectedControl = control }
+                    }
+                }
+            } label: {
                 QuickControlLabel(
                     icon: "slider.horizontal.3",
-                    title: "EQ",
-                    value: compact ? nil : effectState(appState.audioEngine.effectsSettings.equalizer.isEnabled),
+                    title: "Shape",
+                    value: gateValue,
                     compact: compact
                 )
             }
-            .buttonStyle(XTactileButtonStyle(isActive: appState.audioEngine.effectsSettings.equalizer.isEnabled))
-            .popover(isPresented: $showsEQ, arrowEdge: .bottom) {
-                EqualizerPopover()
-            }
-
-            Button { showsCompressor.toggle() } label: {
-                QuickControlLabel(
-                    icon: "waveform.path.ecg",
-                    title: compact ? "Comp" : "Compressor",
-                    value: compact ? nil : effectState(appState.audioEngine.effectsSettings.compressor.isEnabled),
-                    compact: compact
-                )
-            }
-            .buttonStyle(XTactileButtonStyle(isActive: appState.audioEngine.effectsSettings.compressor.isEnabled))
-            .popover(isPresented: $showsCompressor, arrowEdge: .bottom) {
-                CompressorPopover()
-            }
-
-            Button { showsReverb.toggle() } label: {
-                QuickControlLabel(
-                    icon: "dot.radiowaves.left.and.right",
-                    title: compact ? "Verb" : "Reverb",
-                    value: compact ? nil : "\(Int(appState.audioEngine.effectsSettings.reverb.mixPercent))%",
-                    compact: compact
-                )
-            }
-            .buttonStyle(XTactileButtonStyle(isActive: appState.audioEngine.effectsSettings.reverb.isEnabled))
-            .popover(isPresented: $showsReverb, arrowEdge: .bottom) {
-                ReverbPopover()
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("Chord release, velocity feel, trigger resistance, EQ, compression and reverb")
+            .accessibilityLabel("Shape sound and performance feel")
+            .popover(item: $selectedControl, arrowEdge: .bottom) { control in
+                switch control {
+                case .gate: ChordGatePopover()
+                case .velocity: VelocityPopover()
+                case .triggers: AdaptiveTriggerQuickPopover()
+                case .equalizer: EqualizerPopover()
+                case .compressor: CompressorPopover()
+                case .reverb: ReverbPopover()
+                }
             }
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -226,8 +164,15 @@ struct PerformanceQuickControlsView: View {
         return appState.chordGateConfiguration.mode.rawValue
     }
 
-    private func effectState(_ enabled: Bool) -> String {
-        enabled ? "On" : "Off"
+    private enum ShapeControl: String, Identifiable {
+        case gate = "Chord release…"
+        case velocity = "Velocity feel…"
+        case triggers = "Trigger resistance…"
+        case equalizer = "Equalizer…"
+        case compressor = "Compressor…"
+        case reverb = "Reverb…"
+
+        var id: Self { self }
     }
 
     /// Fires a ±5° wiggle oscillation on the given setter closure.
