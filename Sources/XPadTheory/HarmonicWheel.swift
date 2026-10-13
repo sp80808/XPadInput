@@ -196,7 +196,17 @@ public struct HarmonicWheel: Codable, Sendable {
             },
             roman: { spec in
                 let quality = WheelDegreeBuilder.colourQuality(for: spec, isMinor: isMinor)
-                return spec.roman + (quality == .major7 ? "maj7" : "7")
+                switch quality {
+                case .major7:
+                    return spec.roman + "maj7"
+                case .halfDiminished7:
+                    // "vii°" carries the fully-diminished glyph; a half-diminished
+                    // chord must use the ø glyph instead (e.g. "viiø7"). Refs #52.
+                    let base = spec.roman.hasSuffix("°") ? String(spec.roman.dropLast()) : spec.roman
+                    return base + "ø7"
+                default:
+                    return spec.roman + "7"
+                }
             },
             function: { _ in "Colour / 7th" }
         )
