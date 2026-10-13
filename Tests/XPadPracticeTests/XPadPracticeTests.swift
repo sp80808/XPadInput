@@ -3,6 +3,7 @@ import XPadCore
 import XPadTheory
 import XPadPractice
 
+@MainActor
 final class XPadPracticeTests: XCTestCase {
     
     override func setUpWithError() throws {
