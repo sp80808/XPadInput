@@ -98,6 +98,16 @@ public struct ViewportMetrics: Sendable, Equatable {
         return (harmony, available - harmony)
     }
 
+    /// Reserves readable chord controls while making the wheel split adjustable.
+    public func playHarmonicHeights(splitRatio: CGFloat, spacing: CGFloat) -> (wheel: CGFloat, tabs: CGFloat) {
+        let available = max(0, size.height - 8 - spacing * 2)
+        let wheelMinimum = min(180, available / 2)
+        let tabsMinimum = min(150, available / 2)
+        let ratio = max(0.20, min(0.80, splitRatio))
+        let wheel = max(wheelMinimum, min(available - tabsMinimum, available * ratio))
+        return (wheel, available - wheel)
+    }
+
     /// Proportionally scales a baseline point dimension, clamped to safe readability bounds.
     public func scaled(_ value: CGFloat, minScale: CGFloat = 0.80, maxScale: CGFloat = 1.30) -> CGFloat {
         let clampedFactor = max(minScale, min(maxScale, scaleFactor))

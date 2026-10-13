@@ -611,6 +611,28 @@ final class TestRunner {
         }
 
         suite("XPadUI: Play pane sizing") {
+            test("Harmonic split uses available height and responds to resizing") {
+                for height: CGFloat in [0, 180, 350, 500, 800] {
+                    let viewport = ViewportMetrics(size: CGSize(width: 600, height: height))
+                    for spacing: CGFloat in [6, 8] {
+                        let available = max(0, height - 8 - spacing * 2)
+                        for ratio: CGFloat in [0, 0.20, 0.68, 0.80, 1] {
+                            let panes = viewport.playHarmonicHeights(splitRatio: ratio, spacing: spacing)
+                            assertTrue(abs(panes.wheel + panes.tabs - available) < 0.001)
+                            assertTrue(panes.wheel >= 0 && panes.tabs >= 0)
+                            if available >= 360 {
+                                assertTrue(panes.wheel >= 180 && panes.tabs >= 150)
+                            }
+                        }
+                    }
+                }
+                let viewport = ViewportMetrics(size: CGSize(width: 600, height: 600))
+                let small = viewport.playHarmonicHeights(splitRatio: 0.4, spacing: 8)
+                let large = viewport.playHarmonicHeights(splitRatio: 0.68, spacing: 8)
+                assertTrue(large.wheel > small.wheel && large.tabs < small.tabs)
+                assertTrue(large.wheel > large.tabs)
+            }
+
             test("Visible panes conserve width at every supported split and visibility") {
                 for width: CGFloat in [320, 640, 800, 1004, 1200, 1800] {
                     let viewport = ViewportMetrics(size: CGSize(width: width, height: 700))
@@ -2553,6 +2575,33 @@ final class TestRunner {
             test("Input learn prefers 2D stick when both axes move together") {
                 let detected = InputLearnDetector.detect(leftStickX: 0.62, leftStickY: 0.58, prefer2D: true)
                 assertTrue(detected == .leftStick2D)
+            }
+
+            test("Input learning cancellation releases its UI callback") {
+                let manager = ControllerManager()
+                weak var releasedToken: NSObject?
+                var sessionID: UUID?
+                do {
+                    let token = NSObject()
+                    releasedToken = token
+                    sessionID = manager.beginInputLearning(for: .primaryExcitation) { [token] _, _ in
+                        _ = token
+                    }
+                }
+                assertNotNil(releasedToken)
+                manager.cancelInputLearning(sessionID: sessionID!)
+                assertTrue(releasedToken == nil)
+                assertTrue(manager.learningAction == nil)
+            }
+
+            test("Stale input learning cancellation preserves replacement session") {
+                let manager = ControllerManager()
+                let oldSessionID = manager.beginInputLearning(for: .primaryExcitation) { _, _ in }
+                let newSessionID = manager.beginInputLearning(for: .pitchExpression) { _, _ in }
+                manager.cancelInputLearning(sessionID: oldSessionID)
+                assertEqual(manager.learningAction, .pitchExpression)
+                manager.cancelInputLearning(sessionID: newSessionID)
+                assertTrue(manager.learningAction == nil)
             }
 
             test("Dynamic prompt and glyph single-source-of-truth generation") {

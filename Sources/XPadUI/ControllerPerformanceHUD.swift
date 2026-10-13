@@ -123,59 +123,28 @@ struct ControllerPerformanceHUD: View {
     var body: some View {
         ZStack {
             VStack(spacing: 12) {
-                // Sleek, low-profile top header wings (LB/LT, Instrument Status, RB/RT)
-                HStack(alignment: .center, spacing: 12) {
-                    ModifierControlGroup(
-                        shoulderLabel: shoulderLabels.left,
-                        shoulderRole: labels.l1,
-                        shoulderPressed: state.leftShoulder,
-                        triggerLabel: shoulderLabels.leftTrigger,
-                        triggerRole: instrument.supportsPalmMute ? labels.l2 : "Expression",
-                        trigger: state.leftTrigger,
-                        semanticValue: instrument.supportsPalmMute ? frame?.palmMuteAmount : nil,
-                        threshold: 0.55,
-                        tint: XTheme.warning
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    VStack(spacing: 2) {
-                        Label(
-                            duoMode == .drumsAndInstrument ? "DUO · \(instrument.family.shortName)" : instrument.family.shortName,
-                            systemImage: duoMode == .drumsAndInstrument ? "square.grid.2x2.fill" : "waveform.path.ecg"
-                        )
-                            .font(.system(size: 10, weight: .semibold, design: .rounded))
-                            .foregroundStyle(duoMode == .drumsAndInstrument ? XTheme.warning : XTheme.textSecondary)
-
-                        Text(frame?.activeTechnique.playLabel ?? "READY")
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                            .foregroundStyle(frame == nil ? XTheme.textTertiary : XTheme.accent)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
-                            .xMusicalContent(frame?.activeTechnique.playLabel ?? "READY")
+                // Instrument identity already lives in the global header, so the
+                // narrow fallback can dedicate this row to live modifier data.
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .center, spacing: 12) {
+                        leftModifierGroup
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        instrumentStatus
+                        rightModifierGroup
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                     }
-                    .frame(maxWidth: 100)
-
-                    ModifierControlGroup(
-                        shoulderLabel: shoulderLabels.right,
-                        shoulderRole: labels.r1,
-                        shoulderPressed: state.rightShoulder,
-                        triggerLabel: shoulderLabels.rightTrigger,
-                        triggerRole: labels.r2,
-                        trigger: state.rightTrigger,
-                        semanticValue: frame?.pressure.smoothed,
-                        threshold: 0.10,
-                        tint: XTheme.expression
-                    )
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    HStack(alignment: .center, spacing: 8) {
+                        leftModifierGroup
+                        rightModifierGroup
+                    }
                 }
 
                 // Symmetrical Performance Controls Row (Golden Ratio layout)
                 ViewThatFits(in: .horizontal) {
                     controllerRow(scale: .expanded, showsDPad: true, spacing: 14)
                     controllerRow(scale: .compact, showsDPad: true, spacing: 8)
-                    controllerRow(scale: .compact, showsDPad: false, spacing: 6)
                     controllerRow(scale: .minimal, showsDPad: true, spacing: 4)
-                    controllerRow(scale: .minimal, showsDPad: false, spacing: 3)
+                    narrowControllerRows
                 }
                 .frame(maxWidth: .infinity)
 
@@ -214,6 +183,53 @@ struct ControllerPerformanceHUD: View {
         .padding(.top, 4)
         // No nested card: parent ControllerVisualizerView owns the single surface.
         // Mapping mode: soft dim only — no outline ring.
+    }
+
+    private var leftModifierGroup: some View {
+        ModifierControlGroup(
+            shoulderLabel: shoulderLabels.left,
+            shoulderRole: labels.l1,
+            shoulderPressed: state.leftShoulder,
+            triggerLabel: shoulderLabels.leftTrigger,
+            triggerRole: instrument.supportsPalmMute ? labels.l2 : "Expression",
+            trigger: state.leftTrigger,
+            semanticValue: instrument.supportsPalmMute ? frame?.palmMuteAmount : nil,
+            threshold: 0.55,
+            tint: XTheme.warning
+        )
+    }
+
+    private var rightModifierGroup: some View {
+        ModifierControlGroup(
+            shoulderLabel: shoulderLabels.right,
+            shoulderRole: labels.r1,
+            shoulderPressed: state.rightShoulder,
+            triggerLabel: shoulderLabels.rightTrigger,
+            triggerRole: labels.r2,
+            trigger: state.rightTrigger,
+            semanticValue: frame?.pressure.smoothed,
+            threshold: 0.10,
+            tint: XTheme.expression
+        )
+    }
+
+    private var instrumentStatus: some View {
+        VStack(spacing: 2) {
+            Label(
+                duoMode == .drumsAndInstrument ? "DUO · \(instrument.family.shortName)" : instrument.family.shortName,
+                systemImage: duoMode == .drumsAndInstrument ? "square.grid.2x2.fill" : "waveform.path.ecg"
+            )
+            .font(.system(size: 10, weight: .semibold, design: .rounded))
+            .foregroundStyle(duoMode == .drumsAndInstrument ? XTheme.warning : XTheme.textSecondary)
+
+            Text(frame?.activeTechnique.playLabel ?? "READY")
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .foregroundStyle(frame == nil ? XTheme.textTertiary : XTheme.accent)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .xMusicalContent(frame?.activeTechnique.playLabel ?? "READY")
+        }
+        .frame(maxWidth: 100)
     }
 
     @ViewBuilder
@@ -269,6 +285,52 @@ struct ControllerPerformanceHUD: View {
                 )
             }
             .frame(maxWidth: .infinity, alignment: .center)
+        }
+    }
+
+    private var narrowControllerRows: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                TactileStickView(
+                    state: state.leftStick,
+                    label: "L",
+                    role: labels.leftStick,
+                    tint: XTheme.primary,
+                    scale: .minimal
+                )
+
+                ExpressionCoreView(
+                    chordName: currentChord?.displayName ?? "—",
+                    technique: frame?.activeTechnique.playLabel,
+                    bendSemitones: frame?.bend.totalSemitones ?? 0,
+                    bendRange: instrument.preferredPitchBendRange,
+                    pressure: frame?.pressure.smoothed ?? 0,
+                    timbre: frame?.timbre ?? 0,
+                    scale: .minimal
+                )
+
+                TactileStickView(
+                    state: state.rightStick,
+                    label: "R",
+                    role: labels.rightStick,
+                    tint: XTheme.expression,
+                    showsStrings: instrument.supportsStrumming,
+                    direction: lastStrumDirection,
+                    velocity: lastVelocity,
+                    scale: .minimal
+                )
+            }
+
+            HStack(spacing: 28) {
+                TactileDPadView(state: state, scale: .minimal)
+                TactileFaceButtonsView(
+                    state: state,
+                    iconPack: iconPack,
+                    controllerKind: controllerKind,
+                    roles: duoMode == .drumsAndInstrument ? .drums : .harmonic,
+                    scale: .minimal
+                )
+            }
         }
     }
 
@@ -350,7 +412,6 @@ struct PerformanceFeedbackStrip: View {
     let lastStrumTime: Date?
     let gestureLabel: String
     let supportsStrumming: Bool
-    let stringCount: Int
 
     var body: some View {
         HStack(spacing: 12) {
@@ -364,23 +425,6 @@ struct PerformanceFeedbackStrip: View {
                     .scaleEffect(reduceMotion ? 1 : 1 + attackPulse * 0.16)
             }
             .frame(width: 36, height: 36)
-
-            if supportsStrumming {
-                VirtualStringResponse(
-                    stringCount: stringCount,
-                    velocity: velocity,
-                    damping: frame?.palmMuteAmount ?? 0,
-                    direction: direction,
-                    attackPulse: attackPulse
-                )
-                .frame(width: 118, height: 38)
-            } else {
-                Image(systemName: "waveform.path.ecg")
-                    .font(.system(size: 26, weight: .medium))
-                    .foregroundStyle(XTheme.expression.opacity(0.72))
-                    .frame(width: 72)
-                    .accessibilityHidden(true)
-            }
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(velocity == 0 ? gestureLabel.uppercased() : "LAST \(gestureLabel.uppercased())")
@@ -420,7 +464,7 @@ struct PerformanceFeedbackStrip: View {
     private var musicalResult: String {
         if let theory = frame?.theoryExplanation { return theory }
         if let status = frame?.instrumentStatusLabel { return status }
-        return supportsStrumming ? "Sweep the right stick across the strings" : "Shape the held note"
+        return supportsStrumming ? "Ready to strum" : "Shape the held note"
     }
 
     private var attackLanguage: String {
@@ -429,67 +473,6 @@ struct PerformanceFeedbackStrip: View {
         case 1..<48: return "Last soft attack"
         case 48..<92: return "Last firm attack"
         default: return "Last strong attack"
-        }
-    }
-}
-
-private struct VirtualStringResponse: View {
-    let stringCount: Int
-    let velocity: UInt8
-    let damping: Double
-    let direction: StrumDirection
-    let attackPulse: Double
-
-    private var visibleStringCount: Int { min(6, max(4, stringCount == 0 ? 6 : stringCount)) }
-    private var clampedDamping: Double { min(1, max(0, damping)) }
-    private var attack: Double { Double(velocity) / 127 }
-
-    var body: some View {
-        VStack(spacing: 4) {
-            ForEach(0..<visibleStringCount, id: \.self) { index in
-                Capsule()
-                    .fill(XTheme.primary.opacity(stringOpacity(for: index)))
-                    .frame(height: 1 + attack * 1.4)
-                    .scaleEffect(x: 1 - clampedDamping * 0.52, anchor: direction == .up ? .trailing : .leading)
-                    .offset(y: stringVibration(for: index))
-            }
-        }
-        .padding(.horizontal, 4)
-        .background(
-            RoundedRectangle(cornerRadius: 7)
-                .fill(Color.black.opacity(0.26))
-        )
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Virtual strings")
-        .accessibilityValue("\(attackLanguage), \(dampingLanguage)")
-    }
-
-    private func stringOpacity(for index: Int) -> Double {
-        let progress = Double(index) / Double(max(1, visibleStringCount - 1))
-        let directional = direction == .up ? 1 - progress : progress
-        return min(0.95, 0.20 + attack * 0.42 + attackPulse * (0.18 + directional * 0.22))
-    }
-
-    private func stringVibration(for index: Int) -> CGFloat {
-        guard attackPulse > 0.02 else { return 0 }
-        let sign: CGFloat = index.isMultiple(of: 2) ? -1 : 1
-        return sign * CGFloat(attackPulse) * (1.1 + CGFloat(attack) * 0.8)
-    }
-
-    private var attackLanguage: String {
-        switch velocity {
-        case 0: return "idle"
-        case 1..<48: return "last soft attack"
-        case 48..<92: return "last firm attack"
-        default: return "last strong attack"
-        }
-    }
-
-    private var dampingLanguage: String {
-        switch clampedDamping {
-        case ..<0.2: return "open strings"
-        case ..<0.65: return "muted strings"
-        default: return "strongly damped strings"
         }
     }
 }

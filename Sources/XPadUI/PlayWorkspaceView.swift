@@ -86,7 +86,7 @@ public struct PlayView: View {
             let rightWidth = columns.performance
 
             let chordDisplayHeight: CGFloat = isCompactH ? 58 : (isExpandedH ? 80 : 72)
-            let quickControlsH: CGFloat = isCompactH ? 42 : 48
+            let quickControlsH: CGFloat = 48
             let perfMonitorH: CGFloat = isCompactH ? 72 : (isExpandedH ? 92 : 84)
             let strumMidiH: CGFloat = isCompactH ? 48 : (isExpandedH ? 60 : 54)
 
@@ -125,34 +125,40 @@ public struct PlayView: View {
                                 .transition(.opacity)
                         }
 
-                        // Harmonic Wheel — primary musical surface
-                        HarmonicWheelView()
-                            .frame(minHeight: 180, maxHeight: .infinity)
-                            .layoutPriority(10)
-                            .padding(.vertical, isCompactH ? 2 : 4)
-
-                        // Splitter between wheel and tabbed workspace
-                        if appState.showHarmonicTabSection {
-                            HorizontalSplitterHandle(ratio: Binding(
-                                get: { appState.leftVerticalSplitRatio },
-                                set: { appState.leftVerticalSplitRatio = $0 }
-                            ), defaultRatio: 0.68)
-
-                            // Tabbed: Chords | Progression | Suggestions
-                            HarmonicTabbedWorkspace(
-                                tab: $harmonicWorkspaceTab,
-                                activeProgression: $activeProgression,
-                                selectedBlockIndex: $selectedBlockIndex,
-                                isPlayingProgression: $isPlayingProgression,
-                                diatonicChords: diatonicChords,
-                                currentOrSelectedChord: currentOrSelectedChord,
-                                harmonicSuggestions: harmonicSuggestions,
-                                onAuditionChord: auditionChord,
-                                onSendToSequencer: sendProgressionToSequencer
+                        GeometryReader { section in
+                            let heights = ViewportMetrics(size: section.size).playHarmonicHeights(
+                                splitRatio: appState.leftVerticalSplitRatio, spacing: colSpacing
                             )
-                            .frame(minHeight: 100, maxHeight: .infinity)
-                            .layoutPriority(4)
+                            VStack(spacing: colSpacing) {
+                                HarmonicWheelView()
+                                    .frame(height: appState.showHarmonicTabSection ? heights.wheel : section.size.height)
+
+                                if appState.showHarmonicTabSection {
+                                    HorizontalSplitterHandle(
+                                        ratio: Binding(
+                                            get: { appState.leftVerticalSplitRatio },
+                                            set: { appState.leftVerticalSplitRatio = $0 }
+                                        ),
+                                        containerHeight: max(1, heights.wheel + heights.tabs),
+                                        defaultRatio: 0.68
+                                    )
+
+                                    HarmonicTabbedWorkspace(
+                                        tab: $harmonicWorkspaceTab,
+                                        activeProgression: $activeProgression,
+                                        selectedBlockIndex: $selectedBlockIndex,
+                                        isPlayingProgression: $isPlayingProgression,
+                                        diatonicChords: diatonicChords,
+                                        currentOrSelectedChord: currentOrSelectedChord,
+                                        harmonicSuggestions: harmonicSuggestions,
+                                        onAuditionChord: auditionChord,
+                                        onSendToSequencer: sendProgressionToSequencer
+                                    )
+                                    .frame(height: heights.tabs)
+                                }
+                            }
                         }
+                        .frame(minHeight: 180)
 
                         // Active Notes — compact footer, not a void panel
                         ActiveNotesView()
@@ -186,7 +192,7 @@ public struct PlayView: View {
                     VStack(spacing: colSpacing) {
                         if appState.showControllerVisualizer {
                             ControllerVisualizerView()
-                                .frame(minHeight: isCompactH ? 170 : (isExpandedH ? 240 : 200), maxHeight: .infinity)
+                                .frame(minHeight: isCompactH ? 170 : (isExpandedH ? 240 : 200), alignment: .top)
                                 .layoutPriority(10)
                         }
 
@@ -221,13 +227,19 @@ public struct PlayView: View {
                         }
 
                         if appState.showStrumMidiBar {
-                            HStack(spacing: XTheme.space2) {
+                            let activityLayout = rightWidth < 400
+                                ? AnyLayout(VStackLayout(spacing: XTheme.space2))
+                                : AnyLayout(HStackLayout(spacing: XTheme.space2))
+                            activityLayout {
                                 StrumIndicatorView()
                                 MIDIActivityView()
+                                    .frame(width: rightWidth < 400 ? nil : 110)
                             }
-                            .frame(height: strumMidiH)
+                            .frame(height: rightWidth < 400 ? strumMidiH * 2 + XTheme.space2 : strumMidiH)
                             .layoutPriority(5)
                         }
+
+                        Spacer(minLength: 0)
                     }
                     .padding(colPadding)
                     .frame(width: rightWidth, alignment: .top)
@@ -373,6 +385,7 @@ struct VerticalSplitterHandle: View {
 
 struct HorizontalSplitterHandle: View {
     @Binding var ratio: CGFloat
+    let containerHeight: CGFloat
     var defaultRatio: CGFloat = 0.50
     
     @State private var isHovering: Bool = false
@@ -419,8 +432,7 @@ struct HorizontalSplitterHandle: View {
                             isDragging = true
                             dragStartRatio = ratio
                         }
-                        let totalHeight = geo.size.height > 0 ? geo.size.height : 400
-                        let deltaRatio = value.translation.height / totalHeight
+                        let deltaRatio = value.translation.height / max(1, containerHeight)
                         let newRatio = dragStartRatio + deltaRatio
                         ratio = max(0.20, min(0.80, newRatio))
                     }
@@ -666,7 +678,7 @@ private struct HarmonicTabbedWorkspace: View {
             }
             .id(tab)
             .transition(.opacity)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .animation(XTheme.transitionShort, value: tab)
         }
         .padding(.horizontal, 4)
@@ -1222,7 +1234,7 @@ struct StrumIndicatorView: View {
     var body: some View {
         let cs = appState.controllerManager.controllerState
         let hli = appState.controllerManager.isConnected || cs.hasVisiblePerformanceInput
-        PerformanceFeedbackStrip(frame: hli ? appState.lastFrame : nil, velocity: hli ? appState.lastVelocity : 0, direction: hli ? appState.lastStrumDirection : .none, lastStrumTime: hli ? appState.lastStrumTime : nil, gestureLabel: appState.hudLabels.rightStick, supportsStrumming: appState.instrumentProfile.supportsStrumming, stringCount: appState.instrumentProfile.stringCount)
+        PerformanceFeedbackStrip(frame: hli ? appState.lastFrame : nil, velocity: hli ? appState.lastVelocity : 0, direction: hli ? appState.lastStrumDirection : .none, lastStrumTime: hli ? appState.lastStrumTime : nil, gestureLabel: appState.controllerManager.controlLabel(for: .primaryExcitation), supportsStrumming: appState.instrumentProfile.supportsStrumming)
     }
 }
 

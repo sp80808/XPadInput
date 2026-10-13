@@ -531,7 +531,7 @@ public struct XRippleModifier: ViewModifier {
     public var size: CGFloat = 56
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var scale: CGFloat = 0.5
-    @State private var opacity: Double = 0.55
+    @State private var opacity: Double = 0
     @State private var id = UUID()
     
     public init<T: Hashable>(trigger: T, color: Color = XTheme.brand, size: CGFloat = 56) {

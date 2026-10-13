@@ -8,9 +8,6 @@ struct PerformanceQuickControlsView: View {
     @Environment(AppState.self) private var appState
     @State private var selectedControl: ShapeControl?
     @State private var showsArp = false
-    @State private var soloOffset: CGFloat = 0
-    @State private var duoFlip: Double = 0
-    @State private var arpWiggle: Double = 0
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -33,7 +30,6 @@ struct PerformanceQuickControlsView: View {
                     ? .drumsAndInstrument
                     : .instrumentOnly
                 appState.setDuoPerformanceMode(next)
-                withAnimation(XTheme.bouncy) { duoFlip += 180 }
             } label: {
                 QuickControlLabel(
                     icon: "square.grid.2x2.fill",
@@ -41,7 +37,6 @@ struct PerformanceQuickControlsView: View {
                     value: compact ? nil : (appState.duoPerformanceMode == .drumsAndInstrument ? "Drums on" : "Off"),
                     compact: compact
                 )
-                .rotation3DEffect(.degrees(duoFlip), axis: (x: 0, y: 1, z: 0))
             }
             .buttonStyle(
                 XTactileButtonStyle(
@@ -56,12 +51,6 @@ struct PerformanceQuickControlsView: View {
                 withAnimation(XTheme.springAnimation) {
                     appState.isSoloModeActive.toggle()
                 }
-                if appState.isSoloModeActive {
-                    withAnimation(XTheme.bouncy) { soloOffset = -3 }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
-                        withAnimation(XTheme.bouncy) { soloOffset = 0 }
-                    }
-                }
             } label: {
                 QuickControlLabel(
                     icon: "guitars.fill",
@@ -69,7 +58,6 @@ struct PerformanceQuickControlsView: View {
                     value: compact ? nil : (appState.isSoloModeActive ? "Lead on" : "Strum"),
                     compact: compact
                 )
-                .offset(y: soloOffset)
             }
             .buttonStyle(
                 XTactileButtonStyle(
@@ -80,7 +68,7 @@ struct PerformanceQuickControlsView: View {
             .help("Smart Soloing: \(appState.controllerManager.controlLabel(for: .primaryExcitation)) plays chord tones, passing runs, and blues inflections")
             .accessibilityValue(appState.isSoloModeActive ? "On" : "Off")
 
-            Button { showsArp.toggle(); wiggle { arpWiggle = $0 } } label: {
+            Button { showsArp.toggle() } label: {
                 QuickControlLabel(
                     icon: "waveform.path.ecg",
                     title: "Arp",
@@ -98,7 +86,7 @@ struct PerformanceQuickControlsView: View {
                 ArpeggiatorPopover()
             }
             .help("Arpeggiator: Step chord tones to BPM across customizable patterns and octaves")
-            .rotationEffect(.degrees(arpWiggle))
+            .accessibilityValue(appState.selectedPlayMode == .arp ? appState.arpeggiatorConfiguration.pattern.rawValue : "Off")
 
             Button {
                 withAnimation(XTheme.springAnimation) {
@@ -119,6 +107,7 @@ struct PerformanceQuickControlsView: View {
                 )
             )
             .help(appState.isSynthMuted ? "Synth muted — MIDI passthru prioritized" : "Mute built-in synthesizer")
+            .accessibilityValue(appState.isSynthMuted ? "Muted" : "On")
 
             Menu {
                 Section("Performance feel") {
@@ -143,6 +132,7 @@ struct PerformanceQuickControlsView: View {
             .fixedSize()
             .help("Chord release, velocity feel, trigger resistance, EQ, compression and reverb")
             .accessibilityLabel("Shape sound and performance feel")
+            .accessibilityValue(gateValue)
             .popover(item: $selectedControl, arrowEdge: .bottom) { control in
                 switch control {
                 case .gate: ChordGatePopover()
@@ -175,17 +165,6 @@ struct PerformanceQuickControlsView: View {
         var id: Self { self }
     }
 
-    /// Fires a ±5° wiggle oscillation on the given setter closure.
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private func wiggle(_ setAngle: @escaping (Double) -> Void) {
-        guard !reduceMotion else { return }
-        let seq: [Double] = [5, -5, 3, -3, 0]
-        var delay = 0.0
-        for deg in seq {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { setAngle(deg) }
-            delay += 0.06
-        }
-    }
 }
 
 private struct QuickControlLabel: View {
@@ -195,7 +174,10 @@ private struct QuickControlLabel: View {
     let compact: Bool
 
     var body: some View {
-        HStack(spacing: 6) {
+        let layout = compact
+            ? AnyLayout(VStackLayout(spacing: 3))
+            : AnyLayout(HStackLayout(spacing: 6))
+        layout {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .semibold))
             VStack(alignment: .leading, spacing: 1) {
@@ -211,7 +193,7 @@ private struct QuickControlLabel: View {
             }
         }
         .foregroundColor(XTheme.textSecondary)
-        .padding(.horizontal, compact ? 8 : 10)
+        .padding(.horizontal, compact ? 4 : 10)
         .frame(minWidth: compact ? 44 : 70, minHeight: 38)
         .contentShape(RoundedRectangle(cornerRadius: XTheme.radiusSmall))
     }

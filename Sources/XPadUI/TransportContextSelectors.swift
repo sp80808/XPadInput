@@ -2,7 +2,7 @@ import SwiftUI
 import XPadCore
 import XPadTheory
 
-/// Compact XPI-themed key selector for the persistent transport bar.
+/// Musical context stays visible in the persistent header.
 struct KeySelectorView: View {
     @Environment(AppState.self) private var appState
 
@@ -20,14 +20,10 @@ struct KeySelectorView: View {
                 }
             }
         } label: {
-            CompactTransportMenuLabel(
-                prefix: "Key",
-                value: appState.currentKey.displayName,
-                minWidth: 72
-            )
+            Text("Key \(appState.currentKey.displayName)")
         }
         .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        .menuIndicator(.visible)
         .fixedSize(horizontal: true, vertical: false)
         .help("Choose key")
         .accessibilityLabel("Key")
@@ -35,7 +31,7 @@ struct KeySelectorView: View {
     }
 }
 
-/// Compact XPI-themed scale selector for the persistent transport bar.
+/// Scale and tuning share one native menu.
 struct ScaleSelectorView: View {
     @Environment(AppState.self) private var appState
 
@@ -67,64 +63,13 @@ struct ScaleSelectorView: View {
                 }
             }
         } label: {
-            CompactTransportMenuLabel(
-                prefix: "Scale",
-                value: appState.currentScale.shortDisplayName,
-                minWidth: 92
-            )
+            Text(appState.currentScale.shortDisplayName)
         }
         .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        .menuIndicator(.visible)
         .fixedSize(horizontal: true, vertical: false)
         .help("Choose scale and tuning for the built-in synth and MPE output.")
         .accessibilityLabel("Scale")
         .accessibilityValue("\(appState.currentScale.displayName), tuning \(appState.currentTemperament.rawValue)")
-    }
-}
-
-/// Shared visual treatment for small transport menu controls.
-private struct CompactTransportMenuLabel: View {
-    let prefix: String?
-    let value: String
-    let minWidth: CGFloat
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isHovering = false
-
-    var body: some View {
-        HStack(spacing: 5) {
-            if let prefix {
-                Text(prefix)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(XTheme.textTertiary)
-            }
-
-            Text(value)
-                .font(.system(size: 12, weight: .bold))
-                .foregroundColor(isHovering ? XTheme.textPrimary : XTheme.primaryLight)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-
-            Spacer(minLength: 4)
-
-            Image(systemName: "chevron.down")
-                .font(.system(size: 8, weight: .bold))
-                .foregroundColor(isHovering ? XTheme.textSecondary : XTheme.textTertiary)
-        }
-        .padding(.horizontal, 9)
-        .frame(minWidth: minWidth, minHeight: 28, maxHeight: 28)
-        .background(
-            RoundedRectangle(cornerRadius: XTheme.radiusSmall)
-                .fill(isHovering ? AnyShapeStyle(XTheme.surfaceHover) : AnyShapeStyle(XTheme.controlGradient))
-                .overlay(
-                    RoundedRectangle(cornerRadius: XTheme.radiusSmall)
-                        .stroke(
-                            isHovering ? XTheme.borderActive.opacity(0.55) : Color.white.opacity(0.10),
-                            lineWidth: XTheme.strokeSubtle
-                        )
-                )
-        )
-        .contentShape(RoundedRectangle(cornerRadius: XTheme.radiusSmall))
-        .onHover { isHovering = $0 }
-        .animation(reduceMotion ? nil : XTheme.quickAnimation, value: isHovering)
     }
 }

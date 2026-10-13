@@ -49,8 +49,11 @@ public final class ControllerManager: @unchecked Sendable {
     public private(set) var surfaceFrame = ControlSurfaceFrame()
     
     // Input Learn Mode
-    public var learningAction: SemanticMusicalAction? = nil
-    public var onInputLearned: ((SemanticMusicalAction, PhysicalControlInput) -> Void)?
+    public private(set) var learningAction: SemanticMusicalAction? = nil
+    private let inputLearningLock = NSLock()
+    private var inputLearningSessionID: UUID?
+    private var inputLearningCompletionQueued = false
+    private var onInputLearned: (@MainActor (SemanticMusicalAction, PhysicalControlInput) -> Void)?
     
     // Input callbacks
     public var onStateChanged: ((ControllerState) -> Void)?
@@ -212,6 +215,87 @@ public final class ControllerManager: @unchecked Sendable {
     }
     
     // MARK: - Input Handlers & Input Learn
+
+    /// Starts one UI-owned input-learning session. Replacing a session invalidates any
+    /// completion already queued by the controller callback for the older session.
+    @MainActor
+    @discardableResult
+    public func beginInputLearning(
+        for action: SemanticMusicalAction,
+        onLearned: @escaping @MainActor (SemanticMusicalAction, PhysicalControlInput) -> Void
+    ) -> UUID {
+        let sessionID = UUID()
+        inputLearningLock.lock()
+        inputLearningSessionID = sessionID
+        inputLearningCompletionQueued = false
+        onInputLearned = onLearned
+        learningAction = action
+        inputLearningLock.unlock()
+        return sessionID
+    }
+
+    /// Ends only the specified session, so dismissal of an older sheet cannot cancel
+    /// a newer input-learning session.
+    @MainActor
+    public func cancelInputLearning(sessionID: UUID) {
+        inputLearningLock.lock()
+        guard inputLearningSessionID == sessionID else {
+            inputLearningLock.unlock()
+            return
+        }
+        inputLearningSessionID = nil
+        inputLearningCompletionQueued = false
+        onInputLearned = nil
+        learningAction = nil
+        inputLearningLock.unlock()
+    }
+
+    private func inputLearningSnapshot() -> (sessionID: UUID, action: SemanticMusicalAction)? {
+        inputLearningLock.lock()
+        defer { inputLearningLock.unlock() }
+        guard let sessionID = inputLearningSessionID,
+              let action = learningAction,
+              !inputLearningCompletionQueued else { return nil }
+        return (sessionID, action)
+    }
+
+    private func queueInputLearningCompletion(
+        sessionID: UUID,
+        action: SemanticMusicalAction,
+        input: PhysicalControlInput
+    ) {
+        inputLearningLock.lock()
+        guard inputLearningSessionID == sessionID, !inputLearningCompletionQueued else {
+            inputLearningLock.unlock()
+            return
+        }
+        inputLearningCompletionQueued = true
+        inputLearningLock.unlock()
+
+        Task { @MainActor [weak self] in
+            self?.completeInputLearning(sessionID: sessionID, action: action, input: input)
+        }
+    }
+
+    @MainActor
+    func completeInputLearning(
+        sessionID: UUID,
+        action: SemanticMusicalAction,
+        input: PhysicalControlInput
+    ) {
+        inputLearningLock.lock()
+        guard inputLearningSessionID == sessionID else {
+            inputLearningLock.unlock()
+            return
+        }
+        let completion = onInputLearned
+        inputLearningSessionID = nil
+        inputLearningCompletionQueued = false
+        onInputLearned = nil
+        learningAction = nil
+        inputLearningLock.unlock()
+        completion?(action, input)
+    }
     
     private func setupInputHandlers(_ controller: GCController) {
         guard let gamepad = controller.extendedGamepad else { return }
@@ -230,10 +314,16 @@ public final class ControllerManager: @unchecked Sendable {
             self.calibrationWizard.feed(rawLeftX: rawLX, rawLeftY: rawLY, rawRightX: rawRX, rawRightY: rawRY)
             
             // Check Input Learn
-            if let targetAction = self.learningAction {
-                if let detected = self.detectDeliberateInput(gamepad: gamepad) {
-                    self.learningAction = nil
-                    self.onInputLearned?(targetAction, detected)
+            if let learning = self.inputLearningSnapshot() {
+                if let detected = self.detectDeliberateInput(
+                    gamepad: gamepad,
+                    prefer2D: learning.action.compatibilityType == .continuous2D
+                ) {
+                    self.queueInputLearningCompletion(
+                        sessionID: learning.sessionID,
+                        action: learning.action,
+                        input: detected
+                    )
                     self.playTechniqueHaptic(.buttonConfirm)
                     return
                 }
@@ -335,7 +425,7 @@ public final class ControllerManager: @unchecked Sendable {
     }
     
     /// Detects a deliberate button press or stick excursion while ignoring resting drift (<0.20).
-    private func detectDeliberateInput(gamepad: GCExtendedGamepad) -> PhysicalControlInput? {
+    private func detectDeliberateInput(gamepad: GCExtendedGamepad, prefer2D: Bool) -> PhysicalControlInput? {
         InputLearnDetector.detect(
             leftStickX: gamepad.leftThumbstick.xAxis.value,
             leftStickY: gamepad.leftThumbstick.yAxis.value,
@@ -357,7 +447,7 @@ public final class ControllerManager: @unchecked Sendable {
             rightStickClick: gamepad.rightThumbstickButton?.isPressed == true,
             options: gamepad.buttonMenu.isPressed,
             share: gamepad.buttonOptions?.isPressed ?? false,
-            prefer2D: learningAction?.compatibilityType == .continuous2D
+            prefer2D: prefer2D
         )
     }
 

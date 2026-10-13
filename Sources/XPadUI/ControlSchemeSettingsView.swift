@@ -739,55 +739,11 @@ public struct ControlSchemeSettingsView: View {
     // MARK: - 8. Input Learn Sheet
     
     private func inputLearnSheet(for action: SemanticMusicalAction) -> some View {
-        VStack(spacing: 20) {
-            Image(systemName: "hand.tap.fill")
-                .font(.system(size: 36))
-                .foregroundStyle(XTheme.primary)
-            
-            VStack(spacing: 6) {
-                Text("Input Learn Mode")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(XTheme.textPrimary)
-                
-            Text("Press or move the physical controller element you want to map to:")
-                    .font(.system(size: 12))
-                    .foregroundStyle(XTheme.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                
-                Text(action.displayName)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(XTheme.primaryLight)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(XTheme.primary.opacity(0.15)))
+        InputLearningSheet(action: action) { targetAction, detectedInput in
+            updateScheme { scheme in
+                scheme.bindings[targetAction] = PhysicalControlBinding(input: detectedInput)
             }
-            
-            ProgressView()
-                .tint(XTheme.primary)
-            
-            Text("Listening for deliberate action (ignoring resting thumbstick jitter)…")
-                .font(.system(size: 11))
-                .foregroundStyle(XTheme.textTertiary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            
-            Button("Cancel") {
-                appState.controllerManager.learningAction = nil
-                learningTargetAction = nil
-            }
-            .buttonStyle(.bordered)
-        }
-        .xSettingsSheetSize()
-        .background(XTheme.surfaceElevated)
-        .onAppear {
-            appState.controllerManager.learningAction = action
-            appState.controllerManager.onInputLearned = { targetAction, detectedInput in
-                updateScheme { scheme in
-                    scheme.bindings[targetAction] = PhysicalControlBinding(input: detectedInput)
-                }
-                learningTargetAction = nil
-            }
+            learningTargetAction = nil
         }
     }
 
@@ -1129,6 +1085,77 @@ public struct ControlSchemeSettingsView: View {
         case .directVoices: return "music.note.list"
         case .utility: return "wrench.and.screwdriver"
         }
+    }
+}
+
+/// Owns its session token so a late disappearance can only cancel the session
+/// started by this particular sheet instance.
+private struct InputLearningSheet: View {
+    @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
+
+    let action: SemanticMusicalAction
+    let onLearned: @MainActor (SemanticMusicalAction, PhysicalControlInput) -> Void
+    @State private var sessionID: UUID?
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "hand.tap.fill")
+                .font(.system(size: 36))
+                .foregroundStyle(XTheme.primary)
+
+            VStack(spacing: 6) {
+                Text("Input Learn Mode")
+                    .font(.system(size: 17, weight: .bold))
+                    .foregroundStyle(XTheme.textPrimary)
+
+                Text("Press or move the physical controller element you want to map to:")
+                    .font(.system(size: 12))
+                    .foregroundStyle(XTheme.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(action.displayName)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(XTheme.primaryLight)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(XTheme.primary.opacity(0.15)))
+            }
+
+            ProgressView()
+                .tint(XTheme.primary)
+
+            Text("Listening for deliberate action (ignoring resting thumbstick jitter)…")
+                .font(.system(size: 11))
+                .foregroundStyle(XTheme.textTertiary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button("Cancel") {
+                cancelSession()
+                dismiss()
+            }
+            .buttonStyle(.bordered)
+        }
+        .xSettingsSheetSize()
+        .background(XTheme.surfaceElevated)
+        .onAppear {
+            guard sessionID == nil else { return }
+            sessionID = appState.controllerManager.beginInputLearning(for: action) { targetAction, detectedInput in
+                sessionID = nil
+                onLearned(targetAction, detectedInput)
+                dismiss()
+            }
+        }
+        .onDisappear(perform: cancelSession)
+    }
+
+    @MainActor
+    private func cancelSession() {
+        guard let sessionID else { return }
+        appState.controllerManager.cancelInputLearning(sessionID: sessionID)
+        self.sessionID = nil
     }
 }
 

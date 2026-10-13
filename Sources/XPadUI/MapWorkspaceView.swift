@@ -168,6 +168,7 @@ public struct MapWorkspaceView: View {
         return HStack(spacing: XTheme.space3) {
             if input != .unassigned {
                 ControllerGlyphView(key: controllerManager.controlGlyph(for: action), iconPack: iconPack, isPressed: false, size: .regular)
+                    .accessibilityHidden(true)
             } else {
                 Image(systemName: "minus.circle")
                     .foregroundStyle(XTheme.textTertiary)
