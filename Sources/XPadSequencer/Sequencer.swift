@@ -1,5 +1,6 @@
 import Foundation
 import XPadCore
+import XPadTheory
 import XPadMIDI
 import XPadAudio
 
@@ -86,11 +87,16 @@ public final class Sequencer: ObservableObject {
     @Published public var activeSceneIndex: Int = 0
     @Published public var recordedEvents: [RecordedNoteEvent] = []
 
+    public var onPlaybackNoteOn: ((UInt8, UInt8) -> Void)?
+    public var onPlaybackNoteOff: ((UInt8) -> Void)?
+
     private var timer: DispatchSourceTimer?
     private let timerQueue = DispatchQueue(label: "com.xpadinput.clock", qos: .userInteractive)
     private var clockStartHostTime: DispatchTime = .now()
     private var clockStartTick: UInt64 = 0
     private var activeNoteStarts: [UInt8: UInt64] = [:]
+    private var activePlaybackNotes: Set<UInt8> = []
+    private var lastDispatchedTick: UInt64 = 0
 
     public init() {
         setupDefaultScene()
@@ -113,6 +119,7 @@ public final class Sequencer: ObservableObject {
         transport.isPlaying = true
         clockStartHostTime = .now()
         clockStartTick = transport.currentTick
+        lastDispatchedTick = transport.currentTick
         startClock()
     }
 
@@ -122,7 +129,87 @@ public final class Sequencer: ObservableObject {
         }
         transport.isPlaying = false
         stopClock()
+        silencePlaybackNotes()
         transport.currentTick = 0
+        lastDispatchedTick = 0
+    }
+
+    public func rewind() {
+        transport.currentTick = 0
+        clockStartTick = 0
+        clockStartHostTime = .now()
+        lastDispatchedTick = 0
+        silencePlaybackNotes()
+    }
+
+    public func silencePlaybackNotes() {
+        for note in activePlaybackNotes {
+            onPlaybackNoteOff?(note)
+        }
+        activePlaybackNotes.removeAll()
+    }
+
+    public func toggleMute(trackIndex: Int) {
+        guard activeSceneIndex < scenes.count,
+              trackIndex < scenes[activeSceneIndex].tracks.count else { return }
+        scenes[activeSceneIndex].tracks[trackIndex].isMuted.toggle()
+        if scenes[activeSceneIndex].tracks[trackIndex].isMuted {
+            silencePlaybackNotes()
+        }
+    }
+
+    public func toggleSolo(trackIndex: Int) {
+        guard activeSceneIndex < scenes.count,
+              trackIndex < scenes[activeSceneIndex].tracks.count else { return }
+        scenes[activeSceneIndex].tracks[trackIndex].isSolo.toggle()
+        silencePlaybackNotes()
+    }
+
+    /// Inserts a harmonic progression as a voiced multi-note clip on the target track.
+    public func insertProgressionClip(_ progression: Progression, targetTrack: TrackType = .chords) {
+        guard activeSceneIndex < scenes.count else { return }
+        var currentTick: UInt64 = 0
+        var clipNotes: [RecordedNoteEvent] = []
+
+        for block in progression.blocks {
+            let blockDurationTicks = UInt64(max(1.0, block.durationBeats) * 960.0)
+            let noteDuration = max(240, blockDurationTicks > 80 ? blockDurationTicks - 80 : blockDurationTicks)
+            let voiced = block.chord.voicedNotes()
+            for note in voiced {
+                let event = RecordedNoteEvent(
+                    note: note.midiNumber,
+                    velocity: block.humanizedVelocity,
+                    startTick: currentTick,
+                    durationTicks: noteDuration
+                )
+                clipNotes.append(event)
+            }
+            currentTick += blockDurationTicks
+        }
+
+        let clipTotalTicks = max(currentTick, 960 * 4)
+        let clipName = progression.name.isEmpty ? "Harmony Progression" : progression.name
+        let newClip = SequencerClip(
+            name: "\(clipName) (\(progression.scale.root.standardName) \(progression.scale.type.rawValue))",
+            startTick: 0,
+            durationTicks: clipTotalTicks,
+            notes: clipNotes
+        )
+
+        // Find or assign to track
+        if let idx = scenes[activeSceneIndex].tracks.firstIndex(where: { $0.type == targetTrack }) {
+            scenes[activeSceneIndex].tracks[idx].clips = [newClip]
+        } else if !scenes[activeSceneIndex].tracks.isEmpty {
+            scenes[activeSceneIndex].tracks[0].clips = [newClip]
+        }
+
+        // Add to recordedEvents for MIDI export as well
+        self.recordedEvents = clipNotes
+
+        // Expand scene / loop if needed
+        let totalBars = max(4, Int(ceil(Double(clipTotalTicks) / (960.0 * 4.0))))
+        scenes[activeSceneIndex].lengthBars = totalBars
+        transport.loopEndTick = UInt64(totalBars * 960 * 4)
     }
 
     public func setBPM(_ bpm: Double) {
@@ -218,13 +305,52 @@ public final class Sequencer: ObservableObject {
         let ticksElapsed = UInt64(elapsedSeconds * (transport.bpm / 60.0) * 960.0)
         var newTick = clockStartTick + ticksElapsed
         
+        var didLoopWrap = false
         if transport.loopEnabled && transport.loopEndTick > transport.loopStartTick {
             let loopSpan = transport.loopEndTick - transport.loopStartTick
             if newTick >= transport.loopEndTick {
                 let offset = (newTick - transport.loopStartTick) % loopSpan
                 newTick = transport.loopStartTick + offset
+                didLoopWrap = true
             }
         }
+
+        if didLoopWrap || newTick < lastDispatchedTick {
+            silencePlaybackNotes()
+            lastDispatchedTick = newTick
+        } else {
+            dispatchPlaybackEvents(from: lastDispatchedTick, to: newTick)
+            lastDispatchedTick = newTick
+        }
+
         transport.currentTick = newTick
+    }
+
+    private func dispatchPlaybackEvents(from start: UInt64, to end: UInt64) {
+        guard activeSceneIndex < scenes.count else { return }
+        let currentTracks = scenes[activeSceneIndex].tracks
+        let anySolo = currentTracks.contains { $0.isSolo }
+        let activeTracks = currentTracks.filter { track in
+            if anySolo { return track.isSolo }
+            return !track.isMuted
+        }
+
+        for track in activeTracks {
+            for clip in track.clips {
+                for noteEvent in clip.notes {
+                    let absoluteStart = clip.startTick + noteEvent.startTick
+                    let absoluteEnd = absoluteStart + noteEvent.durationTicks
+                    
+                    if absoluteStart >= start && absoluteStart < end {
+                        onPlaybackNoteOn?(noteEvent.note, noteEvent.velocity)
+                        activePlaybackNotes.insert(noteEvent.note)
+                    }
+                    if absoluteEnd >= start && absoluteEnd < end {
+                        onPlaybackNoteOff?(noteEvent.note)
+                        activePlaybackNotes.remove(noteEvent.note)
+                    }
+                }
+            }
+        }
     }
 }

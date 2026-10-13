@@ -331,11 +331,6 @@ struct ChordNodeView: View {
                 pulse = false
             }
         }
-        .xRipple(
-            trigger: isSelected ? chord.displayName : "",
-            color: tensionTint,
-            size: max(width, height) * 1.6
-        )
         .help("\(chord.displayName) · \(character.label)")
         .accessibilityLabel("\(chord.displayName), \(character.label)")
         .accessibilityAddTraits(isSelected ? .isSelected : [])

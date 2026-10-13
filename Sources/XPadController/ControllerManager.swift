@@ -10,6 +10,7 @@ public final class ControllerManager: @unchecked Sendable {
     public var controllerState = ControllerState()
     public var currentState = GamepadState()
     public var controllerKind: ControllerKind = .simulated
+    public var activeIconPack: ControllerIconPack { controllerKind.iconPack }
     public var capabilityProfile: ControllerCapabilityProfile?
     public var isConnected: Bool = false
     public var controllerName: String = "No Controller"

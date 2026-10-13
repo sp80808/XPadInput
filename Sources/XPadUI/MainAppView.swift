@@ -127,8 +127,6 @@ struct TopPerformanceHeaderView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var onOpenSettings: () -> Void = {}
     @State private var badgeHovered = false
-    @State private var connectRippleTrigger = 0
-    @State private var wasConnected = false
 
     var body: some View {
         let isCompact = viewport.isCompactWidth
@@ -180,17 +178,12 @@ struct TopPerformanceHeaderView: View {
                 .padding(.vertical, XTheme.space1)
                 .background(badgeHovered ? XTheme.surfaceHover : XTheme.control)
                 .clipShape(RoundedRectangle(cornerRadius: XTheme.radiusS))
-                .xRipple(trigger: connectRippleTrigger, color: XTheme.connected, size: 56)
             }
             .buttonStyle(.plain)
             .help("Connect, calibrate or remap a controller")
             .accessibilityLabel("Controller setup")
             .onHover { badgeHovered = $0 }
             .animation(reduceMotion ? nil : XTheme.quickAnimation, value: badgeHovered)
-            .onChange(of: appState.controllerManager.isConnected) { _, isConnected in
-                if isConnected && !wasConnected { connectRippleTrigger += 1 }
-                wasConnected = isConnected
-            }
 
             if appState.selectedWorkspace == .play {
                 ViewLayoutMenuButton()

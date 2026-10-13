@@ -7,8 +7,6 @@ struct ControllerVisualizerView: View {
     @Environment(AppState.self) private var appState
     @State private var displayState = ControllerDisplayState()
     @State private var showsMappingOverlay: Bool = false
-    @State private var connectTrigger: Int = 0
-    @State private var wasConnected: Bool = false
     
     var body: some View {
         let isConnected = appState.controllerManager.isConnected
@@ -84,13 +82,6 @@ struct ControllerVisualizerView: View {
             RoundedRectangle(cornerRadius: XTheme.radiusL)
                 .fill(XTheme.surface.opacity(isConnected ? 0.62 : 0.48))
         )
-        .xRipple(trigger: connectTrigger, color: XTheme.controllerConnected, size: 140)
-        .onChange(of: isConnected) { _, connected in
-            if connected && !wasConnected {
-                connectTrigger += 1
-            }
-            wasConnected = connected
-        }
         .task {
             await sampleDisplayState()
         }

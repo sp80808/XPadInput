@@ -31,9 +31,7 @@ public struct PlayView: View {
     @Environment(AppState.self) private var appState
     var onOpenSettings: () -> Void = {}
     
-    @State private var activeProgression: Progression
     @State private var selectedBlockIndex: Int? = 0
-    @State private var isPlayingProgression: Bool = false
     
     // DSP parameter state
     @State private var filterCutoff: Double = 3200.0
@@ -49,9 +47,9 @@ public struct PlayView: View {
     
     public init(onOpenSettings: @escaping () -> Void = {}) {
         self.onOpenSettings = onOpenSettings
-        self._activeProgression = State(initialValue: Progression(scale: Scale(root: .c, type: .major)))
     }
     
+    private var activeProgression: Progression { appState.activeProgression }
     private var activeScale: Scale { appState.currentScale }
     private var diatonicChords: [Chord] { Chord.diatonicChords(root: appState.currentKey, scale: activeScale) }
     
@@ -982,14 +980,13 @@ struct DiatonicChordPadsRow: View {
     }
 }
 
-/// Individual diatonic chord pad — isolated so xRipple state is per-pad.
+/// Individual diatonic chord pad.
 private struct ChordPadButton: View {
     let chord: Chord
     let index: Int
     let isActive: Bool
     let reduceMotion: Bool
     let onSelect: (Chord) -> Void
-    @State private var rippleTrigger = 0
 
     private func romanNumeral(for degree: Int) -> String {
         ["I","ii","iii","IV","V","vi","vii°"][degree-1] ?? "\(degree)"
@@ -997,7 +994,6 @@ private struct ChordPadButton: View {
 
     var body: some View {
         Button {
-            if !reduceMotion { rippleTrigger += 1 }
             onSelect(chord)
         } label: {
             VStack(spacing: 3) {
@@ -1012,7 +1008,6 @@ private struct ChordPadButton: View {
         .buttonStyle(.plain)
         .scaleEffect(isActive && !reduceMotion ? 0.94 : 1.0)
         .animation(reduceMotion ? nil : XTheme.feedbackFast, value: isActive)
-        .xRipple(trigger: rippleTrigger, color: XTheme.primary, size: 54)
         .help("Audition \(chord.symbol)")
         .accessibilityLabel("\(romanNumeral(for: index + 1)), \(chord.symbol)")
         .accessibilityAddTraits(isActive ? .isSelected : [])
@@ -1505,9 +1500,6 @@ struct MIDIActivityView: View {
                 Circle()
                     .fill(noteOnFlash ? XTheme.primary : XTheme.surface)
                     .frame(width: 8, height: 8)
-                    .overlay(
-                        Circle().stroke(Color.clear, lineWidth: 0)
-                    )
                 
                 // Note count
                 Text("\(appState.activeNotes.count)")
@@ -1521,9 +1513,6 @@ struct MIDIActivityView: View {
                 Circle()
                     .fill(noteOffFlash ? XTheme.tense : XTheme.surface)
                     .frame(width: 8, height: 8)
-                    .overlay(
-                        Circle().stroke(Color.clear, lineWidth: 0)
-                    )
                 
                 Spacer()
                 

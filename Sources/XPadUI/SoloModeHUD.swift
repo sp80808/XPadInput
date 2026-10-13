@@ -89,7 +89,6 @@ public struct SmartSoloHUDView: View {
                                 .foregroundStyle(Color.orange)
                                 .contentTransition(.numericText())
                                 .animation(reduceMotion ? nil : XTheme.snappy, value: target.targetNote.pitchClass.displayName)
-                                .xRipple(trigger: target.targetNote.pitchClass.displayName, color: .orange, size: 36)
                             Text("Octave \(target.targetNote.octave)")
                                 .font(.caption2)
                                 .monospacedDigit()

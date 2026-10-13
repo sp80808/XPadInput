@@ -93,6 +93,51 @@ public final class AppState: @unchecked Sendable {
     public var lastVelocity16: UInt16 = 0
     public var lastStrumTime: Date?
 
+    // MARK: - Harmonic Progression & Workspace Controller State
+    public enum ChordPerformanceSource: String, CaseIterable, Identifiable, Sendable {
+        case diatonicWheel = "Diatonic Wheel"
+        case activeProgression = "Active Progression"
+        public var id: String { rawValue }
+    }
+
+    public enum HarmonyFocusZone: String, CaseIterable, Sendable {
+        case progressionBlocks = "Progression"
+        case suggestions = "Suggestions"
+    }
+
+    public var chordPerformanceSource: ChordPerformanceSource = .diatonicWheel
+    public var activeProgression: Progression = Progression.factoryPresets(for: .naturalMinor).first ?? Progression(scale: .naturalMinor)
+    public var selectedProgressionBlockIndex: Int = 0
+    public var harmonyFocusedZone: HarmonyFocusZone = .progressionBlocks
+    public var harmonySelectedSuggestionIndex: Int = 0
+    public var sequenceSelectedTrackIndex: Int = 0
+    public var isPlayingProgression: Bool = false
+    public var lastActionToast: String? = nil
+
+    private let suggestionEngine = HarmonicSuggestionEngine()
+
+    public var harmonicSuggestions: [ChordSuggestion] {
+        let chord = currentChord ?? activeProgression.blocks.first?.chord ?? Chord(root: currentKey, quality: .major)
+        return suggestionEngine.suggestions(for: chord, in: currentScale)
+    }
+
+    private struct ControllerEdgeState {
+        var buttonA: Bool = false
+        var buttonB: Bool = false
+        var buttonX: Bool = false
+        var buttonY: Bool = false
+        var leftShoulder: Bool = false
+        var rightShoulder: Bool = false
+        var dpadUp: Bool = false
+        var dpadDown: Bool = false
+        var dpadLeft: Bool = false
+        var dpadRight: Bool = false
+        var leftTrigger: Bool = false
+        var rightTrigger: Bool = false
+        var menuButton: Bool = false
+    }
+    private var lastControllerEdgeState = ControllerEdgeState()
+
     public var selectedWorkspace: Workspace = .play
     public var showDiagnostics: Bool = false
 
@@ -397,6 +442,7 @@ public final class AppState: @unchecked Sendable {
         audioEngine.start()
         XPadPluginRegistrar.registerPluginComponents()
         setupIncomingMIDIPassthru()
+        setupSequencerPlaybackRouting()
         installArcadeUnlockMonitor()
         midiEngine.onVirtualMIDIChanged = { [weak self] enabled in
             guard let self else { return }
@@ -524,6 +570,23 @@ public final class AppState: @unchecked Sendable {
                 Task { @MainActor in
                     self.audioEngine.setTimbre(for: note, timbre: value)
                 }
+            }
+        }
+    }
+
+    private func setupSequencerPlaybackRouting() {
+        sequencer.onPlaybackNoteOn = { [weak self] note, velocity in
+            guard let self, !self.audioEngine.isMuted else { return }
+            self.audioEngine.noteOn(note: note, velocity: velocity)
+            if self.midiEngine.virtualMIDIEnabled {
+                self.midiEngine.sendNoteOn(port: .chords, channel: 0, note: note, velocity: velocity)
+            }
+        }
+        sequencer.onPlaybackNoteOff = { [weak self] note in
+            guard let self else { return }
+            self.audioEngine.noteOff(note: note)
+            if self.midiEngine.virtualMIDIEnabled {
+                self.midiEngine.sendNoteOff(port: .chords, channel: 0, note: note)
             }
         }
     }
@@ -982,6 +1045,13 @@ public final class AppState: @unchecked Sendable {
         applySurfaceActions(surface)
         if surface.didRise(.panic) { return }
 
+        // Workspace-specific controller routing for Harmony and Sequence (Compose)
+        if selectedWorkspace == .harmony {
+            handleHarmonyControllerInput(state, now: now)
+        } else if selectedWorkspace == .sequence {
+            handleSequenceControllerInput(state, now: now)
+        }
+
         // Guided tutorial validation runs alongside live performance.
         if activeTutorialMissionID != nil {
             _ = tutorialEngine.process(state: state, timestamp: now)
@@ -1085,6 +1155,22 @@ public final class AppState: @unchecked Sendable {
                 }
             }
         }
+
+        lastControllerEdgeState = ControllerEdgeState(
+            buttonA: state.buttonA,
+            buttonB: state.buttonB,
+            buttonX: state.buttonX,
+            buttonY: state.buttonY,
+            leftShoulder: state.leftShoulder,
+            rightShoulder: state.rightShoulder,
+            dpadUp: state.dpadUp,
+            dpadDown: state.dpadDown,
+            dpadLeft: state.dpadLeft,
+            dpadRight: state.dpadRight,
+            leftTrigger: state.leftTrigger.value > 0.65,
+            rightTrigger: state.rightTrigger.value > 0.65,
+            menuButton: state.menuButton
+        )
 
         lastInputTime = now
     }
@@ -1212,6 +1298,11 @@ public final class AppState: @unchecked Sendable {
     private func handleChordSelection(_ state: ControllerState) {
         guard state.leftStickMagnitude > 0.3 else { return }
 
+        if chordPerformanceSource == .activeProgression && !activeProgression.blocks.isEmpty {
+            handleProgressionChordSelection(state)
+            return
+        }
+
         let angle = state.leftStickAngle
         let chordCount = diatonicChords.count
         guard chordCount > 0 else { return }
@@ -1243,6 +1334,323 @@ public final class AppState: @unchecked Sendable {
             if selectedWorkspace == .practice && practiceEngine.isPracticeActive {
                 practiceEngine.evaluateChordInput(new)
             }
+        }
+    }
+
+    private func handleProgressionChordSelection(_ state: ControllerState) {
+        let blockCount = activeProgression.blocks.count
+        guard blockCount > 0 else { return }
+
+        let angle = state.leftStickAngle
+        var normalised = -(angle - .pi / 2)
+        if normalised < 0 { normalised += 2 * .pi }
+
+        let sliceAngle = (2.0 * .pi) / Double(blockCount)
+        let centred = (normalised + sliceAngle / 2).truncatingRemainder(dividingBy: 2 * .pi)
+        let slicePosition = centred / sliceAngle
+        let index = Int(slicePosition) % blockCount
+        let positionWithinSlice = slicePosition - floor(slicePosition)
+
+        guard positionWithinSlice > 0.14, positionWithinSlice < 0.86 else { return }
+
+        if index != selectedProgressionBlockIndex {
+            let old = currentChord ?? activeProgression.blocks[selectedProgressionBlockIndex].chord
+            selectedProgressionBlockIndex = index
+            var new = activeProgression.blocks[index].chord
+            new.inversion = voicingInversion
+            currentChord = new
+            recordChordHistory(new)
+            retargetHeldChordTones()
+            controllerManager.playTechniqueHaptic(.chordChange)
+            multiJamManager.updateSharedHarmony(key: currentKey, scale: currentScale, chord: new)
+            _ = smartSoloEngine.handleChordChange(oldChord: old, newChord: new, context: musicalContext())
+        }
+    }
+
+    // MARK: - Workspace-Specific Controller Actions
+
+    public func auditionChord(_ chord: Chord, duration: Double = 1.0) {
+        let notes = chord.voicedNotes()
+        let midiNotes = notes.map(\.midiNumber)
+        for note in midiNotes {
+            audioEngine.noteOn(note: note, velocity: 100)
+        }
+        sendAuditionNotes(midiNotes, port: .chords, velocity: 100, duration: duration)
+        DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
+            for note in midiNotes {
+                self?.audioEngine.noteOff(note: note)
+            }
+        }
+    }
+
+    public func mutateActiveProgression(complexity: Double = 0.4) {
+        activeProgression = activeProgression.mutated(complexity: complexity)
+        if selectedProgressionBlockIndex >= activeProgression.blocks.count {
+            selectedProgressionBlockIndex = max(0, activeProgression.blocks.count - 1)
+        }
+    }
+
+    public func addChordToActiveProgression(_ chord: Chord, durationBeats: Double = 4.0) {
+        let block = ChordBlock(chord: chord, durationBeats: durationBeats)
+        activeProgression.blocks.append(block)
+        selectedProgressionBlockIndex = activeProgression.blocks.count - 1
+        currentChord = chord
+    }
+
+    public func removeSelectedProgressionBlock() {
+        guard activeProgression.blocks.count > 1,
+              selectedProgressionBlockIndex < activeProgression.blocks.count else { return }
+        activeProgression.blocks.remove(at: selectedProgressionBlockIndex)
+        selectedProgressionBlockIndex = min(selectedProgressionBlockIndex, activeProgression.blocks.count - 1)
+        if selectedProgressionBlockIndex < activeProgression.blocks.count {
+            currentChord = activeProgression.blocks[selectedProgressionBlockIndex].chord
+        }
+    }
+
+    public func sendActiveProgressionToSequencer() {
+        sequencer.insertProgressionClip(activeProgression, targetTrack: .chords)
+    }
+
+    public func playActiveProgressionToggle() {
+        guard !isPlayingProgression else {
+            isPlayingProgression = false
+            return
+        }
+        isPlayingProgression = true
+        var delay: Double = 0.0
+
+        for block in activeProgression.blocks {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.isPlayingProgression else { return }
+                self.auditionChord(block.chord)
+            }
+            delay += 1.0
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.isPlayingProgression = false
+        }
+    }
+
+    public func showToast(_ message: String) {
+        lastActionToast = message
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            if self?.lastActionToast == message {
+                self?.lastActionToast = nil
+            }
+        }
+    }
+
+    private func handleHarmonyControllerInput(_ state: ControllerState, now: TimeInterval) {
+        let a = state.buttonA
+        let b = state.buttonB
+        let x = state.buttonX
+        let y = state.buttonY
+        let lb = state.leftShoulder
+        let rb = state.rightShoulder
+        let up = state.dpadUp
+        let down = state.dpadDown
+        let left = state.dpadLeft
+        let right = state.dpadRight
+        let lt = state.leftTrigger.value > 0.65
+        let rt = state.rightTrigger.value > 0.65
+
+        // LB / D-Pad Left: Prev Progression Block
+        if (lb && !lastControllerEdgeState.leftShoulder) || (left && !lastControllerEdgeState.dpadLeft) {
+            if !activeProgression.blocks.isEmpty {
+                selectedProgressionBlockIndex = (selectedProgressionBlockIndex - 1 + activeProgression.blocks.count) % activeProgression.blocks.count
+                harmonyFocusedZone = .progressionBlocks
+                let chord = activeProgression.blocks[selectedProgressionBlockIndex].chord
+                currentChord = chord
+                auditionChord(chord)
+                controllerManager.playTechniqueHaptic(.fretShift)
+            }
+        }
+
+        // RB / D-Pad Right: Next Progression Block
+        if (rb && !lastControllerEdgeState.rightShoulder) || (right && !lastControllerEdgeState.dpadRight) {
+            if !activeProgression.blocks.isEmpty {
+                selectedProgressionBlockIndex = (selectedProgressionBlockIndex + 1) % activeProgression.blocks.count
+                harmonyFocusedZone = .progressionBlocks
+                let chord = activeProgression.blocks[selectedProgressionBlockIndex].chord
+                currentChord = chord
+                auditionChord(chord)
+                controllerManager.playTechniqueHaptic(.fretShift)
+            }
+        }
+
+        // D-Pad Up: Switch focus to progression blocks or previous suggestion
+        if up && !lastControllerEdgeState.dpadUp {
+            if harmonyFocusedZone == .suggestions && harmonySelectedSuggestionIndex > 0 {
+                harmonySelectedSuggestionIndex -= 1
+                controllerManager.playTechniqueHaptic(.selection)
+            } else {
+                harmonyFocusedZone = .progressionBlocks
+                controllerManager.playTechniqueHaptic(.selection)
+            }
+        }
+
+        // D-Pad Down: Switch focus to suggestions or next suggestion
+        if down && !lastControllerEdgeState.dpadDown {
+            if harmonyFocusedZone == .progressionBlocks {
+                harmonyFocusedZone = .suggestions
+                controllerManager.playTechniqueHaptic(.selection)
+            } else {
+                let maxIdx = max(0, harmonicSuggestions.count - 1)
+                harmonySelectedSuggestionIndex = min(maxIdx, harmonySelectedSuggestionIndex + 1)
+                controllerManager.playTechniqueHaptic(.selection)
+            }
+        }
+
+        // Button A (South / Cross): Audition focused chord
+        if a && !lastControllerEdgeState.buttonA {
+            if harmonyFocusedZone == .suggestions && !harmonicSuggestions.isEmpty {
+                let chord = harmonicSuggestions[min(harmonySelectedSuggestionIndex, harmonicSuggestions.count - 1)].chord
+                auditionChord(chord)
+            } else if !activeProgression.blocks.isEmpty {
+                let chord = activeProgression.blocks[min(selectedProgressionBlockIndex, activeProgression.blocks.count - 1)].chord
+                auditionChord(chord)
+            }
+            controllerManager.playTechniqueHaptic(.pluck)
+        }
+
+        // Button X (West / Square): Add to Progression
+        if x && !lastControllerEdgeState.buttonX {
+            if harmonyFocusedZone == .suggestions && !harmonicSuggestions.isEmpty {
+                let suggestion = harmonicSuggestions[min(harmonySelectedSuggestionIndex, harmonicSuggestions.count - 1)]
+                addChordToActiveProgression(suggestion.chord)
+                showToast("Added \(suggestion.chord.symbol) to Progression")
+            } else if let chord = currentChord {
+                addChordToActiveProgression(chord)
+                showToast("Added \(chord.symbol) to Progression")
+            }
+            controllerManager.playTechniqueHaptic(.techniqueSuccess)
+        }
+
+        // Button Y (North / Triangle): Mutate Progression
+        if y && !lastControllerEdgeState.buttonY {
+            mutateActiveProgression()
+            showToast("Progression Mutated")
+            controllerManager.playTechniqueHaptic(.presetSwitch)
+        }
+
+        // Button B (East / Circle): Remove Block / Stop Preview
+        if b && !lastControllerEdgeState.buttonB {
+            if isPlayingProgression {
+                playActiveProgressionToggle()
+            } else {
+                removeSelectedProgressionBlock()
+                showToast("Removed Block")
+            }
+            controllerManager.playTechniqueHaptic(.fretShift)
+        }
+
+        // RT: Send to Sequencer / Compose
+        if rt && !lastControllerEdgeState.rightTrigger {
+            sendActiveProgressionToSequencer()
+            showToast("Progression Sent to Compose (Chords Track)")
+            controllerManager.playTechniqueHaptic(.techniqueSuccess)
+        }
+
+        // LT: Play / Stop All Preview
+        if lt && !lastControllerEdgeState.leftTrigger {
+            playActiveProgressionToggle()
+            controllerManager.playTechniqueHaptic(.selection)
+        }
+    }
+
+    private func handleSequenceControllerInput(_ state: ControllerState, now: TimeInterval) {
+        let a = state.buttonA
+        let b = state.buttonB
+        let x = state.buttonX
+        let y = state.buttonY
+        let lb = state.leftShoulder
+        let rb = state.rightShoulder
+        let up = state.dpadUp
+        let down = state.dpadDown
+        let left = state.dpadLeft
+        let right = state.dpadRight
+        let lt = state.leftTrigger.value > 0.65
+        let rt = state.rightTrigger.value > 0.65
+        let menu = state.menuButton
+
+        // LB / D-Pad Left: Prev Scene
+        if (lb && !lastControllerEdgeState.leftShoulder) || (left && !lastControllerEdgeState.dpadLeft) {
+            if !sequencer.scenes.isEmpty {
+                sequencer.activeSceneIndex = (sequencer.activeSceneIndex - 1 + sequencer.scenes.count) % sequencer.scenes.count
+                controllerManager.playTechniqueHaptic(.fretShift)
+            }
+        }
+
+        // RB / D-Pad Right: Next Scene
+        if (rb && !lastControllerEdgeState.rightShoulder) || (right && !lastControllerEdgeState.dpadRight) {
+            if !sequencer.scenes.isEmpty {
+                sequencer.activeSceneIndex = (sequencer.activeSceneIndex + 1) % sequencer.scenes.count
+                controllerManager.playTechniqueHaptic(.fretShift)
+            }
+        }
+
+        // D-Pad Up: Prev Track
+        if up && !lastControllerEdgeState.dpadUp {
+            let trackCount = sequencer.scenes.indices.contains(sequencer.activeSceneIndex) ? sequencer.scenes[sequencer.activeSceneIndex].tracks.count : TrackType.allCases.count
+            sequenceSelectedTrackIndex = (sequenceSelectedTrackIndex - 1 + trackCount) % trackCount
+            controllerManager.playTechniqueHaptic(.selection)
+        }
+
+        // D-Pad Down: Next Track
+        if down && !lastControllerEdgeState.dpadDown {
+            let trackCount = sequencer.scenes.indices.contains(sequencer.activeSceneIndex) ? sequencer.scenes[sequencer.activeSceneIndex].tracks.count : TrackType.allCases.count
+            sequenceSelectedTrackIndex = (sequenceSelectedTrackIndex + 1) % trackCount
+            controllerManager.playTechniqueHaptic(.selection)
+        }
+
+        // Button A (South / Cross): Play / Pause
+        if a && !lastControllerEdgeState.buttonA {
+            isPlaying.toggle()
+            controllerManager.playTechniqueHaptic(.selection)
+        }
+
+        // Button B (East / Circle): Stop & Rewind
+        if b && !lastControllerEdgeState.buttonB {
+            isPlaying = false
+            sequencer.stop()
+            sequencer.rewind()
+            showToast("Rewound to Bar 1")
+            controllerManager.playTechniqueHaptic(.fretShift)
+        }
+
+        // Button X (West / Square): Toggle Record
+        if x && !lastControllerEdgeState.buttonX {
+            isRecording.toggle()
+            sequencer.toggleRecording()
+            showToast(isRecording ? "Recording Armed" : "Recording Disarmed")
+            controllerManager.playTechniqueHaptic(.techniqueSuccess)
+        }
+
+        // Button Y (North / Triangle): Insert Harmony Progression into Chords Track
+        if y && !lastControllerEdgeState.buttonY {
+            sequencer.insertProgressionClip(activeProgression, targetTrack: .chords)
+            showToast("Harmony Progression Inserted")
+            controllerManager.playTechniqueHaptic(.techniqueSuccess)
+        }
+
+        // LT: Toggle Mute on selected track
+        if lt && !lastControllerEdgeState.leftTrigger {
+            sequencer.toggleMute(trackIndex: sequenceSelectedTrackIndex)
+            controllerManager.playTechniqueHaptic(.fretShift)
+        }
+
+        // RT: Toggle Solo on selected track
+        if rt && !lastControllerEdgeState.rightTrigger {
+            sequencer.toggleSolo(trackIndex: sequenceSelectedTrackIndex)
+            controllerManager.playTechniqueHaptic(.selection)
+        }
+
+        // Menu: Toggle Loop
+        if menu && !lastControllerEdgeState.menuButton {
+            isLooping.toggle()
+            showToast(isLooping ? "Loop Enabled" : "Loop Disabled")
+            controllerManager.playTechniqueHaptic(.selection)
         }
     }
 

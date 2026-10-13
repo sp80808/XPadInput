@@ -876,7 +876,6 @@ private struct ExpressionCoreView: View {
             ZStack {
                 Circle()
                     .fill(Color.black.opacity(0.38))
-                    .overlay(Circle().stroke(Color.clear, lineWidth: 0))
                 Circle()
                     .trim(from: 0, to: clampedTimbre)
                     .stroke(XTheme.expression.opacity(0.72), style: StrokeStyle(lineWidth: scale == .expanded ? 4 : 3, lineCap: .round))

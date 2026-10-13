@@ -13,7 +13,6 @@ struct TransportBar: View {
     @State private var previousBPM: Double = 120.0
     @State private var bpmPulse: Bool = false
     @State private var recordPulse: Bool = false
-    @State private var tapRippleTrigger: Int = 0
     @State private var panicShake: Double = 0
     @State private var isCollapsed: Bool = false
     @State private var handleChevronHovered = false
@@ -169,13 +168,6 @@ struct TransportBar: View {
             TransportButton(icon: "play.fill", label: "Play", isActive: appState.isPlaying) {
                 state.isPlaying.toggle()
             }
-            .overlay {
-                if appState.isPlaying {
-                    RotatingArcOverlay(color: XTheme.primary)
-                        .frame(width: 36, height: 36)
-                        .allowsHitTesting(false)
-                }
-            }
             
             TransportButton(
                 icon: "record.circle",
@@ -185,7 +177,7 @@ struct TransportBar: View {
             ) {
                 appState.toggleRecording()
             }
-            .xPulse(isActive: appState.isRecording, color: XTheme.recording, speed: 0.75, rings: 2)
+            .xGlow(isActive: appState.isRecording, color: XTheme.recording, radius: 6)
             
             TransportButton(icon: "repeat", label: "Loop", isActive: appState.isLooping) {
                 state.isLooping.toggle()
@@ -243,7 +235,6 @@ struct TransportBar: View {
 
             // Tap Tempo Button
             Button {
-                tapRippleTrigger += 1
                 registerTapTempo()
             } label: {
                 Text("TAP")
@@ -256,7 +247,6 @@ struct TransportBar: View {
             }
             .buttonStyle(.plain)
             .help("Tap tempo beat calculator")
-            .xRipple(trigger: tapRippleTrigger, color: XTheme.primary, size: 36)
         }
     }
     
@@ -429,55 +419,20 @@ struct TransportButton: View {
     var activeColor: Color = XTheme.primary
     let action: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var rippleTrigger = 0
     
     var body: some View {
-            Button {
-                if !reduceMotion { rippleTrigger += 1 }
-                action()
-            } label: {
-                ZStack {
-                    Image(systemName: icon)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(isActive ? activeColor : XTheme.textSecondary)
-                        .frame(width: 28, height: 28)
-                        .animation(reduceMotion ? nil : XTheme.quickAnimation, value: isActive)
-                    if isActive && label == "Play" {
-                        Circle()
-                            .fill(activeColor.opacity(0.12))
-                            .frame(width: 36, height: 36)
-                            .transition(.opacity)
-                    }
-                }
-            }
+        Button {
+            action()
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(isActive ? activeColor : XTheme.textSecondary)
+                .frame(width: 28, height: 28)
+                .animation(reduceMotion ? nil : XTheme.quickAnimation, value: isActive)
+        }
         .buttonStyle(XTactileButtonStyle(isActive: isActive, activeColor: activeColor))
         .help(label)
         .accessibilityLabel(label)
         .accessibilityValue(isActive ? "On" : "Off")
-        .xRipple(trigger: rippleTrigger, color: activeColor, size: 40)
-    }
-}
-
-// MARK: - Rotating Arc Overlay
-
-/// A thin partial-circle arc that rotates continuously, used behind the Play button
-/// to signal live playback. Pure overlay — zero layout impact.
-struct RotatingArcOverlay: View {
-    let color: Color
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var rotation: Double = 0
-
-    var body: some View {
-        if !reduceMotion {
-            Circle()
-                .trim(from: 0, to: 0.25)
-                .stroke(color.opacity(0.45), style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                .rotationEffect(.degrees(rotation))
-                .onAppear {
-                    withAnimation(.linear(duration: 2.4).repeatForever(autoreverses: false)) {
-                        rotation = 360
-                    }
-                }
-        }
     }
 }

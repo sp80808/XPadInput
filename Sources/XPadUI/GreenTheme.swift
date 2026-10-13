@@ -530,9 +530,7 @@ public struct XRippleModifier: ViewModifier {
     public var color: Color = XTheme.brand
     public var size: CGFloat = 56
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var scale: CGFloat = 0.5
-    @State private var opacity: Double = 0
-    @State private var id = UUID()
+    @State private var isRippling = false
     
     public init<T: Hashable>(trigger: T, color: Color = XTheme.brand, size: CGFloat = 56) {
         self.trigger = AnyHashable(trigger); self.color = color; self.size = size
@@ -541,22 +539,19 @@ public struct XRippleModifier: ViewModifier {
     public func body(content: Content) -> some View {
         content
             .overlay {
-                if !reduceMotion {
-                    Circle()
-                        .stroke(color, lineWidth: 1.5)
-                        .frame(width: size, height: size)
-                        .scaleEffect(scale)
-                        .opacity(opacity)
-                        .id(id)
+                if isRippling && !reduceMotion {
+                    RoundedRectangle(cornerRadius: XTheme.radiusSmall)
+                        .stroke(color.opacity(0.35), lineWidth: 1)
+                        .scaleEffect(1.08)
+                        .opacity(0)
                         .allowsHitTesting(false)
                 }
             }
             .onChange(of: trigger) { _, _ in
                 guard !reduceMotion else { return }
-                id = UUID()
-                scale = 0.5; opacity = 0.55
-                withAnimation(.easeOut(duration: 0.45)) {
-                    scale = 1.8; opacity = 0
+                isRippling = true
+                withAnimation(.easeOut(duration: 0.35)) {
+                    isRippling = false
                 }
             }
     }
