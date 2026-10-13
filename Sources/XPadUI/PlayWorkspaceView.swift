@@ -143,9 +143,18 @@ public struct PlayView: View {
 
                                     HarmonicTabbedWorkspace(
                                         tab: $harmonicWorkspaceTab,
-                                        activeProgression: $activeProgression,
-                                        selectedBlockIndex: $selectedBlockIndex,
-                                        isPlayingProgression: $isPlayingProgression,
+                                        activeProgression: Binding(
+                                            get: { appState.activeProgression },
+                                            set: { appState.activeProgression = $0 }
+                                        ),
+                                        selectedBlockIndex: Binding(
+                                            get: { appState.selectedProgressionBlockIndex },
+                                            set: { appState.selectedProgressionBlockIndex = $0 ?? 0 }
+                                        ),
+                                        isPlayingProgression: Binding(
+                                            get: { appState.isPlayingProgression },
+                                            set: { appState.isPlayingProgression = $0 }
+                                        ),
                                         diatonicChords: diatonicChords,
                                         currentOrSelectedChord: currentOrSelectedChord,
                                         harmonicSuggestions: harmonicSuggestions,
@@ -251,13 +260,13 @@ public struct PlayView: View {
             .environment(\.viewportMetrics, metrics)
         }
         .onAppear {
-            if activeProgression.blocks.isEmpty {
-                activeProgression = Progression.factoryPresets(for: appState.currentScale).first ?? Progression(scale: appState.currentScale)
+            if appState.activeProgression.blocks.isEmpty {
+                appState.activeProgression = Progression.factoryPresets(for: appState.currentScale).first ?? Progression(scale: appState.currentScale)
             }
         }
         .onChange(of: appState.currentScale) { _, newScale in
-            if activeProgression.blocks.isEmpty {
-                activeProgression = Progression.factoryPresets(for: newScale).first ?? Progression(scale: newScale)
+            if appState.activeProgression.blocks.isEmpty {
+                appState.activeProgression = Progression.factoryPresets(for: newScale).first ?? Progression(scale: newScale)
             }
         }
     }
@@ -277,18 +286,7 @@ public struct PlayView: View {
     }
     
     private func sendProgressionToSequencer() {
-        guard appState.sequencer.scenes.indices.contains(appState.sequencer.activeSceneIndex) else { return }
-        let sceneIndex = appState.sequencer.activeSceneIndex
-        guard let trackIndex = appState.sequencer.scenes[sceneIndex].tracks.firstIndex(where: { $0.type == .chords }) else { return }
-        var currentTick: UInt64 = 0
-        var clips: [SequencerClip] = []
-        for block in activeProgression.blocks {
-            let durationTicks = UInt64(block.durationBeats * 960.0)
-            let clip = SequencerClip(name: "\(block.romanNumeral) \(block.chord.symbol)", startTick: currentTick, durationTicks: durationTicks)
-            clips.append(clip)
-            currentTick += durationTicks
-        }
-        appState.sequencer.scenes[sceneIndex].tracks[trackIndex].clips = clips
+        appState.sendActiveProgressionToSequencer()
     }
 }
 
@@ -656,6 +654,24 @@ private struct HarmonicTabbedWorkspace: View {
                               namespace: tabNS, namespaceID: "harmonic-tab-pill")
                 }
                 Spacer()
+                
+                Button {
+                    appState.chordPerformanceSource = (appState.chordPerformanceSource == .diatonicWheel) ? .activeProgression : .diatonicWheel
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: appState.chordPerformanceSource == .activeProgression ? "music.note.list" : "circle.circle")
+                            .font(.system(size: 9, weight: .bold))
+                        Text(appState.chordPerformanceSource == .activeProgression ? "Progression Mode" : "Wheel Mode")
+                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(appState.chordPerformanceSource == .activeProgression ? XTheme.primary.opacity(0.18) : XTheme.surfaceElevated.opacity(0.5))
+                    .foregroundColor(appState.chordPerformanceSource == .activeProgression ? XTheme.primary : XTheme.textSecondary)
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .help("Toggle whether gamepad left stick selects Diatonic Wheel or Active Progression chords")
             }
             .padding(.horizontal, 4)
             ZStack {

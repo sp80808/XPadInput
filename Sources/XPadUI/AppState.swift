@@ -1463,7 +1463,7 @@ public final class AppState: @unchecked Sendable {
                 let chord = activeProgression.blocks[selectedProgressionBlockIndex].chord
                 currentChord = chord
                 auditionChord(chord)
-                controllerManager.playTechniqueHaptic(.fretShift)
+                controllerManager.playTechniqueHaptic(.octaveShift)
             }
         }
 
@@ -1475,7 +1475,7 @@ public final class AppState: @unchecked Sendable {
                 let chord = activeProgression.blocks[selectedProgressionBlockIndex].chord
                 currentChord = chord
                 auditionChord(chord)
-                controllerManager.playTechniqueHaptic(.fretShift)
+                controllerManager.playTechniqueHaptic(.octaveShift)
             }
         }
 
@@ -1483,10 +1483,10 @@ public final class AppState: @unchecked Sendable {
         if up && !lastControllerEdgeState.dpadUp {
             if harmonyFocusedZone == .suggestions && harmonySelectedSuggestionIndex > 0 {
                 harmonySelectedSuggestionIndex -= 1
-                controllerManager.playTechniqueHaptic(.selection)
+                controllerManager.playTechniqueHaptic(.buttonConfirm)
             } else {
                 harmonyFocusedZone = .progressionBlocks
-                controllerManager.playTechniqueHaptic(.selection)
+                controllerManager.playTechniqueHaptic(.buttonConfirm)
             }
         }
 
@@ -1494,11 +1494,11 @@ public final class AppState: @unchecked Sendable {
         if down && !lastControllerEdgeState.dpadDown {
             if harmonyFocusedZone == .progressionBlocks {
                 harmonyFocusedZone = .suggestions
-                controllerManager.playTechniqueHaptic(.selection)
+                controllerManager.playTechniqueHaptic(.buttonConfirm)
             } else {
                 let maxIdx = max(0, harmonicSuggestions.count - 1)
                 harmonySelectedSuggestionIndex = min(maxIdx, harmonySelectedSuggestionIndex + 1)
-                controllerManager.playTechniqueHaptic(.selection)
+                controllerManager.playTechniqueHaptic(.buttonConfirm)
             }
         }
 
@@ -1511,7 +1511,7 @@ public final class AppState: @unchecked Sendable {
                 let chord = activeProgression.blocks[min(selectedProgressionBlockIndex, activeProgression.blocks.count - 1)].chord
                 auditionChord(chord)
             }
-            controllerManager.playTechniqueHaptic(.pluck)
+            controllerManager.playTechniqueHaptic(.strumPluck)
         }
 
         // Button X (West / Square): Add to Progression
@@ -1524,14 +1524,14 @@ public final class AppState: @unchecked Sendable {
                 addChordToActiveProgression(chord)
                 showToast("Added \(chord.symbol) to Progression")
             }
-            controllerManager.playTechniqueHaptic(.techniqueSuccess)
+            controllerManager.playTechniqueHaptic(.buttonConfirm)
         }
 
         // Button Y (North / Triangle): Mutate Progression
         if y && !lastControllerEdgeState.buttonY {
             mutateActiveProgression()
             showToast("Progression Mutated")
-            controllerManager.playTechniqueHaptic(.presetSwitch)
+            controllerManager.playTechniqueHaptic(.chordChange)
         }
 
         // Button B (East / Circle): Remove Block / Stop Preview
@@ -1542,20 +1542,20 @@ public final class AppState: @unchecked Sendable {
                 removeSelectedProgressionBlock()
                 showToast("Removed Block")
             }
-            controllerManager.playTechniqueHaptic(.fretShift)
+            controllerManager.playTechniqueHaptic(.octaveShift)
         }
 
         // RT: Send to Sequencer / Compose
         if rt && !lastControllerEdgeState.rightTrigger {
             sendActiveProgressionToSequencer()
             showToast("Progression Sent to Compose (Chords Track)")
-            controllerManager.playTechniqueHaptic(.techniqueSuccess)
+            controllerManager.playTechniqueHaptic(.buttonConfirm)
         }
 
         // LT: Play / Stop All Preview
         if lt && !lastControllerEdgeState.leftTrigger {
             playActiveProgressionToggle()
-            controllerManager.playTechniqueHaptic(.selection)
+            controllerManager.playTechniqueHaptic(.buttonConfirm)
         }
     }
 
@@ -1578,7 +1578,7 @@ public final class AppState: @unchecked Sendable {
         if (lb && !lastControllerEdgeState.leftShoulder) || (left && !lastControllerEdgeState.dpadLeft) {
             if !sequencer.scenes.isEmpty {
                 sequencer.activeSceneIndex = (sequencer.activeSceneIndex - 1 + sequencer.scenes.count) % sequencer.scenes.count
-                controllerManager.playTechniqueHaptic(.fretShift)
+                controllerManager.playTechniqueHaptic(.octaveShift)
             }
         }
 
@@ -1586,7 +1586,7 @@ public final class AppState: @unchecked Sendable {
         if (rb && !lastControllerEdgeState.rightShoulder) || (right && !lastControllerEdgeState.dpadRight) {
             if !sequencer.scenes.isEmpty {
                 sequencer.activeSceneIndex = (sequencer.activeSceneIndex + 1) % sequencer.scenes.count
-                controllerManager.playTechniqueHaptic(.fretShift)
+                controllerManager.playTechniqueHaptic(.octaveShift)
             }
         }
 
@@ -1594,20 +1594,20 @@ public final class AppState: @unchecked Sendable {
         if up && !lastControllerEdgeState.dpadUp {
             let trackCount = sequencer.scenes.indices.contains(sequencer.activeSceneIndex) ? sequencer.scenes[sequencer.activeSceneIndex].tracks.count : TrackType.allCases.count
             sequenceSelectedTrackIndex = (sequenceSelectedTrackIndex - 1 + trackCount) % trackCount
-            controllerManager.playTechniqueHaptic(.selection)
+            controllerManager.playTechniqueHaptic(.buttonConfirm)
         }
 
         // D-Pad Down: Next Track
         if down && !lastControllerEdgeState.dpadDown {
             let trackCount = sequencer.scenes.indices.contains(sequencer.activeSceneIndex) ? sequencer.scenes[sequencer.activeSceneIndex].tracks.count : TrackType.allCases.count
             sequenceSelectedTrackIndex = (sequenceSelectedTrackIndex + 1) % trackCount
-            controllerManager.playTechniqueHaptic(.selection)
+            controllerManager.playTechniqueHaptic(.buttonConfirm)
         }
 
         // Button A (South / Cross): Play / Pause
         if a && !lastControllerEdgeState.buttonA {
             isPlaying.toggle()
-            controllerManager.playTechniqueHaptic(.selection)
+            controllerManager.playTechniqueHaptic(.buttonConfirm)
         }
 
         // Button B (East / Circle): Stop & Rewind
@@ -1616,7 +1616,7 @@ public final class AppState: @unchecked Sendable {
             sequencer.stop()
             sequencer.rewind()
             showToast("Rewound to Bar 1")
-            controllerManager.playTechniqueHaptic(.fretShift)
+            controllerManager.playTechniqueHaptic(.octaveShift)
         }
 
         // Button X (West / Square): Toggle Record
@@ -1624,33 +1624,33 @@ public final class AppState: @unchecked Sendable {
             isRecording.toggle()
             sequencer.toggleRecording()
             showToast(isRecording ? "Recording Armed" : "Recording Disarmed")
-            controllerManager.playTechniqueHaptic(.techniqueSuccess)
+            controllerManager.playTechniqueHaptic(.buttonConfirm)
         }
 
         // Button Y (North / Triangle): Insert Harmony Progression into Chords Track
         if y && !lastControllerEdgeState.buttonY {
             sequencer.insertProgressionClip(activeProgression, targetTrack: .chords)
             showToast("Harmony Progression Inserted")
-            controllerManager.playTechniqueHaptic(.techniqueSuccess)
+            controllerManager.playTechniqueHaptic(.buttonConfirm)
         }
 
         // LT: Toggle Mute on selected track
         if lt && !lastControllerEdgeState.leftTrigger {
             sequencer.toggleMute(trackIndex: sequenceSelectedTrackIndex)
-            controllerManager.playTechniqueHaptic(.fretShift)
+            controllerManager.playTechniqueHaptic(.octaveShift)
         }
 
         // RT: Toggle Solo on selected track
         if rt && !lastControllerEdgeState.rightTrigger {
             sequencer.toggleSolo(trackIndex: sequenceSelectedTrackIndex)
-            controllerManager.playTechniqueHaptic(.selection)
+            controllerManager.playTechniqueHaptic(.buttonConfirm)
         }
 
         // Menu: Toggle Loop
         if menu && !lastControllerEdgeState.menuButton {
             isLooping.toggle()
             showToast(isLooping ? "Loop Enabled" : "Loop Disabled")
-            controllerManager.playTechniqueHaptic(.selection)
+            controllerManager.playTechniqueHaptic(.buttonConfirm)
         }
     }
 

@@ -101,7 +101,7 @@ public struct HarmonyWorkspaceView: View {
                                     Label("Send to Compose", systemImage: "arrow.right.to.line.compact")
                                 }
                             }
-                            .xButton(.brand, size: .small)
+                            .xButton(.primary, size: .small)
                         }
 
                         // Chord Blocks Row with Controller Focus

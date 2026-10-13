@@ -16,7 +16,7 @@ public struct SequenceWorkspaceView: View {
         self.sequencer = sequencer
     }
 
-    private var activeScene: Scene? {
+    private var activeScene: XPadSequencer.Scene? {
         guard sequencer.scenes.indices.contains(sequencer.activeSceneIndex) else { return nil }
         return sequencer.scenes[sequencer.activeSceneIndex]
     }
@@ -75,7 +75,7 @@ public struct SequenceWorkspaceView: View {
                                 Text(appState.isPlaying ? "Pause" : "Play")
                             }
                         }
-                        .xButton(appState.isPlaying ? .brand : .secondary, size: .small)
+                        .xButton(appState.isPlaying ? .primary : .secondary, size: .small)
 
                         // Rewind to Bar 1 (B)
                         Button {
@@ -119,7 +119,7 @@ public struct SequenceWorkspaceView: View {
                                 Text("Insert Harmony Clip")
                             }
                         }
-                        .xButton(.brand, size: .small)
+                        .xButton(.primary, size: .small)
 
                         // Export MIDI to DAW
                         Button {
