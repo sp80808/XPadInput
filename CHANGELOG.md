@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `JamCoPilot` turns player energy, sounding roles and progression age into an explainable `CoPilotDirective` (hold, drop out, add layer, fill, lift, regenerate harmony). Decisions are seeded and reproducible.
   - `DrumFillGenerator` writes turn-arounds that end before the downbeat (pickup, eighth-note run, or sixteenth run with ghost notes) and wraps them in a drums clip.
   - Compose workspace gains a Co-Pilot toggle, a manual Fill button and a readout of the last decision.
+- **Generated Basslines (`BasslineGenerator.swift`, `Sequencer.swift`, `AppState.swift`)**:
+  - Five feels — root notes, walking, octave pulse, syncopated and drone — all derived from the chord under them: downbeats are always chord tones and walking/syncopated lines use chromatic or rhythmic anticipation of the next chord.
+  - The feel follows the active style, so deep house pumps octaves and jazz walks without the player choosing anything.
+  - `Sequencer.insertClip(_:on:)` appends a generated part without replacing the other tracks and extends the scene loop to keep it audible; HARMONY and SEQUENCE both expose "Add Bassline"/"Bassline".
 - **MIDI Tuning Standard output (`MIDITuningStandard.swift`, `AppState.swift`)**:
   - Frequency-word encoding, bulk tuning dump (with checksum), bulk dump request, single note tuning change, and both scale/octave tuning forms, plus the shared channel mask.
   - Switching temperament broadcasts a tuning table to every virtual port, and dynamic temperaments push real-time single-note retunes whenever the chord changes. The Tuning menu exposes a manual send.
@@ -31,6 +35,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - The diagnostics workflow now also builds the test targets, so XCTest sources are type-checked in CI.
+- `CoreHapticsEngine` no longer swallows a failed haptic-engine start or restart: both are logged with `os.Logger` and published as `lastError` (was a `print` and a silent `catch`).
+- `RecordedNoteEvent` is `Equatable`/`Hashable`, so generated and recorded parts can be compared and de-duplicated.
 
 ---
 
