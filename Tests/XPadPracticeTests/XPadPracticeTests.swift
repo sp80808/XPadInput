@@ -13,6 +13,40 @@ final class XPadPracticeTests: XCTestCase {
     override func tearDownWithError() throws {
         // Put teardown code here. This method is called after the invocation of each test method in the class.
     }
+
+    /// A copy of everything `ProgressTracker` publishes.
+    ///
+    /// `ProgressTracker.shared` is a singleton backed by `UserDefaults`, so a
+    /// test that records sessions has to put the store back the way it found it
+    /// instead of assuming it starts empty.
+    private struct TrackerSnapshot {
+        let history: [PracticeSessionResult]
+        let mastery: [UUID: LessonMastery]
+        let totalPracticeTime: TimeInterval
+        let streakDays: Int
+        let lastPracticeDate: Date?
+        let weeklyPracticeMinutes: Int
+    }
+
+    private func snapshot(_ tracker: ProgressTracker) -> TrackerSnapshot {
+        TrackerSnapshot(
+            history: tracker.sessionHistory,
+            mastery: tracker.lessonMastery,
+            totalPracticeTime: tracker.totalPracticeTime,
+            streakDays: tracker.streakDays,
+            lastPracticeDate: tracker.lastPracticeDate,
+            weeklyPracticeMinutes: tracker.weeklyPracticeMinutes
+        )
+    }
+
+    private func restore(_ snapshot: TrackerSnapshot, to tracker: ProgressTracker) {
+        tracker.sessionHistory = snapshot.history
+        tracker.lessonMastery = snapshot.mastery
+        tracker.totalPracticeTime = snapshot.totalPracticeTime
+        tracker.streakDays = snapshot.streakDays
+        tracker.lastPracticeDate = snapshot.lastPracticeDate
+        tracker.weeklyPracticeMinutes = snapshot.weeklyPracticeMinutes
+    }
     
     func testPracticeLessonCreation() throws {
         let lesson = PracticeLesson(
@@ -76,14 +110,13 @@ final class XPadPracticeTests: XCTestCase {
     
     func testProgressTrackerBasic() throws {
         let tracker = ProgressTracker.shared
-        
-        // Initial state
-        XCTAssertEqual(tracker.streakDays, 0)
-        XCTAssertEqual(tracker.totalPracticeTime, 0)
-        
+        let before = snapshot(tracker)
+        defer { restore(before, to: tracker) }
+        let lessonId = UUID()
+
         // Record a session
         let sessionResult = PracticeSessionResult(
-            lessonId: UUID(),
+            lessonId: lessonId,
             startTime: Date().addingTimeInterval(-30),
             endTime: Date(),
             stepResults: [],
@@ -94,13 +127,18 @@ final class XPadPracticeTests: XCTestCase {
         
         tracker.recordSession(sessionResult)
         
-        XCTAssertGreaterThan(tracker.totalPracticeTime, 0)
-        XCTAssertEqual(tracker.streakDays, 1)
+        XCTAssertEqual(tracker.totalPracticeTime, before.totalPracticeTime + sessionResult.duration, accuracy: 0.0001)
+        XCTAssertEqual(tracker.sessionHistory.count, before.history.count + 1)
+        XCTAssertNotNil(tracker.getLessonMastery(for: lessonId))
+        XCTAssertEqual(tracker.streakDays, 1, "a session today starts a one-day streak")
+        XCTAssertGreaterThanOrEqual(tracker.weeklyPracticeMinutes, Int(sessionResult.duration / 60))
     }
     
     func testLessonMastery() throws {
         let lessonId = UUID()
         let tracker = ProgressTracker.shared
+        let before = snapshot(tracker)
+        defer { restore(before, to: tracker) }
 
         let fresh = LessonMastery(lessonId: lessonId)
         XCTAssertEqual(fresh.masteryLevel, .notStarted)

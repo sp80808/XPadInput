@@ -103,8 +103,11 @@ jobs:
             msg=$(printf '%s' "$line" | sed -e 's/"/\\"/g' | cut -c1-800)
             echo "::warning title=XCTest failure::${msg}"
           done
-          summary=$(grep -E "Executed [0-9]+ tests?, with" "$log" | sort -u | tail -1)
-          echo "::notice title=XCTest summary::${summary:-no XCTest summary found}"
+          # Each bundle prints its own summary; report the totals.
+          totals=$(grep -E "Executed [0-9]+ tests?, with" "$log" \
+            | sed -E 's/.*Executed ([0-9]+) tests?, with ([0-9]+) failure.*/\1 \2/' \
+            | awk '{tests += $1; failures += $2} END {print tests " tests, " failures " failures"}')
+          echo "::notice title=XCTest totals::${totals:-no XCTest summary found}"
 
       - name: Exhaustive test runner (diagnostics only)
         if: always()

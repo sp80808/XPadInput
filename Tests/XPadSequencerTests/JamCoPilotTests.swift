@@ -37,9 +37,10 @@ final class JamCoPilotTests: XCTestCase {
         sequencer.onBarBoundary = { bars.append($0) }
 
         sequencer.tick(to: SequencerGrid.ticksPerBar * 2)
+        XCTAssertEqual(bars, [2], "a jump reports the bar it lands in, once")
         sequencer.stop()
         sequencer.tick(to: 0)
-        XCTAssertEqual(bars, [0, 2, 0])
+        XCTAssertEqual(bars, [2, 0], "stop re-arms the first bar")
     }
 
     // MARK: - Track roles
