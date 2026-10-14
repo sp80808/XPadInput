@@ -117,7 +117,7 @@ final class ControllerCalibrationTests: XCTestCase {
         wizard.feed(rawLeftX: 1, rawLeftY: 1, rawRightX: 1, rawRightY: 1)
         XCTAssertEqual(wizard.currentStep, .idle)
 
-        let calibration = wizard.finish()
+        var calibration = wizard.finish()
         XCTAssertEqual(wizard.currentStep, .completed)
         wizard.feed(rawLeftX: 0, rawLeftY: 0, rawRightX: 0, rawRightY: 0)
         XCTAssertEqual(wizard.currentStep, .completed)
