@@ -4274,6 +4274,187 @@ final class TestRunner {
             }
         }
 
+        // MARK: - Suite: Jam Co-Pilot & Drum Fills
+        suite("XPadSequencer: Jam Co-Pilot, Bar Boundaries & Drum Fills") {
+            test("The transport reports each bar it enters, once") {
+                let sequencer = Sequencer()
+                var bars: [Int] = []
+                sequencer.onBarBoundary = { bars.append($0) }
+
+                sequencer.tick(to: 0)
+                sequencer.tick(to: SequencerGrid.ticksPerBar - 1)
+                assertEqual(bars, [0], "mid-bar ticks must not re-fire the boundary")
+
+                sequencer.tick(to: SequencerGrid.ticksPerBar)
+                sequencer.tick(to: SequencerGrid.ticksPerBar * 3 + 42)
+                assertEqual(bars, [0, 1, 3])
+
+                sequencer.rewind()
+                sequencer.tick(to: 0)
+                assertEqual(bars, [0, 1, 3, 0], "rewind re-arms the first bar")
+
+                sequencer.tick(to: SequencerGrid.ticksPerBar * 2)
+                sequencer.stop()
+                sequencer.tick(to: 0)
+                assertEqual(bars, [0, 1, 3, 0, 2, 0], "stop resets the bar cursor too")
+            }
+
+            test("Tracks can be muted by musical role, and solo wins") {
+                let sequencer = Sequencer()
+                assertEqual(Set(sequencer.audibleTracks), Set(TrackType.allCases))
+                assertTrue(sequencer.populatedTracks.isEmpty)
+
+                sequencer.setMuted(true, forType: .melody)
+                assertTrue(sequencer.isMuted(.melody))
+                assertFalse(sequencer.audibleTracks.contains(.melody))
+
+                sequencer.setMuted(false, forType: .melody)
+                assertTrue(sequencer.audibleTracks.contains(.melody))
+
+                sequencer.setMuted(true, forType: .chords)
+                sequencer.toggleSolo(trackIndex: 0)
+                assertEqual(sequencer.audibleTracks, [.chords])
+            }
+
+            test("Populated tracks reflect which roles have material") {
+                let sequencer = Sequencer()
+                sequencer.insertProgressionClip(.factoryPresets(for: .naturalMinor)[0], targetTrack: .chords)
+                assertEqual(sequencer.populatedTracks, [.chords])
+            }
+
+            test("Co-Pilot holds mid-section and fills at the turn") {
+                let pilot = JamCoPilot()
+                assertEqual(
+                    pilot.directive(bar: 3, energy: 0.9, activeLayers: [.chords], availableLayers: TrackType.allCases).kind,
+                    .hold
+                )
+                assertEqual(
+                    pilot.directive(
+                        bar: pilot.sectionLengthBars - 1,
+                        energy: 0.8,
+                        activeLayers: TrackType.allCases,
+                        availableLayers: TrackType.allCases
+                    ).kind,
+                    .drumFill(intensity: 0.8)
+                )
+            }
+
+            test("Co-Pilot reads the player: thin out when quiet, build when loud") {
+                let pilot = JamCoPilot()
+                let quiet = pilot.directive(
+                    bar: pilot.sectionLengthBars,
+                    energy: 0.05,
+                    activeLayers: [.drums, .bass, .chords, .melody],
+                    availableLayers: TrackType.allCases
+                )
+                assertEqual(quiet.kind, .dropOut(.melody))
+
+                let loud = pilot.directive(
+                    bar: pilot.sectionLengthBars,
+                    energy: 0.95,
+                    activeLayers: [.drums],
+                    availableLayers: TrackType.allCases
+                )
+                assertEqual(loud.kind, .addLayer(.bass))
+                assertTrue(loud.isActionable)
+
+                let nothingToAdd = pilot.directive(
+                    bar: pilot.sectionLengthBars,
+                    energy: 0.95,
+                    activeLayers: [.drums],
+                    availableLayers: [.drums, .chords]
+                )
+                assertEqual(nothingToAdd.kind, .addLayer(.chords), "never unmute an empty track")
+            }
+
+            test("Co-Pilot writes new harmony when the player circles one progression") {
+                let pilot = JamCoPilot()
+                let directive = pilot.directive(
+                    bar: pilot.sectionLengthBars * 2,
+                    energy: 0.5,
+                    activeLayers: TrackType.allCases,
+                    availableLayers: TrackType.allCases,
+                    sameProgressionBars: pilot.sectionLengthBars * 2,
+                    styleName: "Neo-Soul"
+                )
+                assertEqual(directive.kind, .regenerate(styleName: "Neo-Soul"))
+                assertTrue(directive.reason.contains("harmony"))
+            }
+
+            test("Co-Pilot decisions are reproducible for a seed") {
+                let pilot = JamCoPilot()
+                for energy in [-2.0, 0.0, 0.5, 1.0, 4.0] {
+                    let first = pilot.directive(
+                        bar: pilot.sectionLengthBars * 2,
+                        energy: energy,
+                        activeLayers: [.drums, .bass, .chords],
+                        availableLayers: TrackType.allCases,
+                        seed: 4242
+                    )
+                    let second = pilot.directive(
+                        bar: pilot.sectionLengthBars * 2,
+                        energy: energy,
+                        activeLayers: [.drums, .bass, .chords],
+                        availableLayers: TrackType.allCases,
+                        seed: 4242
+                    )
+                    assertEqual(first, second)
+                }
+            }
+
+            test("Drum fills stay in the bar, stay musical, and grow with intensity") {
+                for intensity in [0.0, 0.3, 0.6, 1.0] {
+                    let hits = DrumFillGenerator.fill(intensity: intensity, beats: 4, seed: 5)
+                    assertTrue(!hits.isEmpty, "intensity \(intensity) produced no fill")
+                    assertEqual(hits, hits.sorted { $0.tickOffset < $1.tickOffset })
+                    for hit in hits {
+                        assertTrue(hit.tickOffset < SequencerGrid.ticksPerBar)
+                        assertTrue(hit.velocity > 0 && hit.velocity <= 127)
+                        assertTrue(
+                            [DrumFillGenerator.kick, DrumFillGenerator.snare,
+                             DrumFillGenerator.closedHat, DrumFillGenerator.openHat].contains(hit.note)
+                        )
+                    }
+                }
+
+                let quiet = DrumFillGenerator.fill(intensity: 0.1, beats: 4, seed: 1)
+                let loud = DrumFillGenerator.fill(intensity: 1.0, beats: 4, seed: 1)
+                assertTrue(loud.count > quiet.count, "a loud turn-around should be busier")
+
+                assertEqual(
+                    DrumFillGenerator.fill(intensity: 0.7, beats: 4, seed: 7),
+                    DrumFillGenerator.fill(intensity: 0.7, beats: 4, seed: 7)
+                )
+                assertTrue(DrumFillGenerator.fill(intensity: 0.5, beats: 0).isEmpty)
+
+                let clip = DrumFillGenerator.clip(intensity: 0.8, beats: 4, seed: 2, name: "Fill", startTick: 3840)
+                assertEqual(clip.startTick, 3840)
+                assertEqual(clip.durationTicks, SequencerGrid.ticksPerBar)
+                assertEqual(clip.notes.count, DrumFillGenerator.fill(intensity: 0.8, beats: 4, seed: 2).count)
+            }
+
+            test("AppState applies co-pilot decisions to the arrangement") {
+                let appState = AppState()
+                appState.isCoPilotEnabled = false
+                appState.runCoPilotBar(7)
+                assertTrue(appState.lastCoPilotDirective == nil, "the co-pilot stays off when disabled")
+
+                appState.sequencer.insertProgressionClip(appState.activeProgression, targetTrack: .chords)
+                appState.isCoPilotEnabled = true
+
+                let energyBeforeFill = appState.coPilotEnergy
+                appState.runCoPilotBar(7)
+                assertNotNil(appState.lastCoPilotDirective)
+                assertEqual(appState.lastCoPilotDirective?.kind, .drumFill(intensity: energyBeforeFill))
+
+                appState.coPilotEnergy = 0.02
+                appState.runCoPilotBar(8)
+                assertEqual(appState.lastCoPilotDirective?.kind, .dropOut(.melody))
+                assertTrue(appState.sequencer.isMuted(.melody), "the decision must reach the arrangement")
+                assertEqual(appState.coPilotProgressionBars, 2)
+            }
+        }
+
         // MARK: - Final Summary
         print("\n==================================================")
         print("📊 Test Execution Summary")

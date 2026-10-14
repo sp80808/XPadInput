@@ -129,6 +129,11 @@ public final class Sequencer: ObservableObject {
     public var onPlaybackNoteOn: ((UInt8, UInt8, TrackType) -> Void)?
     /// Playback note-off including the source track.
     public var onPlaybackNoteOff: ((UInt8, TrackType) -> Void)?
+    /// Invoked once per bar the transport enters, with the 0-based bar index.
+    ///
+    /// Arrangement features (the jam co-pilot, pattern changes, section cues)
+    /// hang off this instead of polling the clock from a timer.
+    public var onBarBoundary: ((Int) -> Void)?
 
     private var timer: DispatchSourceTimer?
     private let timerQueue = DispatchQueue(label: "com.xpadinput.clock", qos: .userInteractive)
@@ -137,6 +142,7 @@ public final class Sequencer: ObservableObject {
     private var activeNoteStarts: [UInt8: UInt64] = [:]
     private var activePlaybackNotes: [UInt8: TrackType] = [:]
     private var lastDispatchedTick: UInt64 = 0
+    private var lastBarIndex: Int?
 
     public init() {
         setupDefaultScene()
@@ -172,6 +178,7 @@ public final class Sequencer: ObservableObject {
         silencePlaybackNotes()
         transport.currentTick = 0
         lastDispatchedTick = 0
+        lastBarIndex = nil
     }
 
     public func rewind() {
@@ -179,6 +186,7 @@ public final class Sequencer: ObservableObject {
         clockStartTick = 0
         clockStartHostTime = .now()
         lastDispatchedTick = 0
+        lastBarIndex = nil
         silencePlaybackNotes()
     }
 
@@ -196,6 +204,52 @@ public final class Sequencer: ObservableObject {
         if scenes[activeSceneIndex].tracks[trackIndex].isMuted {
             silencePlaybackNotes()
         }
+    }
+
+    /// Mutes or unmutes every track carrying `type` in the active scene.
+    ///
+    /// Arrangement automation thinks in musical roles ("drop the melody"),
+    /// not in row indices, so this is the seam it uses.
+    public func setMuted(_ muted: Bool, forType type: TrackType) {
+        guard activeSceneIndex < scenes.count else { return }
+        var changed = false
+        for index in scenes[activeSceneIndex].tracks.indices where scenes[activeSceneIndex].tracks[index].type == type {
+            if scenes[activeSceneIndex].tracks[index].isMuted != muted {
+                scenes[activeSceneIndex].tracks[index].isMuted = muted
+                changed = true
+            }
+        }
+        if changed && muted {
+            silencePlaybackNotes()
+        }
+    }
+
+    /// Whether every track carrying `type` is currently muted.
+    public func isMuted(_ type: TrackType) -> Bool {
+        guard activeSceneIndex < scenes.count else { return false }
+        let tracks = scenes[activeSceneIndex].tracks.filter { $0.type == type }
+        return !tracks.isEmpty && tracks.allSatisfy(\.isMuted)
+    }
+
+    /// Track roles that will sound in the active scene.
+    public var audibleTracks: [TrackType] {
+        guard activeSceneIndex < scenes.count else { return [] }
+        let tracks = scenes[activeSceneIndex].tracks
+        let anySolo = tracks.contains { $0.isSolo }
+        return tracks
+            .filter { anySolo ? $0.isSolo : !$0.isMuted }
+            .map(\.type)
+    }
+
+    /// Track roles that actually have material in the active scene.
+    ///
+    /// The co-pilot only ever adds a layer that has something to play, so an
+    /// empty track never gets unmuted into silence.
+    public var populatedTracks: [TrackType] {
+        guard activeSceneIndex < scenes.count else { return [] }
+        return scenes[activeSceneIndex].tracks
+            .filter { !$0.clips.isEmpty }
+            .map(\.type)
     }
 
     public func toggleSolo(trackIndex: Int) {
@@ -387,6 +441,9 @@ public final class Sequencer: ObservableObject {
                 silencePlaybackNotes()
                 lastDispatchedTick = newTick
                 transport.currentTick = newTick
+                // The wrap is itself a bar boundary in the scene's bar grid.
+                lastBarIndex = nil
+                notifyBarBoundary(for: newTick)
                 return
             }
         }
@@ -408,6 +465,15 @@ public final class Sequencer: ObservableObject {
         }
         lastDispatchedTick = newTick
         transport.currentTick = newTick
+        notifyBarBoundary(for: newTick)
+    }
+
+    /// Fires `onBarBoundary` once per bar the transport enters.
+    private func notifyBarBoundary(for tick: UInt64) {
+        let bar = Int(tick / SequencerGrid.ticksPerBar)
+        guard lastBarIndex != bar else { return }
+        lastBarIndex = bar
+        onBarBoundary?(bar)
     }
 
     private func dispatchPlaybackEvents(from start: UInt64, to end: UInt64) {

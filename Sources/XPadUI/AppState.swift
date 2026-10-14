@@ -612,6 +612,9 @@ public final class AppState: @unchecked Sendable {
                 self.midiEngine.sendNoteOff(port: port, channel: channels[track] ?? 0, note: note)
             }
         }
+        sequencer.onBarBoundary = { [weak self] bar in
+            self?.runCoPilotBar(bar)
+        }
     }
 
     /// Virtual endpoint a timeline track plays through, so sequencer playback
@@ -724,6 +727,107 @@ public final class AppState: @unchecked Sendable {
         (0..<12).map { degree in
             let key = (Int(currentKey.rawValue) + degree) % 12
             return key < deviations.count ? deviations[key] : 0
+        }
+    }
+
+    // MARK: - Jam Co-Pilot
+
+    /// Whether the backing band follows the player automatically.
+    public var isCoPilotEnabled: Bool = false
+    /// Last decision the co-pilot took, so the UI can explain itself.
+    public var lastCoPilotDirective: CoPilotDirective?
+    /// Smoothed player intensity, `0...1`, fed by strum velocity and decayed per bar.
+    public var coPilotEnergy: Double = 0.5
+    /// Bars the active progression has been used, which is what makes a rut audible.
+    public var coPilotProgressionBars: Int = 0
+
+    private var jamCoPilot = JamCoPilot()
+
+    /// Blends a new performance velocity into the co-pilot's energy estimate.
+    private func updatePerformanceEnergy(_ velocity: UInt8) {
+        let sample = Double(velocity) / 127.0
+        coPilotEnergy = (coPilotEnergy * 0.82 + sample * 0.18).normalizedUnit
+    }
+
+    /// Runs one co-pilot decision for the bar the transport just entered.
+    public func runCoPilotBar(_ bar: Int) {
+        guard isCoPilotEnabled else { return }
+        coPilotProgressionBars += 1
+        let directive = jamCoPilot.directive(
+            bar: bar,
+            energy: coPilotEnergy,
+            activeLayers: sequencer.audibleTracks,
+            availableLayers: sequencer.populatedTracks,
+            sameProgressionBars: coPilotProgressionBars,
+            styleName: harmonicStyle.name,
+            seed: styleMorphSeed &+ UInt64(max(0, bar))
+        )
+        // Silence reads as "the player stopped": let the estimate fall so the
+        // next decision is made about the current energy, not a stale one.
+        coPilotEnergy = (coPilotEnergy * 0.75).normalizedUnit
+        applyCoPilotDirective(directive, bar: bar)
+    }
+
+    /// Realises a co-pilot decision on the backing arrangement.
+    public func applyCoPilotDirective(_ directive: CoPilotDirective, bar: Int = 0) {
+        lastCoPilotDirective = directive
+        switch directive.kind {
+        case .hold:
+            break
+        case .dropOut(let track):
+            sequencer.setMuted(true, forType: track)
+            showToast("Co-Pilot: \(directive.reason)")
+        case .addLayer(let track):
+            sequencer.setMuted(false, forType: track)
+            showToast("Co-Pilot: \(directive.reason)")
+        case .drumFill(let intensity):
+            playDrumFillNow(intensity: intensity, bar: bar)
+            showToast("Co-Pilot: \(directive.reason)")
+        case .lift:
+            for track in sequencer.populatedTracks {
+                sequencer.setMuted(false, forType: track)
+            }
+            showToast("Co-Pilot: \(directive.reason)")
+        case .regenerate(let styleName):
+            if let style = HarmonicStyleLibrary.style(named: styleName) {
+                harmonicStyle = style
+            }
+            coPilotProgressionBars = 0
+            generateStyleProgression()
+            showToast("Co-Pilot: \(directive.reason)")
+        }
+    }
+
+    /// Plays a generated drum fill in the last bar of the current section.
+    ///
+    /// Hits are scheduled against the transport's own tick clock so the fill
+    /// lands on the downbeat of the next section instead of wherever the
+    /// player happened to press a button.
+    public func playDrumFillNow(intensity: Double, bar: Int) {
+        let hits = DrumFillGenerator.fill(intensity: intensity, beats: 4, seed: styleMorphSeed &+ 1)
+        guard !hits.isEmpty else { return }
+
+        let barStartTick = UInt64(max(0, bar)) * SequencerGrid.ticksPerBar
+        let currentTick = sequencer.transport.currentTick
+        let secondsPerTick = 60.0 / (max(20.0, bpm) * Double(SequencerGrid.ticksPerBeat))
+        let channel = midiChannel(for: .drums)
+
+        for hit in hits {
+            let target = barStartTick &+ hit.tickOffset
+            guard target >= currentTick else { continue }
+            let delay = Double(target - currentTick) * secondsPerTick
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, let sound = BuiltInDrumSound(midiNote: hit.note) else { return }
+                self.audioEngine.triggerDrum(sound, velocity: hit.velocity)
+                if self.midiEngine.virtualMIDIEnabled {
+                    self.midiEngine.sendNoteOn(
+                        port: .drums,
+                        channel: channel,
+                        note: hit.note,
+                        velocity: hit.velocity
+                    )
+                }
+            }
         }
     }
 
@@ -2199,6 +2303,7 @@ public final class AppState: @unchecked Sendable {
         velocity16: UInt16? = nil,
         direction: StrumDirection
     ) {
+        updatePerformanceEnergy(velocity)
         for event in events {
             switch event {
             case .began(let voice):
