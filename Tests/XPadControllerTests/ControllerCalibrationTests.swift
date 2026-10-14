@@ -121,8 +121,12 @@ final class ControllerCalibrationTests: XCTestCase {
         XCTAssertEqual(wizard.currentStep, .completed)
         wizard.feed(rawLeftX: 0, rawLeftY: 0, rawRightX: 0, rawRightY: 0)
         XCTAssertEqual(wizard.currentStep, .completed)
-        XCTAssertEqual(calibration.leftStick.maxRadius, 0.85)
-        XCTAssertEqual(calibration.rightStick.maxRadius, 0.85)
+        // No samples were accepted, so the wizard must fall back to the
+        // documented default range rather than inventing a measured one.
+        XCTAssertEqual(calibration.leftStick.maxRadius, 1.0)
+        XCTAssertEqual(calibration.rightStick.maxRadius, 1.0)
+        calibration.validateAndRepair()
+        XCTAssertEqual(calibration.leftStick.maxRadius, 1.0)
     }
 
     func testControllerHardwareCalibrationCodableRoundTrip() throws {
