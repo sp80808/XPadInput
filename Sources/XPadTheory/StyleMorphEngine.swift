@@ -60,7 +60,8 @@ public struct StyleMorphEngine: Sendable {
         scale: Scale? = nil,
         bars: Int = 4,
         seed: UInt64 = 0,
-        startDegree: Int? = nil
+        startDegree: Int? = nil,
+        chordCount: Int? = nil
     ) -> Progression {
         let dna = style.normalised()
         let resolvedScale = scale ?? Scale(root: key, type: dna.preferredScaleType)
@@ -72,7 +73,7 @@ public struct StyleMorphEngine: Sendable {
         }
 
         let degreeCount = palette.count
-        let chordCount = max(2, Int((dna.chordsPerBar * Double(barCount)).rounded()))
+        let chordCount = max(2, chordCount ?? Int((dna.chordsPerBar * Double(barCount)).rounded()))
         // Realised harmonic rhythm: fill exactly the requested bars, staying as
         // close to the style's chords-per-bar as the grid allows.
         let beatsPerChord = (Double(barCount) * 4.0) / Double(chordCount)
@@ -140,6 +141,47 @@ public struct StyleMorphEngine: Sendable {
         )
     }
 
+    /// Re-colours an existing progression in a new style.
+    ///
+    /// Rhythm, block count, and block durations are preserved — only the harmony
+    /// changes — which is how a verse the player already likes can be heard
+    /// through a different genre without losing its phrasing.
+    public func reharmonise(
+        _ progression: Progression,
+        style: HarmonicStyleDNA,
+        seed: UInt64 = 0
+    ) -> Progression {
+        guard !progression.blocks.isEmpty else { return progression }
+        let totalBeats = progression.totalBeats
+        let bars = max(1, Int((totalBeats / 4.0).rounded(.up)))
+
+        let generated = generate(
+            style: style,
+            key: progression.root,
+            scale: progression.scale,
+            bars: bars,
+            seed: seed,
+            chordCount: progression.blocks.count
+        )
+        guard generated.blocks.count == progression.blocks.count else { return progression }
+
+        let blocks = zip(progression.blocks, generated.blocks).map { original, replacement in
+            ChordBlock(
+                chord: replacement.chord,
+                durationBeats: original.durationBeats,
+                romanNumeral: replacement.romanNumeral,
+                humanizedVelocity: replacement.humanizedVelocity
+            )
+        }
+
+        return Progression(
+            name: "\(progression.name) · \(style.name)",
+            root: progression.root,
+            scale: progression.scale,
+            blocks: blocks
+        )
+    }
+
     // MARK: - Layer 1: degree motion
 
     /// Weighted walk over scale degrees with functional voice-leading pull.
@@ -154,6 +196,13 @@ public struct StyleMorphEngine: Sendable {
         let opening = startDegree.map { ((($0 % degreeCount) + degreeCount) % degreeCount) }
 
         for slot in 0..<count {
+            // An explicit start degree is honoured exactly: "begin on the IV" is a
+            // musical instruction, not a suggestion.
+            if slot == 0, let opening {
+                degrees.append(opening)
+                continue
+            }
+
             let previous = degrees.last
             let isFinal = slot == count - 1
             var weights: [Double] = []
@@ -166,9 +215,6 @@ public struct StyleMorphEngine: Sendable {
                     degreeCount: degreeCount,
                     cadenceStrength: dna.cadenceStrength
                 )
-                if let opening {
-                    motion *= (slot == 0 && candidate == opening) ? 3.0 : 0.7
-                }
                 if isFinal {
                     // Phrases land on the tonic unless the style deliberately avoids it.
                     motion *= candidate == 0 ? (1.2 + dna.cadenceStrength) : 0.6

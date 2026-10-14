@@ -153,6 +153,79 @@ public struct HarmonyWorkspaceView: View {
                     .background(XTheme.surfaceRaised)
                     .clipShape(RoundedRectangle(cornerRadius: XTheme.radiusL))
 
+                    // Style Morph Card
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 10) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Style Morph")
+                                    .font(XTheme.fontHeadline)
+                                    .foregroundStyle(XTheme.textPrimary)
+                                Text("\(appState.harmonicStyle.name) → \(appState.harmonicStyleTarget.name) · \(Int(appState.styleMorphAmount * 100))% blended")
+                                    .font(.caption2)
+                                    .foregroundStyle(XTheme.textSecondary)
+                            }
+
+                            Spacer()
+
+                            Button {
+                                appState.generateStyleProgression()
+                            } label: {
+                                Label("Generate", systemImage: "wand.and.stars")
+                            }
+                            .xButton(.primary, size: .small)
+                            .help("Write a new progression in the blended style")
+
+                            Button {
+                                appState.reharmoniseActiveProgression()
+                            } label: {
+                                Label("Reharmonise", systemImage: "arrow.triangle.2.circlepath")
+                            }
+                            .xButton(.secondary, size: .small)
+                            .help("Keep this progression's rhythm, change its harmony to the blended style")
+                        }
+
+                        HStack(spacing: 12) {
+                            Picker("From", selection: $appState.harmonicStyle) {
+                                ForEach(HarmonicStyleLibrary.all, id: \.name) { style in
+                                    Text(style.name).tag(style)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(maxWidth: 190)
+
+                            Picker("To", selection: $appState.harmonicStyleTarget) {
+                                ForEach(HarmonicStyleLibrary.all, id: \.name) { style in
+                                    Text(style.name).tag(style)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(maxWidth: 190)
+
+                            Slider(value: $appState.styleMorphAmount, in: 0...1)
+                                .help("Blend between the two styles")
+
+                            Stepper(value: $appState.styleMorphBars, in: 1...16) {
+                                Text("\(appState.styleMorphBars) bars")
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(XTheme.textSecondary)
+                            }
+                            .fixedSize()
+                        }
+
+                        HStack(spacing: 8) {
+                            Text("Root emphasis, extension colour, modal interchange, harmonic rhythm")
+                                .font(.caption2)
+                                .foregroundStyle(XTheme.textSecondary)
+                            Spacer()
+                            Text("\(appState.morphedStyle.chordsPerBar.formatted(.number.precision(.fractionLength(2)))) chords/bar")
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(XTheme.textSecondary)
+                        }
+                    }
+                    .padding()
+                    .background(XTheme.surfaceRaised)
+                    .clipShape(RoundedRectangle(cornerRadius: XTheme.radiusL))
+
                     // Modulation Explorer
                     VStack(alignment: .leading, spacing: 12) {
                         HStack {

@@ -1432,6 +1432,63 @@ public final class AppState: @unchecked Sendable {
         }
     }
 
+    // MARK: - Style Morphing
+
+    /// Style the player is generating from.
+    public var harmonicStyle: HarmonicStyleDNA = HarmonicStyleLibrary.neoSoul
+    /// Style the player is morphing toward.
+    public var harmonicStyleTarget: HarmonicStyleDNA = HarmonicStyleLibrary.synthwave
+    /// How far the morph slider has travelled, `0...1`.
+    public var styleMorphAmount: Double = 0.5
+    /// Seed counter so "Generate" keeps producing new but reproducible ideas.
+    public var styleMorphSeed: UInt64 = 0
+    /// Length in 4/4 bars used by the style generator.
+    public var styleMorphBars: Int = 4
+
+    private let styleMorphEngine = StyleMorphEngine()
+
+    /// The blended style the morph slider currently describes.
+    public var morphedStyle: HarmonicStyleDNA {
+        styleMorphEngine.blend(harmonicStyle, harmonicStyleTarget, amount: styleMorphAmount)
+    }
+
+    /// Generates a fresh progression in the morphed style and makes it the active one.
+    @discardableResult
+    public func generateStyleProgression(bars: Int? = nil) -> Progression {
+        styleMorphSeed = styleMorphSeed &+ 1
+        let style = morphedStyle
+        let generated = styleMorphEngine.generate(
+            style: style,
+            key: currentKey,
+            scale: currentScale,
+            bars: bars ?? styleMorphBars,
+            seed: styleMorphSeed
+        )
+        guard !generated.blocks.isEmpty else { return activeProgression }
+
+        activeProgression = generated
+        selectedProgressionBlockIndex = 0
+        currentChord = generated.blocks[0].chord
+        chordPerformanceSource = .activeProgression
+        showToast("Generated \(style.name) progression")
+        return generated
+    }
+
+    /// Re-harmonises the current progression toward the morphed style, keeping its rhythm.
+    @discardableResult
+    public func reharmoniseActiveProgression() -> Progression {
+        styleMorphSeed = styleMorphSeed &+ 1
+        let style = morphedStyle
+        let reharmonised = styleMorphEngine.reharmonise(activeProgression, style: style, seed: styleMorphSeed)
+        guard !reharmonised.blocks.isEmpty else { return activeProgression }
+
+        activeProgression = reharmonised
+        selectedProgressionBlockIndex = min(selectedProgressionBlockIndex, reharmonised.blocks.count - 1)
+        currentChord = reharmonised.blocks[selectedProgressionBlockIndex].chord
+        showToast("Reharmonised → \(style.name)")
+        return reharmonised
+    }
+
     public func addChordToActiveProgression(_ chord: Chord, durationBeats: Double = 4.0) {
         let block = ChordBlock(chord: chord, durationBeats: durationBeats)
         activeProgression.blocks.append(block)

@@ -13,7 +13,7 @@ import XPadCore
 /// in chords per 4/4 bar (`0.25` = one chord every four bars, `2` = two chords
 /// per bar) — the axis that mostly determines whether harmony feels like a pad
 /// bed, a ballad, or a groove.
-public struct HarmonicStyleDNA: Codable, Sendable, Equatable {
+public struct HarmonicStyleDNA: Codable, Sendable, Hashable {
     /// Human-readable style name, used for generated progression titles.
     public var name: String
 
@@ -283,7 +283,7 @@ public enum HarmonicStyleLibrary {
 
     public static let jazzStandard = HarmonicStyleDNA(
         name: "Jazz Standard",
-        degreeWeights: [0.95, 1.15, 0.7, 0.75, 1.0, 0.85, 0.35),
+        degreeWeights: [0.95, 1.15, 0.7, 0.75, 1.0, 0.85, 0.35],
         minorLean: 0.35,
         extensionRichness: 0.85,
         suspendedColour: 0.15,

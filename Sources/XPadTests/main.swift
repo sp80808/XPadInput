@@ -3929,6 +3929,180 @@ final class TestRunner {
             }
         }
 
+        // MARK: - Suite: Style Morphing & Generative Harmony
+        suite("XPadTheory: Style Morphing & Deterministic Generation") {
+            func signature(_ progression: Progression) -> String {
+                progression.blocks.map { "\($0.romanNumeral)|\($0.chord.symbol)" }.joined(separator: "-")
+            }
+            let engine = StyleMorphEngine()
+
+            test("Seeded random is reproducible and weighted picks respect zero weights") {
+                var a = DeterministicRandom(seed: 2026)
+                var b = DeterministicRandom(seed: 2026)
+                assertEqual(a.next(), b.next())
+                assertEqual(a.next(), b.next())
+                for _ in 0..<32 {
+                    assertTrue(a.pickWeightedIndex(weights: [0, 0, 5, 0]) == 2)
+                }
+                assertTrue(DeterministicRandom(seed: "XPI").next() == DeterministicRandom(seed: "XPI").next())
+            }
+
+            test("Style DNA normalises weights and clamps every axis") {
+                let wild = HarmonicStyleDNA(
+                    name: "Wild",
+                    degreeWeights: [-1, 3, 3, 3, 3, 3, 3],
+                    minorLean: 9,
+                    extensionRichness: -4,
+                    suspendedColour: 0.5,
+                    borrowing: -2,
+                    secondaryDominantRate: 4,
+                    tritoneSubstitutionRate: 0.25,
+                    mediantShiftRate: -7,
+                    chordsPerBar: 88,
+                    cadenceStrength: 12
+                ).normalised()
+                assertEqual(wild.minorLean, 1.0)
+                assertEqual(wild.extensionRichness, 0.0)
+                assertEqual(wild.borrowing, 0.0)
+                assertEqual(wild.mediantShiftRate, 0.0)
+                assertEqual(wild.cadenceStrength, 1.0)
+                assertEqual(wild.chordsPerBar, 4.0)
+                assertTrue(abs(wild.degreeWeights.reduce(0, +) - 1.0) < 0.0001)
+            }
+
+            test("Style blend interpolates every axis and hits both endpoints") {
+                let start = HarmonicStyleLibrary.popRoyalRoad
+                let end = HarmonicStyleLibrary.neoSoul
+                let atStart = engine.blend(start, end, amount: 0)
+                let atEnd = engine.blend(start, end, amount: 1)
+                let half = engine.blend(start, end, amount: 0.5)
+
+                assertEqual(atStart.name, start.name)
+                assertEqual(atEnd.name, end.name)
+                assertTrue(abs(half.extensionRichness - (start.normalised().extensionRichness + end.normalised().extensionRichness) / 2) < 0.0001)
+                assertTrue(half.name.contains("→"))
+                assertTrue(abs(half.degreeWeights.reduce(0, +) - 1.0) < 0.0001)
+            }
+
+            test("Generation is deterministic for a seed and varies across seeds") {
+                let first = engine.generate(style: HarmonicStyleLibrary.synthwave, key: .f, bars: 4, seed: 11)
+                let second = engine.generate(style: HarmonicStyleLibrary.synthwave, key: .f, bars: 4, seed: 11)
+                assertEqual(signature(first), signature(second))
+
+                var variants = Set<String>()
+                for seed in UInt64(0)..<10 {
+                    variants.insert(signature(engine.generate(style: HarmonicStyleLibrary.synthwave, key: .f, bars: 4, seed: seed)))
+                }
+                assertTrue(variants.count > 1, "seeds should explore different ideas")
+            }
+
+            test("Generated progressions fill the requested bars and are fully labelled") {
+                for style in HarmonicStyleLibrary.all {
+                    let progression = engine.generate(style: style, key: .g, bars: 4, seed: 4)
+                    let beats = progression.blocks.reduce(0.0) { $0 + $1.durationBeats }
+                    assertTrue(abs(beats - 16.0) < 0.0001, "\(style.name) should fill four bars")
+                    assertTrue(progression.blocks.count >= 2)
+                    for block in progression.blocks {
+                        assertFalse(block.romanNumeral.isEmpty, "\(style.name) produced an unlabelled chord")
+                        assertTrue(block.humanizedVelocity > 0 && block.humanizedVelocity <= 127)
+                    }
+                }
+            }
+
+            test("Style lean chooses the mode unless a scale is supplied") {
+                let cinematic = engine.generate(style: HarmonicStyleLibrary.cinematicTrailer, key: .a, bars: 4, seed: 3)
+                assertTrue(cinematic.scale.type.isMinor)
+                let pop = engine.generate(style: HarmonicStyleLibrary.popRoyalRoad, key: .c, bars: 4, seed: 3)
+                assertFalse(pop.scale.type.isMinor)
+
+                let dorian = engine.generate(
+                    style: HarmonicStyleLibrary.ambientModal,
+                    key: .c,
+                    scale: Scale(root: .c, type: .dorian),
+                    bars: 4,
+                    seed: 3
+                )
+                assertEqual(dorian.scale.type, .dorian)
+            }
+
+            test("A plain style stays diatonic and unextended") {
+                let plain = HarmonicStyleDNA(
+                    name: "Plain Diatonic",
+                    degreeWeights: [1, 0.6, 0.4, 0.8, 0.9, 0.7, 0.3],
+                    minorLean: 0,
+                    extensionRichness: 0,
+                    suspendedColour: 0,
+                    borrowing: 0,
+                    secondaryDominantRate: 0,
+                    tritoneSubstitutionRate: 0,
+                    mediantShiftRate: 0,
+                    chordsPerBar: 1,
+                    cadenceStrength: 1
+                )
+                let cMajor = Scale(root: .c, type: .major)
+                let diatonicRoots = Set(Chord.diatonicChords(root: .c, scale: cMajor).map(\.root))
+                let progression = engine.generate(style: plain, key: .c, scale: cMajor, bars: 4, seed: 6)
+                for block in progression.blocks {
+                    assertTrue(diatonicRoots.contains(block.chord.root), "\(block.chord.symbol) is not diatonic")
+                    assertEqual(block.chord.quality.intervals.count, 3)
+                }
+            }
+
+            test("An explicit start degree is honoured exactly") {
+                let progression = engine.generate(style: HarmonicStyleLibrary.deepHouse, key: .f, bars: 4, seed: 8, startDegree: 3)
+                assertTrue(progression.blocks.first?.chord.root == PitchClass.f.transposed(by: 5))
+            }
+
+            test("Reharmonising keeps rhythm and block count while changing harmony") {
+                let source = engine.generate(style: HarmonicStyleLibrary.popRoyalRoad, key: .c, bars: 4, seed: 1)
+                let reharmonised = engine.reharmonise(source, style: HarmonicStyleLibrary.neoSoul, seed: 2)
+                assertEqual(reharmonised.blocks.count, source.blocks.count)
+                for (before, after) in zip(source.blocks, reharmonised.blocks) {
+                    assertEqual(before.durationBeats, after.durationBeats)
+                }
+                assertTrue(reharmonised.blocks.allSatisfy { !$0.romanNumeral.isEmpty })
+            }
+
+            test("Generated progressions drive the sequencer as labelled clips") {
+                let appState = AppState()
+                let sequencer = Sequencer()
+                let progression = engine.generate(
+                    from: HarmonicStyleLibrary.synthwave,
+                    toward: HarmonicStyleLibrary.cinematicTrailer,
+                    amount: 0.35,
+                    key: appState.currentKey,
+                    scale: appState.currentScale,
+                    bars: 4,
+                    seed: 12
+                )
+                let clips = sequencer.insertProgressionClip(progression, targetTrack: .chords)
+                assertEqual(clips.count, progression.blocks.count)
+                assertTrue(clips.allSatisfy { !$0.name.isEmpty })
+                assertTrue(clips.allSatisfy { !$0.notes.isEmpty })
+                let scene = sequencer.scenes[sequencer.activeSceneIndex]
+                assertEqual(scene.loopLengthTicks, 960 * 4 * 4)
+            }
+
+            test("AppState generates and reharmonises in the blended style") {
+                let appState = AppState()
+                appState.harmonicStyle = HarmonicStyleLibrary.neoSoul
+                appState.harmonicStyleTarget = HarmonicStyleLibrary.synthwave
+                appState.styleMorphAmount = 0.5
+                appState.styleMorphBars = 4
+                assertTrue(appState.morphedStyle.name.contains("→"))
+
+                let generated = appState.generateStyleProgression()
+                assertEqual(appState.activeProgression.blocks.count, generated.blocks.count)
+                assertTrue(appState.chordPerformanceSource == .activeProgression)
+                assertEqual(appState.selectedProgressionBlockIndex, 0)
+                assertEqual(appState.currentChord, generated.blocks.first?.chord)
+
+                let before = appState.activeProgression.blocks.map(\.durationBeats)
+                let reharmonised = appState.reharmoniseActiveProgression()
+                assertEqual(reharmonised.blocks.map(\.durationBeats), before)
+            }
+        }
+
         // MARK: - Final Summary
         print("\n==================================================")
         print("📊 Test Execution Summary")
