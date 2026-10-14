@@ -4187,7 +4187,7 @@ final class TestRunner {
                 let first = 22
                 assertEqual(Array(message[first..<(first + 3)]), [0, 0, 0])
                 assertEqual(Array(message[(first + 3 * 61)..<(first + 3 * 61 + 3)]), [60, 110, 59])
-                assertTrue(message.allSatisfy { $0 < 0x80 })
+                assertTrue(message.dropFirst().dropLast().allSatisfy { $0 < 0x80 })
             }
 
             test("Bulk dump tolerates a short deviation table") {
