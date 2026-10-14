@@ -179,8 +179,8 @@ final class CoreMIDILoopbackTests: XCTestCase {
         guard snapshot.1.count >= 2 else { return }
 
         XCTAssertEqual(snapshot.1[0] >> 28, 0x4)
-        XCTAssertEqual((snapshot.1[0] >> 16) & 0xFF, (0x90 | channel))
-        XCTAssertEqual((snapshot.1[0] >> 8) & 0xFF, note)
+        XCTAssertEqual((snapshot.1[0] >> 16) & 0xFF, UInt32(0x90 | channel))
+        XCTAssertEqual((snapshot.1[0] >> 8) & 0xFF, UInt32(note))
         XCTAssertEqual(snapshot.1[0] & 0xFF, UInt32(MIDI2UMPEncoder.scale7To16(velocity)))
     }
 
@@ -255,9 +255,9 @@ final class CoreMIDILoopbackTests: XCTestCase {
         let ccController = (snapshot.1[0] >> 8) & 0xFF
         let ccValue = (snapshot.1[0] >> 16) & 0xFF
 
-        XCTAssertEqual(statusByte, 0xB0 | channel)
-        XCTAssertEqual(ccController, controller)
-        XCTAssertEqual(ccValue, value)
+        XCTAssertEqual(statusByte, UInt32(0xB0 | channel))
+        XCTAssertEqual(ccController, UInt32(controller))
+        XCTAssertEqual(ccValue, UInt32(value))
     }
 
     private func source(named expectedName: String) -> MIDIEndpointRef? {
