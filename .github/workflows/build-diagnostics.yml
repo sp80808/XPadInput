@@ -1,10 +1,12 @@
 name: Build Diagnostics
 
-# Surfaces Swift compiler errors as GitHub check-run annotations.
+# Surfaces Swift compiler errors and exhaustive-test-runner failures as GitHub
+# check-run annotations.
 #
-# `swift build` output only lives in the job log, which is awkward to read from
-# a terminal or from an agent session. This job re-runs the build, captures the
-# output, and re-emits every diagnostic as an annotation so it can be read with:
+# `swift build` / `swift run XPadTests` output only lives in the job log, which
+# is awkward to read from a terminal or from an agent session. This job re-runs
+# both, captures their output, and re-emits every diagnostic as an annotation so
+# it can be read with:
 #
 #   gh api /repos/{owner}/{repo}/check-runs/{id}/annotations
 #
@@ -37,24 +39,54 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          swift build 2>&1 | tee /tmp/xpi-build.log
-          status=${PIPESTATUS[0]}
+          swift build > /tmp/xpi-build.log 2>&1
+          status=$?
           echo "swift build exit status: ${status}"
-          echo "### Swift build exit status: ${status}" >> "$GITHUB_STEP_SUMMARY"
+          echo "### swift build exit status: ${status}" >> "$GITHUB_STEP_SUMMARY"
           exit 0
 
-      - name: Emit annotations
+      - name: Annotate build errors
         if: always()
         run: |
           log=/tmp/xpi-build.log
-          count=$(grep -c "error:" "$log" || true)
-          echo "Compiler errors detected: ${count}"
-          if [ "$count" = "0" ]; then
-            echo "### No compiler errors" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          grep -n "error:" "$log" | head -n 40 | while IFS= read -r line; do
-            message=$(printf '%s' "$line" | sed -e 's/"/\\"/g' | cut -c1-900)
-            echo "::error title=Swift build::${message}"
-          done
-          head -n 40 "$log" >> "$GITHUB_STEP_SUMMARY" || true
+          grep -E '\.swift:[0-9]+:[0-9]+: error: ' "$log" | sort -u > /tmp/xpi-errors.txt || true
+          count=$(wc -l < /tmp/xpi-errors.txt | tr -d ' ')
+          echo "unique compile errors: ${count}"
+          echo "### Unique compile errors: ${count}" >> "$GITHUB_STEP_SUMMARY"
+
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            relative=$(printf '%s' "$line" | sed -E 's#^.*/XPadInput/XPadInput/##; s#^.*/XPadInput/##')
+            file=$(printf '%s' "$relative" | sed -E 's/^([^:]+):[0-9]+:[0-9]+: error: .*/\1/')
+            num=$(printf '%s' "$relative" | sed -E 's/^[^:]+:([0-9]+):[0-9]+: error: .*/\1/')
+            col=$(printf '%s' "$relative" | sed -E 's/^[^:]+:[0-9]+:([0-9]+): error: .*/\1/')
+            msg=$(printf '%s' "$relative" | sed -E 's/^[^:]+:[0-9]+:[0-9]+: error: //' | sed -e 's/"/\\"/g' -e "s/%/%25/g" | cut -c1-800)
+            echo "::error file=${file},line=${num},col=${col},title=Swift build error::${msg}"
+          done < /tmp/xpi-errors.txt
+
+      - name: Exhaustive test runner (diagnostics only)
+        if: always()
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          swift run XPadTests > /tmp/xpi-tests.log 2>&1
+          echo "swift run XPadTests exit status: $?"
+          exit 0
+
+      - name: Annotate test failures
+        if: always()
+        run: |
+          log=/tmp/xpi-tests.log
+          [ -f "$log" ] || exit 0
+          grep -E '❌' "$log" | sort -u > /tmp/xpi-test-failures.txt || true
+          count=$(wc -l < /tmp/xpi-test-failures.txt | tr -d ' ')
+          echo "unique test failures: ${count}"
+          echo "### Unique test-runner failures: ${count}" >> "$GITHUB_STEP_SUMMARY"
+
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            msg=$(printf '%s' "$line" | sed -e 's/"/\\"/g' | cut -c1-800)
+            echo "::warning title=Test runner failure::${msg}"
+          done < /tmp/xpi-test-failures.txt
+
+          tail -n 12 "$log" >> "$GITHUB_STEP_SUMMARY" || true
