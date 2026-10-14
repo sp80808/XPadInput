@@ -575,19 +575,57 @@ public final class AppState: @unchecked Sendable {
     }
 
     private func setupSequencerPlaybackRouting() {
-        sequencer.onPlaybackNoteOn = { [weak self] note, velocity in
+        // Route each timeline track to the endpoint and channel its live part uses.
+        // The maps are resolved once, on the main actor, so playback callbacks never
+        // have to reach back into isolated state while the clock is running.
+        var ports: [TrackType: VirtualPort] = [:]
+        var channels: [TrackType: UInt8] = [:]
+        for track in TrackType.allCases {
+            let port = Self.virtualPort(for: track)
+            ports[track] = port
+            channels[track] = midiChannel(for: port)
+        }
+        let drumNotes = BuiltInDrumSound.allCases.map(\.midiNote)
+
+        sequencer.onPlaybackNoteOn = { [weak self] note, velocity, track in
             guard let self, !self.audioEngine.isMuted else { return }
-            self.audioEngine.noteOn(note: note, velocity: velocity)
-            if self.midiEngine.virtualMIDIEnabled {
-                self.midiEngine.sendNoteOn(port: .chords, channel: 0, note: note, velocity: velocity)
+            if track == .drums, drumNotes.contains(note), let sound = BuiltInDrumSound(midiNote: note) {
+                self.audioEngine.triggerDrum(sound, velocity: velocity)
+            } else {
+                self.audioEngine.noteOn(note: note, velocity: velocity)
+            }
+            if self.midiEngine.virtualMIDIEnabled, let port = ports[track] {
+                self.midiEngine.sendNoteOn(
+                    port: port,
+                    channel: channels[track] ?? 0,
+                    note: note,
+                    velocity: velocity
+                )
             }
         }
-        sequencer.onPlaybackNoteOff = { [weak self] note in
+        sequencer.onPlaybackNoteOff = { [weak self] note, track in
             guard let self else { return }
-            self.audioEngine.noteOff(note: note)
-            if self.midiEngine.virtualMIDIEnabled {
-                self.midiEngine.sendNoteOff(port: .chords, channel: 0, note: note)
+            if track != .drums || !drumNotes.contains(note) {
+                self.audioEngine.noteOff(note: note)
             }
+            if self.midiEngine.virtualMIDIEnabled, let port = ports[track] {
+                self.midiEngine.sendNoteOff(port: port, channel: channels[track] ?? 0, note: note)
+            }
+        }
+        sequencer.onBarBoundary = { [weak self] bar in
+            self?.runCoPilotBar(bar)
+        }
+    }
+
+    /// Virtual endpoint a timeline track plays through, so sequencer playback
+    /// arrives at a DAW the same way a live performance of that part would.
+    public static func virtualPort(for track: TrackType) -> VirtualPort {
+        switch track {
+        case .chords: return .chords
+        case .melody: return .melody
+        case .bass: return .bass
+        case .drums: return .drums
+        case .gesture: return .main
         }
     }
 
@@ -626,6 +664,219 @@ public final class AppState: @unchecked Sendable {
         audioEngine.temperament = temperament
         audioEngine.scaleRoot = currentKey
         mpeManager.temperament = temperament
+        // Keep external gear in the same tuning as the built-in synth.
+        broadcastTuningTable()
+    }
+
+    // MARK: - MIDI Tuning Standard
+
+    /// Tuning program number used for XPI's outgoing MTS messages.
+    public static let tuningProgram: UInt8 = 1
+
+    /// Per-key deviation in cents from 12-TET for the active temperament.
+    ///
+    /// Indexed by MIDI note number so the result can be handed straight to the
+    /// MIDI Tuning Standard encoders.
+    public func tuningDeviationsCents() -> [Double] {
+        let root = currentKey
+        let chordRoot = currentChord?.root
+        let isMinorChord = currentChord?.quality.intervals.contains(3) ?? false
+        return (0...127).map { key in
+            currentTemperament.tuningOffsetInCents(
+                for: UInt8(key),
+                scaleRoot: root,
+                activeChordRoot: chordRoot,
+                isMinorChord: isMinorChord
+            )
+        }
+    }
+
+    /// Is the active temperament anything other than plain 12-TET?
+    public var hasMicrotonalTuning: Bool {
+        currentTemperament != .equalTemperament
+    }
+
+    /// Sends the active temperament to every virtual port using the MIDI Tuning Standard.
+    ///
+    /// MTS hands the destination's oscillators a tuning table, so hardware and
+    /// third-party soft synths track XPI's temperament — including non-octave
+    /// scales that a per-note pitch bend cannot express.
+    @discardableResult
+    public func broadcastTuningTable(name: String? = nil, program: UInt8 = AppState.tuningProgram) -> Int {
+        let deviations = tuningDeviationsCents()
+        let bulk = MIDITuningStandard.bulkDump(
+            name: name ?? currentTemperament.rawValue,
+            deviationsCents: deviations,
+            program: program
+        )
+        let scaleOctave = MIDITuningStandard.scaleOctaveTuning2Byte(
+            deviationsCents: midiTuningDegreeDeviations(from: deviations)
+        )
+
+        var sent = 0
+        for port in VirtualPort.allCases {
+            midiEngine.sendSysEx(bulk, to: port)
+            midiEngine.sendSysEx(scaleOctave, to: port)
+            sent += 2
+        }
+        return sent
+    }
+
+    /// The twelve scale-degree deviations, in the conventional C-major order.
+    private func midiTuningDegreeDeviations(from deviations: [Double]) -> [Double] {
+        (0..<12).map { degree in
+            let key = (Int(currentKey.rawValue) + degree) % 12
+            return key < deviations.count ? deviations[key] : 0
+        }
+    }
+
+    // MARK: - Jam Co-Pilot
+
+    /// Whether the backing band follows the player automatically.
+    public var isCoPilotEnabled: Bool = false
+    /// Last decision the co-pilot took, so the UI can explain itself.
+    public var lastCoPilotDirective: CoPilotDirective?
+    /// Smoothed player intensity, `0...1`, fed by strum velocity and decayed per bar.
+    public var coPilotEnergy: Double = 0.5
+    /// Bars the active progression has been used, which is what makes a rut audible.
+    public var coPilotProgressionBars: Int = 0
+
+    private var jamCoPilot = JamCoPilot()
+
+    /// Blends a new performance velocity into the co-pilot's energy estimate.
+    private func updatePerformanceEnergy(_ velocity: UInt8) {
+        let sample = Double(velocity) / 127.0
+        coPilotEnergy = (coPilotEnergy * 0.82 + sample * 0.18).normalizedUnit
+    }
+
+    /// Runs one co-pilot decision for the bar the transport just entered.
+    public func runCoPilotBar(_ bar: Int) {
+        guard isCoPilotEnabled else { return }
+        coPilotProgressionBars += 1
+        let directive = jamCoPilot.directive(
+            bar: bar,
+            energy: coPilotEnergy,
+            activeLayers: sequencer.audibleTracks,
+            availableLayers: sequencer.populatedTracks,
+            sameProgressionBars: coPilotProgressionBars,
+            styleName: harmonicStyle.name,
+            seed: styleMorphSeed &+ UInt64(max(0, bar))
+        )
+        // Silence reads as "the player stopped": let the estimate fall so the
+        // next decision is made about the current energy, not a stale one.
+        coPilotEnergy = (coPilotEnergy * 0.75).normalizedUnit
+        applyCoPilotDirective(directive, bar: bar)
+    }
+
+    /// Realises a co-pilot decision on the backing arrangement.
+    public func applyCoPilotDirective(_ directive: CoPilotDirective, bar: Int = 0) {
+        lastCoPilotDirective = directive
+        switch directive.kind {
+        case .hold:
+            break
+        case .dropOut(let track):
+            sequencer.setMuted(true, forType: track)
+            showToast("Co-Pilot: \(directive.reason)")
+        case .addLayer(let track):
+            sequencer.setMuted(false, forType: track)
+            showToast("Co-Pilot: \(directive.reason)")
+        case .drumFill(let intensity):
+            playDrumFillNow(intensity: intensity, bar: bar)
+            showToast("Co-Pilot: \(directive.reason)")
+        case .lift:
+            for track in sequencer.populatedTracks {
+                sequencer.setMuted(false, forType: track)
+            }
+            showToast("Co-Pilot: \(directive.reason)")
+        case .regenerate(let styleName):
+            if let style = HarmonicStyleLibrary.style(named: styleName) {
+                harmonicStyle = style
+            }
+            coPilotProgressionBars = 0
+            generateStyleProgression()
+            showToast("Co-Pilot: \(directive.reason)")
+        }
+    }
+
+    /// Plays a generated drum fill in the last bar of the current section.
+    ///
+    /// Hits are scheduled against the transport's own tick clock so the fill
+    /// lands on the downbeat of the next section instead of wherever the
+    /// player happened to press a button.
+    public func playDrumFillNow(intensity: Double, bar: Int) {
+        let hits = DrumFillGenerator.fill(intensity: intensity, beats: 4, seed: styleMorphSeed &+ 1)
+        guard !hits.isEmpty else { return }
+
+        let barStartTick = UInt64(max(0, bar)) * SequencerGrid.ticksPerBar
+        let currentTick = sequencer.transport.currentTick
+        let secondsPerTick = 60.0 / (max(20.0, bpm) * Double(SequencerGrid.ticksPerBeat))
+        let channel = midiChannel(for: .drums)
+
+        for hit in hits {
+            let target = barStartTick &+ hit.tickOffset
+            guard target >= currentTick else { continue }
+            let delay = Double(target - currentTick) * secondsPerTick
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, let sound = BuiltInDrumSound(midiNote: hit.note) else { return }
+                self.audioEngine.triggerDrum(sound, velocity: hit.velocity)
+                if self.midiEngine.virtualMIDIEnabled {
+                    self.midiEngine.sendNoteOn(
+                        port: .drums,
+                        channel: channel,
+                        note: hit.note,
+                        velocity: hit.velocity
+                    )
+                }
+            }
+        }
+    }
+
+    // MARK: - Generated Parts
+
+    /// Writes a bassline for the active progression onto the bass track.
+    ///
+    /// The feel follows the current style unless one is supplied, so a deep
+    /// house progression pumps octaves while a jazz standard walks.
+    @discardableResult
+    public func sendBasslineToSequencer(feel: BasslineGenerator.Feel? = nil) -> SequencerClip? {
+        let resolved = feel ?? BasslineGenerator.feel(forStyleName: harmonicStyle.name)
+        let clip = BasslineGenerator.clip(
+            progression: activeProgression,
+            feel: resolved,
+            octave: 2,
+            seed: styleMorphSeed &+ 11,
+            name: "Bass \(activeProgression.root.standardName) \(resolved.rawValue)"
+        )
+        guard let inserted = sequencer.insertClip(clip, on: .bass) else { return nil }
+        showToast("Bassline written (\(resolved.rawValue))")
+        return inserted
+    }
+
+    /// Sends a real-time single-note retune for the notes of `chord`.
+    ///
+    /// Dynamic temperaments (just intonation, Hermode) follow the harmony, so
+    /// this keeps an external instrument's sustained notes locked to the chord.
+    @discardableResult
+    public func retuneExternalNotes(for chord: Chord) -> Bool {
+        guard currentTemperament.isDynamic else { return false }
+        let isMinorChord = chord.quality.intervals.contains(3)
+        let deviations = (0...127).map { key in
+            currentTemperament.tuningOffsetInCents(
+                for: UInt8(key),
+                scaleRoot: currentKey,
+                activeChordRoot: chord.root,
+                isMinorChord: isMinorChord
+            )
+        }
+        let message = MIDITuningStandard.singleNoteTuningChange(
+            deviationsCents: deviations,
+            program: AppState.tuningProgram
+        )
+        guard !message.isEmpty else { return false }
+        for port in VirtualPort.allCases {
+            midiEngine.sendSysEx(message, to: port)
+        }
+        return true
     }
 
     public func setInstrument(_ profile: InstrumentProfile) {
@@ -1303,22 +1554,15 @@ public final class AppState: @unchecked Sendable {
             return
         }
 
-        let angle = state.leftStickAngle
         let chordCount = diatonicChords.count
         guard chordCount > 0 else { return }
 
-        var normalised = -(angle - .pi / 2)
-        if normalised < 0 { normalised += 2 * .pi }
-
-        let sliceAngle = (2.0 * .pi) / Double(chordCount)
-        let centred = (normalised + sliceAngle / 2).truncatingRemainder(dividingBy: 2 * .pi)
-        let slicePosition = centred / sliceAngle
-        let index = Int(slicePosition) % chordCount
-        let positionWithinSlice = slicePosition - floor(slicePosition)
-
-        // Leave a narrow neutral band at sector boundaries so small analog
-        // jitter cannot make the harmonic wheel flicker between neighbours.
-        guard positionWithinSlice > 0.14, positionWithinSlice < 0.86 else { return }
+        // Shared polar geometry: the same resolver drives the progression selector,
+        // so a sector always means the same musical slot on either surface.
+        guard let index = PolarSectorResolver.sectorIndex(
+            angle: state.leftStickAngle,
+            sectorCount: chordCount
+        ) else { return }
 
         if index != selectedChordIndex {
             let old = currentChord ?? diatonicChords[selectedChordIndex]
@@ -1328,6 +1572,7 @@ public final class AppState: @unchecked Sendable {
             currentChord = new
             recordChordHistory(new)
             retargetHeldChordTones()
+            retuneExternalNotes(for: new)
             controllerManager.playTechniqueHaptic(.chordChange)
             multiJamManager.updateSharedHarmony(key: currentKey, scale: currentScale, chord: new)
             _ = smartSoloEngine.handleChordChange(oldChord: old, newChord: new, context: musicalContext())
@@ -1338,33 +1583,48 @@ public final class AppState: @unchecked Sendable {
     }
 
     private func handleProgressionChordSelection(_ state: ControllerState) {
+        selectProgressionBlock(atStickAngle: state.leftStickAngle)
+    }
+
+    /// Selects the active progression's block for a left-stick angle.
+    ///
+    /// Sector `0` sits at "up" and indices advance clockwise, matching the
+    /// harmonic wheel. Returns the selected index, or `nil` when the stick rests
+    /// inside a neutral boundary band or the progression is empty.
+    @discardableResult
+    public func selectProgressionBlock(atStickAngle angle: Double) -> Int? {
         let blockCount = activeProgression.blocks.count
-        guard blockCount > 0 else { return }
-
-        let angle = state.leftStickAngle
-        var normalised = -(angle - .pi / 2)
-        if normalised < 0 { normalised += 2 * .pi }
-
-        let sliceAngle = (2.0 * .pi) / Double(blockCount)
-        let centred = (normalised + sliceAngle / 2).truncatingRemainder(dividingBy: 2 * .pi)
-        let slicePosition = centred / sliceAngle
-        let index = Int(slicePosition) % blockCount
-        let positionWithinSlice = slicePosition - floor(slicePosition)
-
-        guard positionWithinSlice > 0.14, positionWithinSlice < 0.86 else { return }
-
-        if index != selectedProgressionBlockIndex {
-            let old = currentChord ?? activeProgression.blocks[selectedProgressionBlockIndex].chord
-            selectedProgressionBlockIndex = index
-            var new = activeProgression.blocks[index].chord
-            new.inversion = voicingInversion
-            currentChord = new
-            recordChordHistory(new)
-            retargetHeldChordTones()
-            controllerManager.playTechniqueHaptic(.chordChange)
-            multiJamManager.updateSharedHarmony(key: currentKey, scale: currentScale, chord: new)
-            _ = smartSoloEngine.handleChordChange(oldChord: old, newChord: new, context: musicalContext())
+        guard blockCount > 0 else { return nil }
+        guard selectedProgressionBlockIndex < blockCount else {
+            selectedProgressionBlockIndex = 0
+            return nil
         }
+        guard let index = PolarSectorResolver.sectorIndex(angle: angle, sectorCount: blockCount) else {
+            return nil
+        }
+        guard index != selectedProgressionBlockIndex else {
+            // Re-assert the chord so switching harmony sources with the stick already
+            // parked in a sector cannot leave the sounding chord out of sync with it.
+            var same = activeProgression.blocks[index].chord
+            same.inversion = voicingInversion
+            if currentChord != same {
+                currentChord = same
+            }
+            return index
+        }
+
+        let old = currentChord ?? activeProgression.blocks[selectedProgressionBlockIndex].chord
+        selectedProgressionBlockIndex = index
+        var new = activeProgression.blocks[index].chord
+        new.inversion = voicingInversion
+        currentChord = new
+        recordChordHistory(new)
+        retargetHeldChordTones()
+        retuneExternalNotes(for: new)
+        controllerManager.playTechniqueHaptic(.chordChange)
+        multiJamManager.updateSharedHarmony(key: currentKey, scale: currentScale, chord: new)
+        _ = smartSoloEngine.handleChordChange(oldChord: old, newChord: new, context: musicalContext())
+        return index
     }
 
     // MARK: - Workspace-Specific Controller Actions
@@ -1372,6 +1632,7 @@ public final class AppState: @unchecked Sendable {
     public func auditionChord(_ chord: Chord, duration: Double = 1.0) {
         let notes = chord.voicedNotes()
         let midiNotes = notes.map(\.midiNumber)
+        retuneExternalNotes(for: chord)
         for note in midiNotes {
             audioEngine.noteOn(note: note, velocity: 100)
         }
@@ -1388,6 +1649,63 @@ public final class AppState: @unchecked Sendable {
         if selectedProgressionBlockIndex >= activeProgression.blocks.count {
             selectedProgressionBlockIndex = max(0, activeProgression.blocks.count - 1)
         }
+    }
+
+    // MARK: - Style Morphing
+
+    /// Style the player is generating from.
+    public var harmonicStyle: HarmonicStyleDNA = HarmonicStyleLibrary.neoSoul
+    /// Style the player is morphing toward.
+    public var harmonicStyleTarget: HarmonicStyleDNA = HarmonicStyleLibrary.synthwave
+    /// How far the morph slider has travelled, `0...1`.
+    public var styleMorphAmount: Double = 0.5
+    /// Seed counter so "Generate" keeps producing new but reproducible ideas.
+    public var styleMorphSeed: UInt64 = 0
+    /// Length in 4/4 bars used by the style generator.
+    public var styleMorphBars: Int = 4
+
+    private let styleMorphEngine = StyleMorphEngine()
+
+    /// The blended style the morph slider currently describes.
+    public var morphedStyle: HarmonicStyleDNA {
+        styleMorphEngine.blend(harmonicStyle, harmonicStyleTarget, amount: styleMorphAmount)
+    }
+
+    /// Generates a fresh progression in the morphed style and makes it the active one.
+    @discardableResult
+    public func generateStyleProgression(bars: Int? = nil) -> Progression {
+        styleMorphSeed = styleMorphSeed &+ 1
+        let style = morphedStyle
+        let generated = styleMorphEngine.generate(
+            style: style,
+            key: currentKey,
+            scale: currentScale,
+            bars: bars ?? styleMorphBars,
+            seed: styleMorphSeed
+        )
+        guard !generated.blocks.isEmpty else { return activeProgression }
+
+        activeProgression = generated
+        selectedProgressionBlockIndex = 0
+        currentChord = generated.blocks[0].chord
+        chordPerformanceSource = .activeProgression
+        showToast("Generated \(style.name) progression")
+        return generated
+    }
+
+    /// Re-harmonises the current progression toward the morphed style, keeping its rhythm.
+    @discardableResult
+    public func reharmoniseActiveProgression() -> Progression {
+        styleMorphSeed = styleMorphSeed &+ 1
+        let style = morphedStyle
+        let reharmonised = styleMorphEngine.reharmonise(activeProgression, style: style, seed: styleMorphSeed)
+        guard !reharmonised.blocks.isEmpty else { return activeProgression }
+
+        activeProgression = reharmonised
+        selectedProgressionBlockIndex = min(selectedProgressionBlockIndex, reharmonised.blocks.count - 1)
+        currentChord = reharmonised.blocks[selectedProgressionBlockIndex].chord
+        showToast("Reharmonised → \(style.name)")
+        return reharmonised
     }
 
     public func addChordToActiveProgression(_ chord: Chord, durationBeats: Double = 4.0) {
@@ -2006,6 +2324,7 @@ public final class AppState: @unchecked Sendable {
         velocity16: UInt16? = nil,
         direction: StrumDirection
     ) {
+        updatePerformanceEnergy(velocity)
         for event in events {
             switch event {
             case .began(let voice):

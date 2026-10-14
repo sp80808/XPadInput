@@ -13,6 +13,40 @@ final class XPadPracticeTests: XCTestCase {
     override func tearDownWithError() throws {
         // Put teardown code here. This method is called after the invocation of each test method in the class.
     }
+
+    /// A copy of everything `ProgressTracker` publishes.
+    ///
+    /// `ProgressTracker.shared` is a singleton backed by `UserDefaults`, so a
+    /// test that records sessions has to put the store back the way it found it
+    /// instead of assuming it starts empty.
+    private struct TrackerSnapshot {
+        let history: [PracticeSessionResult]
+        let mastery: [UUID: LessonMastery]
+        let totalPracticeTime: TimeInterval
+        let streakDays: Int
+        let lastPracticeDate: Date?
+        let weeklyPracticeMinutes: Int
+    }
+
+    private func snapshot(_ tracker: ProgressTracker) -> TrackerSnapshot {
+        TrackerSnapshot(
+            history: tracker.sessionHistory,
+            mastery: tracker.lessonMastery,
+            totalPracticeTime: tracker.totalPracticeTime,
+            streakDays: tracker.streakDays,
+            lastPracticeDate: tracker.lastPracticeDate,
+            weeklyPracticeMinutes: tracker.weeklyPracticeMinutes
+        )
+    }
+
+    private func restore(_ snapshot: TrackerSnapshot, to tracker: ProgressTracker) {
+        tracker.sessionHistory = snapshot.history
+        tracker.lessonMastery = snapshot.mastery
+        tracker.totalPracticeTime = snapshot.totalPracticeTime
+        tracker.streakDays = snapshot.streakDays
+        tracker.lastPracticeDate = snapshot.lastPracticeDate
+        tracker.weeklyPracticeMinutes = snapshot.weeklyPracticeMinutes
+    }
     
     func testPracticeLessonCreation() throws {
         let lesson = PracticeLesson(
@@ -76,14 +110,13 @@ final class XPadPracticeTests: XCTestCase {
     
     func testProgressTrackerBasic() throws {
         let tracker = ProgressTracker.shared
-        
-        // Initial state
-        XCTAssertEqual(tracker.streakDays, 0)
-        XCTAssertEqual(tracker.totalPracticeTime, 0)
-        
+        let before = snapshot(tracker)
+        defer { restore(before, to: tracker) }
+        let lessonId = UUID()
+
         // Record a session
         let sessionResult = PracticeSessionResult(
-            lessonId: UUID(),
+            lessonId: lessonId,
             startTime: Date().addingTimeInterval(-30),
             endTime: Date(),
             stepResults: [],
@@ -94,31 +127,68 @@ final class XPadPracticeTests: XCTestCase {
         
         tracker.recordSession(sessionResult)
         
-        XCTAssertGreaterThan(tracker.totalPracticeTime, 0)
-        XCTAssertEqual(tracker.streakDays, 1)
+        XCTAssertEqual(tracker.totalPracticeTime, before.totalPracticeTime + sessionResult.duration, accuracy: 0.0001)
+        XCTAssertEqual(tracker.sessionHistory.count, before.history.count + 1)
+        XCTAssertNotNil(tracker.getLessonMastery(for: lessonId))
+        XCTAssertEqual(tracker.streakDays, 1, "a session today starts a one-day streak")
+        XCTAssertGreaterThanOrEqual(tracker.weeklyPracticeMinutes, Int(sessionResult.duration / 60))
     }
     
     func testLessonMastery() throws {
         let lessonId = UUID()
-        var mastery = LessonMastery(lessonId: lessonId)
-        
-        XCTAssertEqual(mastery.masteryLevel, .notStarted)
-        XCTAssertEqual(mastery.attemptCount, 0)
-        
-        // Simulate some attempts
-        mastery.attemptCount = 5
-        mastery.completedCount = 3
-        mastery.proficientCompletions = 2
-        mastery.perfectCompletions = 1
-        mastery.totalAccuracy = 3.5 // Average 0.7
-        
         let tracker = ProgressTracker.shared
-        tracker.lessonMastery[lessonId] = mastery
-        
-        // Get updated mastery
-        if let updatedMastery = tracker.getLessonMastery(for: lessonId) {
-            XCTAssertNotEqual(updatedMastery.masteryLevel, .notStarted)
+        let before = snapshot(tracker)
+        defer { restore(before, to: tracker) }
+
+        let fresh = LessonMastery(lessonId: lessonId)
+        XCTAssertEqual(fresh.masteryLevel, .notStarted)
+        XCTAssertEqual(fresh.attemptCount, 0)
+        XCTAssertEqual(fresh.averageAccuracy, 0, accuracy: 0.0001)
+        XCTAssertNil(tracker.getLessonMastery(for: lessonId), "no sessions means no mastery record yet")
+
+        // Drive the public API: mastery is derived from recorded sessions, not
+        // written into the tracker directly.
+        for _ in 0..<3 {
+            tracker.recordSession(
+                PracticeSessionResult(
+                    lessonId: lessonId,
+                    startTime: Date(),
+                    endTime: Date().addingTimeInterval(60),
+                    stepResults: [],
+                    overallAccuracy: 0.85,
+                    averageResponseTime: 0.9,
+                    completed: true
+                )
+            )
         }
+
+        let mastery = try XCTUnwrap(tracker.getLessonMastery(for: lessonId))
+        XCTAssertEqual(mastery.attemptCount, 3)
+        XCTAssertEqual(mastery.completedCount, 3)
+        XCTAssertEqual(mastery.proficientCompletions, 3, "85% counts as proficient")
+        XCTAssertEqual(mastery.perfectCompletions, 0, "85% is below the perfect threshold")
+        XCTAssertEqual(mastery.averageAccuracy, 0.85, accuracy: 0.0001)
+        XCTAssertEqual(mastery.averageResponseTime, 0.9, accuracy: 0.0001)
+        XCTAssertEqual(mastery.masteryLevel, .advanced, "three proficient completions reaches advanced")
+        XCTAssertNotEqual(mastery.masteryLevel, .notStarted)
+
+        // An incomplete attempt is recorded but does not count as a completion.
+        tracker.recordSession(
+            PracticeSessionResult(
+                lessonId: lessonId,
+                startTime: Date(),
+                endTime: Date().addingTimeInterval(30),
+                stepResults: [],
+                overallAccuracy: 0.2,
+                averageResponseTime: 2.0,
+                completed: false
+            )
+        )
+        let afterAbandon = try XCTUnwrap(tracker.getLessonMastery(for: lessonId))
+        XCTAssertEqual(afterAbandon.attemptCount, 4)
+        XCTAssertEqual(afterAbandon.completedCount, 3)
+        XCTAssertEqual(afterAbandon.masteryLevel, .advanced, "an abandoned attempt does not promote a level")
+        XCTAssertGreaterThanOrEqual(tracker.getCompletedLessonsCount(), 1, "the lesson now counts as started")
     }
     
     func testChallengeCreation() throws {

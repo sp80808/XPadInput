@@ -121,6 +121,50 @@ public struct SequenceWorkspaceView: View {
                         }
                         .xButton(.primary, size: .small)
 
+                        // Insert a generated bassline for the active progression
+                        Button {
+                            appState.sendBasslineToSequencer()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "waveform.path")
+                                Text("Bassline")
+                            }
+                        }
+                        .xButton(.secondary, size: .small)
+                        .help("Write a bassline that follows the active progression, in a feel that suits the current style.")
+
+                        // Jam Co-Pilot
+                        Button {
+                            appState.isCoPilotEnabled.toggle()
+                            appState.showToast(
+                                appState.isCoPilotEnabled
+                                    ? "Jam Co-Pilot listening to your playing"
+                                    : "Jam Co-Pilot stood down"
+                            )
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: appState.isCoPilotEnabled ? "person.wave.2.fill" : "person.wave.2")
+                                Text(appState.isCoPilotEnabled ? "Co-Pilot On" : "Co-Pilot")
+                            }
+                        }
+                        .xButton(appState.isCoPilotEnabled ? .primary : .secondary, size: .small)
+                        .help("Let the backing band follow your energy: drop out, build up, fill and re-harmonise on its own.")
+
+                        // Manual fill, so the same generator the co-pilot uses is playable by hand
+                        Button {
+                            appState.playDrumFillNow(
+                                intensity: appState.coPilotEnergy,
+                                bar: Int(sequencer.transport.currentTick / SequencerGrid.ticksPerBar)
+                            )
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "metronome.fill")
+                                Text("Fill")
+                            }
+                        }
+                        .xButton(.secondary, size: .small)
+                        .help("Play a generated drum fill into the next downbeat.")
+
                         // Export MIDI to DAW
                         Button {
                             exportCurrentMIDI()
@@ -144,6 +188,22 @@ public struct SequenceWorkspaceView: View {
                         .foregroundStyle(XTheme.danger)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .padding(.horizontal, 16)
+                }
+
+                if appState.isCoPilotEnabled, let directive = appState.lastCoPilotDirective {
+                    HStack(spacing: 8) {
+                        Image(systemName: "person.wave.2.fill")
+                            .foregroundStyle(XTheme.brand)
+                        Text(directive.reason)
+                            .font(.caption)
+                            .foregroundStyle(XTheme.textSecondary)
+                        Text("bar \(directive.bar + 1)")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(XTheme.textSecondary)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
                 }
             }
 

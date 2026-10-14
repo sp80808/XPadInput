@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Style Morphing & Generative Harmony (`DeterministicRandom.swift`, `HarmonicStyle.swift`, `StyleMorphEngine.swift`)**:
+  - `HarmonicStyleDNA` measures a style on ten axes (degree emphasis, minor lean, extension richness, suspended colour, modal interchange, secondary dominants, tritone substitution, chromatic mediant shifts, harmonic rhythm, cadence strength) with `blend(_:_:amount:)` interpolating between two styles.
+  - `HarmonicStyleLibrary` ships ten researched dialects: Pop / Royal Road, Neo-Soul, Synthwave, Cinematic Trailer, Lo-Fi Hip Hop, Gospel Soul, Deep House, Ambient Modal, Jazz Standard, Liquid Drum & Bass.
+  - `StyleMorphEngine` generates seeded, roman-numeral-labelled progressions (degree walk → substitutions → extension colour) and re-harmonises an existing progression without touching its rhythm.
+  - `DeterministicRandom` (SplitMix64) makes every generative feature reproducible from a seed or a string.
+  - Harmony workspace gains a Style Morph card (from/to pickers, morph slider, bar length, Generate, Reharmonise).
+- **Jam Co-Pilot & Generated Drum Fills (`JamCoPilot.swift`, `DrumFillGenerator.swift`, `Sequencer.swift`, `AppState.swift`)**:
+  - `Sequencer` reports the bar it enters (`onBarBoundary`) and can mute by musical role (`setMuted(_:forType:)`, `isMuted(_:)`, `audibleTracks`, `populatedTracks`).
+  - `JamCoPilot` turns player energy, sounding roles and progression age into an explainable `CoPilotDirective` (hold, drop out, add layer, fill, lift, regenerate harmony). Decisions are seeded and reproducible.
+  - `DrumFillGenerator` writes turn-arounds that end before the downbeat (pickup, eighth-note run, or sixteenth run with ghost notes) and wraps them in a drums clip.
+  - Compose workspace gains a Co-Pilot toggle, a manual Fill button and a readout of the last decision.
+- **Generated Basslines (`BasslineGenerator.swift`, `Sequencer.swift`, `AppState.swift`)**:
+  - Five feels — root notes, walking, octave pulse, syncopated and drone — all derived from the chord under them: downbeats are always chord tones and walking/syncopated lines use chromatic or rhythmic anticipation of the next chord.
+  - The feel follows the active style, so deep house pumps octaves and jazz walks without the player choosing anything.
+  - `Sequencer.insertClip(_:on:)` appends a generated part without replacing the other tracks and extends the scene loop to keep it audible; HARMONY and SEQUENCE both expose "Add Bassline"/"Bassline".
+- **MIDI Tuning Standard output (`MIDITuningStandard.swift`, `AppState.swift`)**:
+  - Frequency-word encoding, bulk tuning dump (with checksum), bulk dump request, single note tuning change, and both scale/octave tuning forms, plus the shared channel mask.
+  - Switching temperament broadcasts a tuning table to every virtual port, and dynamic temperaments push real-time single-note retunes whenever the chord changes. The Tuning menu exposes a manual send.
+
+### Fixed
+- **The XCTest targets compile and pass again.** Between them the eleven XCTest suites now run 1185 test cases with zero failures; they had never been built by CI (`swift test` is non-gating there), which hid a scale preset that does not exist, UMP words read in the wrong byte order, stale preset/scheme counts, a wizard fallback asserted as a measured value, and a progress test that wrote tracker internals by hand instead of recording sessions.
+- **Chromatic bend targets rank by distance.** With chromatic override on, interval consonance still influenced scoring, so the whole tone outranked the semitone the player reaches first — the opposite of what the override is for.
+- Generated progressions honour an explicit start degree: the opening chord is no longer re-coloured by the substitution layers, so "start on the IV" always sounds like the IV.
+- `HarmonicStyleLibrary.jazzStandard` degree weights were declared with a `)` instead of `]`, which broke the build.
+
+### Changed
+- The diagnostics workflow now builds the test targets and runs `swift test` as well, reporting compile errors, XCTest failures and the exhaustive runner's totals as check-run annotations (the job log is not reliably reachable from every environment).
+- `ProgressTracker` tests snapshot and restore the shared store, so a test that records sessions no longer depends on — or disturbs — whatever state the user's own practice history is in.
+- `CoreHapticsEngine` no longer swallows a failed haptic-engine start or restart: both are logged with `os.Logger` and published as `lastError` (was a `print` and a silent `catch`).
+- `RecordedNoteEvent` is `Equatable`/`Hashable`, so generated and recorded parts can be compared and de-duplicated.
+
+---
+
 ## [0.0.05] - 2026-08-24
 
 ### Added

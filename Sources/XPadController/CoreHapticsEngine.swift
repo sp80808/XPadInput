@@ -78,7 +78,11 @@ public final class CoreHapticsEngine: @unchecked Sendable {
                     self.isSupported = true
                     return
                 } catch {
-                    print("⚠️ [CoreHapticsEngine] Failed to start CHHapticEngine for \(controller.vendorName ?? "controller"): \(error)")
+                    // A controller can advertise haptics and still refuse to start
+                    // (usually a Bluetooth bandwidth or CoreHaptics budget limit),
+                    // so record it instead of only printing.
+                    Self.logger.error("Failed to start CHHapticEngine for \(controller.vendorName ?? "controller", privacy: .public): \(error.localizedDescription, privacy: .public)")
+                    self.lastError = error
                 }
             }
         }
@@ -117,6 +121,8 @@ public final class CoreHapticsEngine: @unchecked Sendable {
                 self.isRunning = true
             } catch {
                 self.isRunning = false
+                Self.logger.error("Failed to restart CHHapticEngine: \(error.localizedDescription, privacy: .public)")
+                self.lastError = error
             }
         }
 

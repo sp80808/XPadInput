@@ -1,0 +1,146 @@
+name: Build Diagnostics
+
+# Surfaces Swift compiler errors and exhaustive-test-runner failures as GitHub
+# check-run annotations.
+#
+# `swift build` / `swift run XPadTests` output only lives in the job log, which
+# is awkward to read from a terminal or from an agent session. This job re-runs
+# both, captures their output, and re-emits every diagnostic as an annotation so
+# it can be read with:
+#
+#   gh api /repos/{owner}/{repo}/check-runs/{id}/annotations
+#
+# It deliberately never fails the workflow: it is a reporting job, not a gate.
+# The real gate remains the macOS CI build-test job.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-diagnostics-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  annotate:
+    name: Annotate Swift diagnostics
+    runs-on: macos-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build (diagnostics only)
+        continue-on-error: true
+        run: |
+          # Runner shells run with `-e`; reporting steps must *capture* failures
+          # instead of aborting, or the log the annotate step needs never exists.
+          set +e
+          swift build > /tmp/xpi-build.log 2>&1
+          status=$?
+          echo "swift build exit status: ${status}"
+          echo "### swift build exit status: ${status}" >> "$GITHUB_STEP_SUMMARY"
+          # `swift build` skips test targets, so the XCTest sources are only
+          # type-checked when they are built explicitly.
+          swift build --build-tests > /tmp/xpi-build-tests.log 2>&1
+          test_status=$?
+          echo "swift build --build-tests exit status: ${test_status}"
+          echo "### swift build --build-tests exit status: ${test_status}" >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/xpi-build.log /tmp/xpi-build-tests.log > /tmp/xpi-all.log
+          exit 0
+
+      - name: Annotate build errors
+        if: always()
+        run: |
+          log=/tmp/xpi-all.log
+          if [ ! -f "$log" ]; then
+            echo "::warning title=Swift build diagnostics::no build log was produced, compile errors are unknown"
+            exit 0
+          fi
+          grep -E '\.swift:[0-9]+:[0-9]+: error: ' "$log" | sort -u > /tmp/xpi-errors.txt || true
+          count=$(wc -l < /tmp/xpi-errors.txt | tr -d ' ')
+          echo "unique compile errors: ${count}"
+          echo "### Unique compile errors: ${count}" >> "$GITHUB_STEP_SUMMARY"
+
+          # Emit the totals as annotations: the job log is not always reachable
+          # (the artifact host can refuse the request), and the counts are the
+          # whole point of this job.
+          echo "::notice title=Swift build diagnostics::unique compile errors: ${count}"
+
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            relative=$(printf '%s' "$line" | sed -E 's#^.*/XPadInput/XPadInput/##; s#^.*/XPadInput/##')
+            file=$(printf '%s' "$relative" | sed -E 's/^([^:]+):[0-9]+:[0-9]+: error: .*/\1/')
+            num=$(printf '%s' "$relative" | sed -E 's/^[^:]+:([0-9]+):[0-9]+: error: .*/\1/')
+            col=$(printf '%s' "$relative" | sed -E 's/^[^:]+:[0-9]+:([0-9]+): error: .*/\1/')
+            msg=$(printf '%s' "$relative" | sed -E 's/^[^:]+:[0-9]+:[0-9]+: error: //' | sed -e 's/"/\\"/g' -e "s/%/%25/g" | cut -c1-800)
+            echo "::error file=${file},line=${num},col=${col},title=Swift build error::${msg}"
+          done < /tmp/xpi-errors.txt
+
+      - name: XCTest suite (diagnostics only)
+        if: always()
+        continue-on-error: true
+        run: |
+          set +e
+          swift test > /tmp/xpi-xctest.log 2>&1
+          echo "swift test exit status: $?"
+          exit 0
+
+      - name: Annotate XCTest results
+        if: always()
+        run: |
+          log=/tmp/xpi-xctest.log
+          if [ ! -f "$log" ]; then
+            echo "::warning title=XCTest diagnostics::no swift test log was produced"
+            exit 0
+          fi
+          grep -E "failed \(|error: " "$log" | sort -u | head -40 | while IFS= read -r line; do
+            msg=$(printf '%s' "$line" | sed -e 's/"/\\"/g' | cut -c1-800)
+            echo "::warning title=XCTest failure::${msg}"
+          done
+          # Each bundle prints its own summary; report the totals.
+          totals=$(grep -E "Executed [0-9]+ tests?, with" "$log" \
+            | sed -E 's/.*Executed ([0-9]+) tests?, with ([0-9]+) failure.*/\1 \2/' \
+            | awk '{tests += $1; failures += $2} END {print tests " tests, " failures " failures"}')
+          echo "::notice title=XCTest totals::${totals:-no XCTest summary found}"
+
+      - name: Exhaustive test runner (diagnostics only)
+        if: always()
+        continue-on-error: true
+        run: |
+          set +e
+          swift run XPadTests > /tmp/xpi-tests.log 2>&1
+          status=$?
+          echo "swift run XPadTests exit status: ${status}"
+          echo "### swift run XPadTests exit status: ${status}" >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+
+      - name: Annotate test failures
+        if: always()
+        run: |
+          log=/tmp/xpi-tests.log
+          if [ ! -f "$log" ]; then
+            echo "::warning title=Test runner diagnostics::no test log was produced, failures are unknown"
+            exit 0
+          fi
+          grep -E '❌' "$log" | sort -u > /tmp/xpi-test-failures.txt || true
+          count=$(wc -l < /tmp/xpi-test-failures.txt | tr -d ' ')
+          echo "unique test failures: ${count}"
+          echo "### Unique test-runner failures: ${count}" >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Test runner diagnostics::unique test failures: ${count}"
+          tail -n 6 "$log" | grep -E 'Total Tests Run|Passed:|Failed:|TESTS PASSED|SOME TESTS FAILED' | while IFS= read -r line; do
+            echo "::notice title=XPadTests summary::${line}"
+          done
+
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            msg=$(printf '%s' "$line" | sed -e 's/"/\\"/g' | cut -c1-800)
+            echo "::warning title=Test runner failure::${msg}"
+          done < /tmp/xpi-test-failures.txt
+
+          tail -n 12 "$log" >> "$GITHUB_STEP_SUMMARY" || true

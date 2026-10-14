@@ -3807,7 +3807,7 @@ final class TestRunner {
                 assertFalse(chordTrack.clips[1].notes.isEmpty)
 
                 // Voiced notes in C Major triad: C3 (48), E3 (52), G3 (55)
-                let cNotes = chordTrack.clips[0].notes.map(\.noteNumber)
+                let cNotes = chordTrack.clips[0].notes.map(\.note)
                 assertTrue(cNotes.contains(48), "C3 note missing")
                 assertTrue(cNotes.contains(52), "E3 note missing")
                 assertTrue(cNotes.contains(55), "G3 note missing")
@@ -3826,7 +3826,7 @@ final class TestRunner {
                     notesOff.append(note)
                 }
 
-                let clipNote = RecordedNoteEvent(noteNumber: 60, velocity: 100, startTick: 0, durationTicks: 960)
+                let clipNote = RecordedNoteEvent(note: 60, velocity: 100, startTick: 0, durationTicks: 960)
                 let testClip = SequencerClip(name: "Test", startTick: 0, durationTicks: 960, notes: [clipNote])
                 sequencer.scenes[0].tracks[0].clips = [testClip]
 
@@ -3846,7 +3846,36 @@ final class TestRunner {
                 assertEqual(sequencer.transport.currentTick, 0)
             }
 
-            test("AppState handleProgressionChordSelection selects chord block based on polar angle") {
+            test("Polar sector resolver maps stick angles clockwise from up") {
+                // Four sectors: up -> 0, right -> 1, down -> 2, left -> 3.
+                assertTrue(PolarSectorResolver.sectorIndex(angle: Double.pi / 2, sectorCount: 4) == 0)
+                assertTrue(PolarSectorResolver.sectorIndex(angle: 0, sectorCount: 4) == 1)
+                assertTrue(PolarSectorResolver.sectorIndex(angle: -Double.pi / 2, sectorCount: 4) == 2)
+                assertTrue(PolarSectorResolver.sectorIndex(angle: Double.pi, sectorCount: 4) == 3)
+
+                // Seven diatonic sectors keep "up" centred on the tonic.
+                assertTrue(PolarSectorResolver.sectorIndex(angle: Double.pi / 2, sectorCount: 7) == 0)
+
+                // Sector boundaries are neutral so analog jitter cannot flicker.
+                assertTrue(PolarSectorResolver.sectorIndex(angle: Double.pi / 4, sectorCount: 4) == nil)
+                assertTrue(PolarSectorResolver.sectorIndex(angle: Double.pi / 2, sectorCount: 0) == nil)
+
+                // Dead centre of a sector reports the midpoint of the slice.
+                let middle = PolarSectorResolver.slot(angle: Double.pi / 2, sectorCount: 4)
+                assertNotNil(middle)
+                if let middle {
+                    assertTrue(abs(middle.positionWithinSector - 0.5) < 0.0001)
+                }
+
+                // Wrapping short distances must not report a full circle.
+                let wrapped = PolarSectorResolver.shortestAngularDistance(
+                    from: -Double.pi + 0.1,
+                    to: Double.pi - 0.1
+                )
+                assertTrue(abs(wrapped + 0.2) < 0.0001)
+            }
+
+            test("AppState selects progression blocks from the left stick angle") {
                 let appState = AppState()
                 var progression = Progression(scale: Scale(root: .c, type: .major))
                 let cMajor = Chord(root: .c, quality: .major)
@@ -3862,20 +3891,30 @@ final class TestRunner {
                 appState.activeProgression = progression
                 appState.chordPerformanceSource = .activeProgression
 
-                // Angle 0 rad (pointing right) -> Sector 0 -> C Major
-                appState.handleProgressionChordSelection(PolarCoordinate(radius: 0.8, angle: 0.0))
+                // Up -> sector 0 -> C Major
+                appState.selectProgressionBlock(atStickAngle: Double.pi / 2)
                 assertEqual(appState.selectedProgressionBlockIndex, 0)
-                assertEqual(appState.currentChord?.root, .c)
+                assertTrue(appState.currentChord?.root == .c)
 
-                // Angle pi/2 rad (pointing up) -> Sector 1 -> F Major
-                appState.handleProgressionChordSelection(PolarCoordinate(radius: 0.8, angle: .pi / 2.0))
+                // Right -> sector 1 -> F Major
+                appState.selectProgressionBlock(atStickAngle: 0.0)
                 assertEqual(appState.selectedProgressionBlockIndex, 1)
-                assertEqual(appState.currentChord?.root, .f)
+                assertTrue(appState.currentChord?.root == .f)
 
-                // Angle pi rad (pointing left) -> Sector 2 -> G Major
-                appState.handleProgressionChordSelection(PolarCoordinate(radius: 0.8, angle: .pi))
+                // Down -> sector 2 -> G Major
+                appState.selectProgressionBlock(atStickAngle: -Double.pi / 2)
                 assertEqual(appState.selectedProgressionBlockIndex, 2)
-                assertEqual(appState.currentChord?.root, .g)
+                assertTrue(appState.currentChord?.root == .g)
+
+                // Left -> sector 3 -> A Minor
+                appState.selectProgressionBlock(atStickAngle: Double.pi)
+                assertEqual(appState.selectedProgressionBlockIndex, 3)
+                assertTrue(appState.currentChord?.root == .a)
+
+                // A sector boundary is neutral: the previous selection stands.
+                assertTrue(appState.selectProgressionBlock(atStickAngle: Double.pi / 4) == nil)
+                assertEqual(appState.selectedProgressionBlockIndex, 3)
+                assertTrue(appState.currentChord?.root == .a)
             }
 
             test("Track mute and solo toggles in Sequencer") {
@@ -3884,9 +3923,650 @@ final class TestRunner {
                 sequencer.toggleMute(trackIndex: 0)
                 assertTrue(sequencer.scenes[0].tracks[0].isMuted)
 
-                assertFalse(sequencer.scenes[0].tracks[0].isSoloed)
+                assertFalse(sequencer.scenes[0].tracks[0].isSolo)
                 sequencer.toggleSolo(trackIndex: 0)
-                assertTrue(sequencer.scenes[0].tracks[0].isSoloed)
+                assertTrue(sequencer.scenes[0].tracks[0].isSolo)
+            }
+        }
+
+        // MARK: - Suite: Style Morphing & Generative Harmony
+        suite("XPadTheory: Style Morphing & Deterministic Generation") {
+            func signature(_ progression: Progression) -> String {
+                progression.blocks.map { "\($0.romanNumeral)|\($0.chord.symbol)" }.joined(separator: "-")
+            }
+            let engine = StyleMorphEngine()
+
+            test("Seeded random is reproducible and weighted picks respect zero weights") {
+                var a = DeterministicRandom(seed: 2026)
+                var b = DeterministicRandom(seed: 2026)
+                assertEqual(a.next(), b.next())
+                assertEqual(a.next(), b.next())
+                for _ in 0..<32 {
+                    assertTrue(a.pickWeightedIndex(weights: [0, 0, 5, 0]) == 2)
+                }
+                var c = DeterministicRandom(seed: "XPI")
+                var d = DeterministicRandom(seed: "XPI")
+                assertEqual(c.next(), d.next())
+            }
+
+            test("Style DNA normalises weights and clamps every axis") {
+                let wild = HarmonicStyleDNA(
+                    name: "Wild",
+                    degreeWeights: [-1, 3, 3, 3, 3, 3, 3],
+                    minorLean: 9,
+                    extensionRichness: -4,
+                    suspendedColour: 0.5,
+                    borrowing: -2,
+                    secondaryDominantRate: 4,
+                    tritoneSubstitutionRate: 0.25,
+                    mediantShiftRate: -7,
+                    chordsPerBar: 88,
+                    cadenceStrength: 12
+                ).normalised()
+                assertEqual(wild.minorLean, 1.0)
+                assertEqual(wild.extensionRichness, 0.0)
+                assertEqual(wild.borrowing, 0.0)
+                assertEqual(wild.mediantShiftRate, 0.0)
+                assertEqual(wild.cadenceStrength, 1.0)
+                assertEqual(wild.chordsPerBar, 4.0)
+                assertTrue(abs(wild.degreeWeights.reduce(0, +) - 1.0) < 0.0001)
+            }
+
+            test("Style blend interpolates every axis and hits both endpoints") {
+                let start = HarmonicStyleLibrary.popRoyalRoad
+                let end = HarmonicStyleLibrary.neoSoul
+                let atStart = engine.blend(start, end, amount: 0)
+                let atEnd = engine.blend(start, end, amount: 1)
+                let half = engine.blend(start, end, amount: 0.5)
+
+                assertEqual(atStart.name, start.name)
+                assertEqual(atEnd.name, end.name)
+                assertTrue(abs(half.extensionRichness - (start.normalised().extensionRichness + end.normalised().extensionRichness) / 2) < 0.0001)
+                assertTrue(half.name.contains("→"))
+                assertTrue(abs(half.degreeWeights.reduce(0, +) - 1.0) < 0.0001)
+            }
+
+            test("Generation is deterministic for a seed and varies across seeds") {
+                let first = engine.generate(style: HarmonicStyleLibrary.synthwave, key: .f, bars: 4, seed: 11)
+                let second = engine.generate(style: HarmonicStyleLibrary.synthwave, key: .f, bars: 4, seed: 11)
+                assertEqual(signature(first), signature(second))
+
+                var variants = Set<String>()
+                for seed in UInt64(0)..<10 {
+                    variants.insert(signature(engine.generate(style: HarmonicStyleLibrary.synthwave, key: .f, bars: 4, seed: seed)))
+                }
+                assertTrue(variants.count > 1, "seeds should explore different ideas")
+            }
+
+            test("Generated progressions fill the requested bars and are fully labelled") {
+                for style in HarmonicStyleLibrary.all {
+                    let progression = engine.generate(style: style, key: .g, bars: 4, seed: 4)
+                    let beats = progression.blocks.reduce(0.0) { $0 + $1.durationBeats }
+                    assertTrue(abs(beats - 16.0) < 0.0001, "\(style.name) should fill four bars")
+                    assertTrue(progression.blocks.count >= 2)
+                    for block in progression.blocks {
+                        assertFalse(block.romanNumeral.isEmpty, "\(style.name) produced an unlabelled chord")
+                        assertTrue(block.humanizedVelocity > 0 && block.humanizedVelocity <= 127)
+                    }
+                }
+            }
+
+            test("Style lean chooses the mode unless a scale is supplied") {
+                let cinematic = engine.generate(style: HarmonicStyleLibrary.cinematicTrailer, key: .a, bars: 4, seed: 3)
+                assertTrue(cinematic.scale.type.isMinor)
+                let pop = engine.generate(style: HarmonicStyleLibrary.popRoyalRoad, key: .c, bars: 4, seed: 3)
+                assertFalse(pop.scale.type.isMinor)
+
+                let dorian = engine.generate(
+                    style: HarmonicStyleLibrary.ambientModal,
+                    key: .c,
+                    scale: Scale(root: .c, type: .dorian),
+                    bars: 4,
+                    seed: 3
+                )
+                assertEqual(dorian.scale.type, .dorian)
+            }
+
+            test("A plain style stays diatonic and unextended") {
+                let plain = HarmonicStyleDNA(
+                    name: "Plain Diatonic",
+                    degreeWeights: [1, 0.6, 0.4, 0.8, 0.9, 0.7, 0.3],
+                    minorLean: 0,
+                    extensionRichness: 0,
+                    suspendedColour: 0,
+                    borrowing: 0,
+                    secondaryDominantRate: 0,
+                    tritoneSubstitutionRate: 0,
+                    mediantShiftRate: 0,
+                    chordsPerBar: 1,
+                    cadenceStrength: 1
+                )
+                let cMajor = Scale(root: .c, type: .major)
+                let diatonicRoots = Set(Chord.diatonicChords(root: .c, scale: cMajor).map(\.root))
+                let progression = engine.generate(style: plain, key: .c, scale: cMajor, bars: 4, seed: 6)
+                for block in progression.blocks {
+                    assertTrue(diatonicRoots.contains(block.chord.root), "\(block.chord.symbol) is not diatonic")
+                    assertEqual(block.chord.quality.intervals.count, 3)
+                }
+            }
+
+            test("An explicit start degree is honoured exactly") {
+                for style in HarmonicStyleLibrary.all {
+                    let progression = engine.generate(style: style, key: .f, bars: 4, seed: 8, startDegree: 3)
+                    assertTrue(progression.blocks.first?.chord.root == PitchClass.f.transposed(by: 5), style.name)
+                }
+            }
+
+            test("Reharmonising keeps rhythm and block count while changing harmony") {
+                let source = engine.generate(style: HarmonicStyleLibrary.popRoyalRoad, key: .c, bars: 4, seed: 1)
+                let reharmonised = engine.reharmonise(source, style: HarmonicStyleLibrary.neoSoul, seed: 2)
+                assertEqual(reharmonised.blocks.count, source.blocks.count)
+                for (before, after) in zip(source.blocks, reharmonised.blocks) {
+                    assertEqual(before.durationBeats, after.durationBeats)
+                }
+                assertTrue(reharmonised.blocks.allSatisfy { !$0.romanNumeral.isEmpty })
+            }
+
+            test("Generated progressions drive the sequencer as labelled clips") {
+                let appState = AppState()
+                let sequencer = Sequencer()
+                let progression = engine.generate(
+                    from: HarmonicStyleLibrary.synthwave,
+                    toward: HarmonicStyleLibrary.cinematicTrailer,
+                    amount: 0.35,
+                    key: appState.currentKey,
+                    scale: appState.currentScale,
+                    bars: 4,
+                    seed: 12
+                )
+                let clips = sequencer.insertProgressionClip(progression, targetTrack: .chords)
+                assertEqual(clips.count, progression.blocks.count)
+                assertTrue(clips.allSatisfy { !$0.name.isEmpty })
+                assertTrue(clips.allSatisfy { !$0.notes.isEmpty })
+                let scene = sequencer.scenes[sequencer.activeSceneIndex]
+                assertEqual(scene.loopLengthTicks, 960 * 4 * 4)
+            }
+
+            test("AppState generates and reharmonises in the blended style") {
+                let appState = AppState()
+                appState.harmonicStyle = HarmonicStyleLibrary.neoSoul
+                appState.harmonicStyleTarget = HarmonicStyleLibrary.synthwave
+                appState.styleMorphAmount = 0.5
+                appState.styleMorphBars = 4
+                assertTrue(appState.morphedStyle.name.contains("→"))
+
+                let generated = appState.generateStyleProgression()
+                assertEqual(appState.activeProgression.blocks.count, generated.blocks.count)
+                assertTrue(appState.chordPerformanceSource == .activeProgression)
+                assertEqual(appState.selectedProgressionBlockIndex, 0)
+                assertEqual(appState.currentChord, generated.blocks.first?.chord)
+
+                let before = appState.activeProgression.blocks.map(\.durationBeats)
+                let reharmonised = appState.reharmoniseActiveProgression()
+                assertEqual(reharmonised.blocks.map(\.durationBeats), before)
+            }
+        }
+
+        // MARK: - Suite: MIDI Tuning Standard
+        suite("XPadCore: MIDI Tuning Standard (MTS)") {
+            func decodedCents(_ word: ArraySlice<UInt8>) -> Double {
+                let bytes = Array(word)
+                let semitone = Double(bytes[0]) * 100
+                let fraction = Double(Int(bytes[1]) << 7 | Int(bytes[2])) / MIDITuningStandard.fractionStepsPerSemitone * 100
+                return semitone + fraction
+            }
+
+            test("Whole semitones encode as their own key number") {
+                assertEqual(MIDITuningStandard.frequencyData(forMIDINote: 60, deviationCents: 0), [60, 0, 0])
+                assertEqual(MIDITuningStandard.frequencyData(forMIDINote: 0, deviationCents: 0), [0, 0, 0])
+                // +50 cents is half a semitone: 8192/16384.
+                assertEqual(MIDITuningStandard.frequencyData(forMIDINote: 69, deviationCents: 50), [69, 64, 0])
+                // -25 cents stays inside the semitone below.
+                assertEqual(MIDITuningStandard.frequencyData(forMIDINote: 60, deviationCents: -25), [59, 96, 0])
+            }
+
+            test("Fraction carries into the next semitone and clamps at the ends") {
+                assertEqual(MIDITuningStandard.frequencyData(forMIDINote: 60, deviationCents: 99.999), [61, 0, 0])
+                assertEqual(MIDITuningStandard.frequencyData(forMIDINote: 0, deviationCents: -50), [0, 0, 0])
+                assertEqual(MIDITuningStandard.frequencyData(centsAboveNoteZero: 99_999), [127, 0, 0])
+                assertEqual(MIDITuningStandard.frequencyData(centsAboveNoteZero: .nan), MIDITuningStandard.noChange)
+            }
+
+            test("Frequency words are always legal except for the reserved no-change word") {
+                for cents in stride(from: -200.0, through: 13_000.0, by: 7.3) {
+                    assertTrue(
+                        MIDITuningStandard.frequencyData(centsAboveNoteZero: cents) != MIDITuningStandard.noChange,
+                        "\(cents) cents produced the reserved word"
+                    )
+                }
+            }
+
+            test("Encode and decode agree within half a fraction step") {
+                var rng = DeterministicRandom(seed: "mts-roundtrip")
+                for _ in 0..<128 {
+                    let note = UInt8(rng.index(count: 128) ?? 0)
+                    let deviation = rng.nextDouble(in: -99.0, 99.0)
+                    let word = MIDITuningStandard.frequencyData(forMIDINote: note, deviationCents: deviation)
+                    let expected = Double(note) * 100 + deviation
+                    assertTrue(
+                        abs(decodedCents(word[0...2]) - expected) <= MIDITuningStandard.centsPerFractionStep,
+                        "note \(note) deviation \(deviation) round-tripped to \(decodedCents(word[0...2]))"
+                    )
+                }
+            }
+
+            test("Tuning names are exactly sixteen seven-bit characters") {
+                assertEqual(MIDITuningStandard.nameBytes("XPI").count, 16)
+                assertEqual(Array(MIDITuningStandard.nameBytes("XPI").prefix(3)), Array("XPI".utf8))
+                assertEqual(MIDITuningStandard.nameBytes("XPI").last, 0x20)
+                assertEqual(MIDITuningStandard.nameBytes("0123456789ABCDEFGHIJ").count, 16)
+                assertEqual(MIDITuningStandard.nameBytes("é")[0], 0x3F)
+            }
+
+            test("Channel masks address the documented channels") {
+                assertEqual(MIDITuningChannelMask.all.channels.count, 16)
+                assertEqual(MIDITuningChannelMask.single(3).channels, [3])
+                assertEqual(MIDITuningChannelMask(channels: [1, 7, 8, 14, 15, 16]).channels, [1, 7, 8, 14, 15, 16])
+                assertEqual(MIDITuningChannelMask.single(1).bytes, [0, 0, 1])
+                assertEqual(MIDITuningChannelMask.single(16).bytes, [2, 0, 0])
+            }
+
+            test("Bulk dump frames 128 notes with a checksum") {
+                var deviations = [Double](repeating: 0, count: 128)
+                deviations[61] = -13.7
+                let message = MIDITuningStandard.bulkDump(name: "JI 5-limit", deviationsCents: deviations, program: 3)
+
+                assertEqual(message.count, 408)
+                assertEqual(Array(message.prefix(6)), [0xF0, 0x7E, 0x7F, 0x08, 0x01, 3])
+                assertEqual(Array(message[6..<22]).count, 16)
+                assertEqual(message.last, 0xF7)
+
+                let body = Array(message[1..<(message.count - 2)])
+                assertEqual(message[message.count - 2], body.reduce(UInt8(0)) { $0 ^ $1 })
+
+                let first = 22
+                assertEqual(Array(message[first..<(first + 3)]), [0, 0, 0])
+                assertEqual(Array(message[(first + 3 * 61)..<(first + 3 * 61 + 3)]), [60, 110, 59])
+                assertTrue(message.dropFirst().dropLast().allSatisfy { $0 < 0x80 })
+            }
+
+            test("Bulk dump tolerates a short deviation table") {
+                let message = MIDITuningStandard.bulkDump(name: "Short", deviationsCents: [0, 10])
+                assertEqual(message.count, 408)
+                assertEqual(Array(message.prefix(5)), [0xF0, 0x7E, 0x7F, 0x08, 0x01])
+            }
+
+            test("Bulk dump request matches the specification example") {
+                assertEqual(
+                    MIDITuningStandard.bulkDumpRequest(program: 16, deviceID: 1),
+                    [0xF0, 0x7E, 0x01, 0x08, 0x00, 0x10, 0xF7]
+                )
+            }
+
+            test("Single note tuning changes skip unchanged notes") {
+                var deviations = [Double](repeating: 0, count: 128)
+                deviations[60] = -13.686
+                deviations[64] = 2.0
+                let message = MIDITuningStandard.singleNoteTuningChange(deviationsCents: deviations)
+
+                assertEqual(Array(message.prefix(7)), [0xF0, 0x7F, 0x7F, 0x08, 0x02, 0x00, 2])
+                assertEqual(message.count, 7 + 2 * 4 + 1)
+                assertEqual(message[7], 60)
+                assertEqual(message[11], 64)
+                assertEqual(message.last, 0xF7)
+            }
+
+            test("Equal temperament sends no single note changes") {
+                let message = MIDITuningStandard.singleNoteTuningChange(
+                    deviationsCents: [Double](repeating: 0, count: 128)
+                )
+                assertTrue(message.isEmpty)
+            }
+
+            test("Scale/octave tuning centres on equal temperament") {
+                let flat = [Double](repeating: 0, count: 12)
+                let oneByte = MIDITuningStandard.scaleOctaveTuning1Byte(deviationsCents: flat)
+                assertEqual(Array(oneByte.prefix(8)), [0xF0, 0x7F, 0x7F, 0x08, 0x08, 0x03, 0x7F, 0x7F])
+                assertEqual(Array(oneByte[8..<20]), [UInt8](repeating: 0x40, count: 12))
+                assertEqual(oneByte.count, 21)
+
+                let twoByte = MIDITuningStandard.scaleOctaveTuning2Byte(deviationsCents: flat)
+                assertEqual(Array(twoByte.prefix(5)), [0xF0, 0x7F, 0x7F, 0x08, 0x09])
+                assertEqual(Array(twoByte[8..<10]), [0x40, 0x00])
+                assertEqual(twoByte.count, 33)
+
+                for message in [oneByte, twoByte] {
+                    assertEqual(message.first, 0xF0)
+                    assertEqual(message.last, 0xF7)
+                    assertTrue(message.dropFirst().dropLast().allSatisfy { $0 < 0x80 })
+                }
+            }
+
+            test("AppState broadcasts the active temperament to MIDI gear") {
+                let appState = AppState()
+                appState.setKey(.c)
+                appState.setTemperament(.equalTemperament)
+                assertFalse(appState.hasMicrotonalTuning)
+                assertTrue(appState.tuningDeviationsCents().allSatisfy { $0 == 0 })
+                assertEqual(appState.tuningDeviationsCents().count, 128)
+
+                appState.setTemperament(.pythagorean)
+                assertTrue(appState.hasMicrotonalTuning)
+                let deviations = appState.tuningDeviationsCents()
+                assertEqual(deviations[60], 0.0)
+                assertTrue(abs(deviations[67] - 1.95) < 0.0001, "pure fifth is +1.95 cents")
+
+                appState.setTemperament(.quarterCommaMeantone)
+                let meantone = appState.tuningDeviationsCents()
+                assertTrue(abs(meantone[64] + 14.0) < 0.0001, "meantone major third is -14 cents")
+
+                assertTrue(appState.broadcastTuningTable() > 0)
+            }
+
+            test("Dynamic temperaments retune external notes to the chord root") {
+                let appState = AppState()
+                appState.setKey(.c)
+                appState.setTemperament(.equalTemperament)
+                assertFalse(appState.retuneExternalNotes(for: Chord(root: .c, quality: .major)))
+
+                appState.setTemperament(.dynamicJustIntonation)
+                assertTrue(appState.retuneExternalNotes(for: Chord(root: .c, quality: .major)))
+            }
+        }
+
+        // MARK: - Suite: Jam Co-Pilot & Drum Fills
+        suite("XPadSequencer: Jam Co-Pilot, Bar Boundaries & Drum Fills") {
+            test("The transport reports each bar it enters, once") {
+                let sequencer = Sequencer()
+                var bars: [Int] = []
+                sequencer.onBarBoundary = { bars.append($0) }
+
+                sequencer.tick(to: 0)
+                sequencer.tick(to: SequencerGrid.ticksPerBar - 1)
+                assertEqual(bars, [0], "mid-bar ticks must not re-fire the boundary")
+
+                sequencer.tick(to: SequencerGrid.ticksPerBar)
+                sequencer.tick(to: SequencerGrid.ticksPerBar * 3 + 42)
+                assertEqual(bars, [0, 1, 3])
+
+                sequencer.rewind()
+                sequencer.tick(to: 0)
+                assertEqual(bars, [0, 1, 3, 0], "rewind re-arms the first bar")
+
+                sequencer.tick(to: SequencerGrid.ticksPerBar * 2)
+                sequencer.stop()
+                sequencer.tick(to: 0)
+                assertEqual(bars, [0, 1, 3, 0, 2, 0], "stop resets the bar cursor too")
+            }
+
+            test("Tracks can be muted by musical role, and solo wins") {
+                let sequencer = Sequencer()
+                assertEqual(Set(sequencer.audibleTracks), Set(TrackType.allCases))
+                assertTrue(sequencer.populatedTracks.isEmpty)
+
+                sequencer.setMuted(true, forType: .melody)
+                assertTrue(sequencer.isMuted(.melody))
+                assertFalse(sequencer.audibleTracks.contains(.melody))
+
+                sequencer.setMuted(false, forType: .melody)
+                assertTrue(sequencer.audibleTracks.contains(.melody))
+
+                sequencer.setMuted(true, forType: .chords)
+                sequencer.toggleSolo(trackIndex: 0)
+                assertEqual(sequencer.audibleTracks, [.chords])
+            }
+
+            test("Populated tracks reflect which roles have material") {
+                let sequencer = Sequencer()
+                sequencer.insertProgressionClip(.factoryPresets(for: .naturalMinor)[0], targetTrack: .chords)
+                assertEqual(sequencer.populatedTracks, [.chords])
+            }
+
+            test("Co-Pilot holds mid-section and fills at the turn") {
+                let pilot = JamCoPilot()
+                assertEqual(
+                    pilot.directive(bar: 3, energy: 0.9, activeLayers: [.chords], availableLayers: TrackType.allCases).kind,
+                    .hold
+                )
+                assertEqual(
+                    pilot.directive(
+                        bar: pilot.sectionLengthBars - 1,
+                        energy: 0.8,
+                        activeLayers: TrackType.allCases,
+                        availableLayers: TrackType.allCases
+                    ).kind,
+                    .drumFill(intensity: 0.8)
+                )
+            }
+
+            test("Co-Pilot reads the player: thin out when quiet, build when loud") {
+                let pilot = JamCoPilot()
+                let quiet = pilot.directive(
+                    bar: pilot.sectionLengthBars,
+                    energy: 0.05,
+                    activeLayers: [.drums, .bass, .chords, .melody],
+                    availableLayers: TrackType.allCases
+                )
+                assertEqual(quiet.kind, .dropOut(.melody))
+
+                let loud = pilot.directive(
+                    bar: pilot.sectionLengthBars,
+                    energy: 0.95,
+                    activeLayers: [.drums],
+                    availableLayers: TrackType.allCases
+                )
+                assertEqual(loud.kind, .addLayer(.bass))
+                assertTrue(loud.isActionable)
+
+                let nothingToAdd = pilot.directive(
+                    bar: pilot.sectionLengthBars,
+                    energy: 0.95,
+                    activeLayers: [.drums],
+                    availableLayers: [.drums, .chords]
+                )
+                assertEqual(nothingToAdd.kind, .addLayer(.chords), "never unmute an empty track")
+            }
+
+            test("Co-Pilot writes new harmony when the player circles one progression") {
+                let pilot = JamCoPilot()
+                let directive = pilot.directive(
+                    bar: pilot.sectionLengthBars * 2,
+                    energy: 0.5,
+                    activeLayers: TrackType.allCases,
+                    availableLayers: TrackType.allCases,
+                    sameProgressionBars: pilot.sectionLengthBars * 2,
+                    styleName: "Neo-Soul"
+                )
+                assertEqual(directive.kind, .regenerate(styleName: "Neo-Soul"))
+                assertTrue(directive.reason.contains("harmony"))
+            }
+
+            test("Co-Pilot decisions are reproducible for a seed") {
+                let pilot = JamCoPilot()
+                for energy in [-2.0, 0.0, 0.5, 1.0, 4.0] {
+                    let first = pilot.directive(
+                        bar: pilot.sectionLengthBars * 2,
+                        energy: energy,
+                        activeLayers: [.drums, .bass, .chords],
+                        availableLayers: TrackType.allCases,
+                        seed: 4242
+                    )
+                    let second = pilot.directive(
+                        bar: pilot.sectionLengthBars * 2,
+                        energy: energy,
+                        activeLayers: [.drums, .bass, .chords],
+                        availableLayers: TrackType.allCases,
+                        seed: 4242
+                    )
+                    assertEqual(first, second)
+                }
+            }
+
+            test("Drum fills stay in the bar, stay musical, and grow with intensity") {
+                for intensity in [0.0, 0.3, 0.6, 1.0] {
+                    let hits = DrumFillGenerator.fill(intensity: intensity, beats: 4, seed: 5)
+                    assertTrue(!hits.isEmpty, "intensity \(intensity) produced no fill")
+                    assertEqual(hits, hits.sorted { $0.tickOffset < $1.tickOffset })
+                    for hit in hits {
+                        assertTrue(hit.tickOffset < SequencerGrid.ticksPerBar)
+                        assertTrue(hit.velocity > 0 && hit.velocity <= 127)
+                        assertTrue(
+                            [DrumFillGenerator.kick, DrumFillGenerator.snare,
+                             DrumFillGenerator.closedHat, DrumFillGenerator.openHat].contains(hit.note)
+                        )
+                    }
+                }
+
+                let quiet = DrumFillGenerator.fill(intensity: 0.1, beats: 4, seed: 1)
+                let loud = DrumFillGenerator.fill(intensity: 1.0, beats: 4, seed: 1)
+                assertTrue(loud.count > quiet.count, "a loud turn-around should be busier")
+
+                assertEqual(
+                    DrumFillGenerator.fill(intensity: 0.7, beats: 4, seed: 7),
+                    DrumFillGenerator.fill(intensity: 0.7, beats: 4, seed: 7)
+                )
+                assertTrue(DrumFillGenerator.fill(intensity: 0.5, beats: 0).isEmpty)
+
+                let clip = DrumFillGenerator.clip(intensity: 0.8, beats: 4, seed: 2, name: "Fill", startTick: 3840)
+                assertEqual(clip.startTick, 3840)
+                assertEqual(clip.durationTicks, SequencerGrid.ticksPerBar)
+                assertEqual(clip.notes.count, DrumFillGenerator.fill(intensity: 0.8, beats: 4, seed: 2).count)
+            }
+
+            test("AppState applies co-pilot decisions to the arrangement") {
+                let appState = AppState()
+                appState.isCoPilotEnabled = false
+                appState.runCoPilotBar(7)
+                assertTrue(appState.lastCoPilotDirective == nil, "the co-pilot stays off when disabled")
+
+                appState.sequencer.insertProgressionClip(appState.activeProgression, targetTrack: .chords)
+                appState.isCoPilotEnabled = true
+
+                let energyBeforeFill = appState.coPilotEnergy
+                appState.runCoPilotBar(7)
+                assertNotNil(appState.lastCoPilotDirective)
+                assertEqual(appState.lastCoPilotDirective?.kind, .drumFill(intensity: energyBeforeFill))
+
+                appState.coPilotEnergy = 0.02
+                appState.runCoPilotBar(8)
+                assertEqual(appState.lastCoPilotDirective?.kind, .dropOut(.melody))
+                assertTrue(appState.sequencer.isMuted(.melody), "the decision must reach the arrangement")
+                assertEqual(appState.coPilotProgressionBars, 2)
+            }
+        }
+
+        // MARK: - Suite: Generated Basslines
+        suite("XPadSequencer: Bassline Generator & Clip Insertion") {
+            func popProgression() -> Progression {
+                let blocks: [ChordBlock] = [
+                    ChordBlock(chord: Chord(root: .c, quality: .major), durationBeats: 4, romanNumeral: "I"),
+                    ChordBlock(chord: Chord(root: .a, quality: .minor), durationBeats: 4, romanNumeral: "vi"),
+                    ChordBlock(chord: Chord(root: .f, quality: .major), durationBeats: 4, romanNumeral: "IV"),
+                    ChordBlock(chord: Chord(root: .g, quality: .dominant7), durationBeats: 4, romanNumeral: "V7")
+                ]
+                return Progression(name: "Pop Loop", root: .c, scale: .major, blocks: blocks + blocks)
+            }
+
+            test("Bass register follows MIDI conventions") {
+                assertEqual(BasslineGenerator.note(for: .c, octave: 4), 60)
+                assertEqual(BasslineGenerator.note(for: .c, octave: 2), 36)
+                assertEqual(BasslineGenerator.note(for: .a, octave: 4), 69)
+                assertEqual(BasslineGenerator.note(for: .c, octave: 8), 96, "the octave itself clamps")
+                assertEqual(BasslineGenerator.note(for: .b, octave: 7), 107)
+            }
+
+            test("Every feel produces an in-range, sorted line below middle C") {
+                for feel in BasslineGenerator.Feel.allCases {
+                    let events = BasslineGenerator.generate(progression: popProgression(), feel: feel, seed: 3)
+                    assertTrue(!events.isEmpty, feel.rawValue)
+                    assertEqual(events, events.sorted { $0.startTick < $1.startTick }, feel.rawValue)
+                    for event in events {
+                        assertTrue(event.note >= 36 && event.note <= 59, "\(feel.rawValue) went out of bass range")
+                        assertTrue(event.velocity > 0 && event.velocity <= 127)
+                        assertTrue(event.durationTicks > 0)
+                        assertTrue(event.startTick < SequencerGrid.ticksPerBar * 8)
+                    }
+                }
+            }
+
+            test("Downbeats land on a chord tone for every feel") {
+                let progression = popProgression()
+                for feel in BasslineGenerator.Feel.allCases {
+                    let events = BasslineGenerator.generate(progression: progression, feel: feel, seed: 1)
+                    for (index, block) in progression.blocks.enumerated() {
+                        let downbeat = UInt64(index) * SequencerGrid.ticksPerBar
+                        guard let hit = events.first(where: { $0.startTick == downbeat }) else {
+                            assertTrue(false, "\(feel.rawValue) missed the downbeat of block \(index)")
+                            continue
+                        }
+                        let root = BasslineGenerator.note(for: block.chord.root, octave: 2)
+                        let chordTones = block.chord.quality.intervals.map { UInt8(Int(root) + $0) }
+                        assertTrue(chordTones.contains(hit.note), "\(feel.rawValue) played a non-chord tone on a downbeat")
+                    }
+                }
+            }
+
+            test("Jazz walks in and neo-soul leans into the next chord") {
+                let progression = popProgression()
+                let lastBeat = SequencerGrid.ticksPerBar - SequencerGrid.ticksPerBeat
+                let walking = BasslineGenerator.generate(progression: progression, feel: .walking, seed: 5)
+                assertEqual(walking.first(where: { $0.startTick == lastBeat })?.note, BasslineGenerator.note(for: .a, octave: 2) - 1)
+
+                let lastEighth = SequencerGrid.ticksPerBar - SequencerGrid.ticksPerBeat / 2
+                let syncopated = BasslineGenerator.generate(progression: progression, feel: .syncopated, seed: 2)
+                assertEqual(syncopated.first(where: { $0.startTick == lastEighth })?.note, BasslineGenerator.note(for: .a, octave: 2))
+            }
+
+            test("House pumps root and octave eighths, drone holds the root") {
+                let progression = popProgression()
+                let pulse = BasslineGenerator.generate(progression: progression, feel: .octavePulse, seed: 4)
+                let firstBar = pulse.filter { $0.startTick < SequencerGrid.ticksPerBar }
+                assertEqual(firstBar.count, 8)
+                let root = BasslineGenerator.note(for: .c, octave: 2)
+                assertEqual(firstBar.map(\.note), [root, root + 12, root, root + 12, root, root + 12, root, root + 12])
+
+                let drone = BasslineGenerator.generate(progression: progression, feel: .drone, seed: 6)
+                assertEqual(drone.count, progression.blocks.count, "one sustained root per chord")
+                assertTrue(drone.allSatisfy { $0.durationTicks > SequencerGrid.ticksPerBar / 2 })
+            }
+
+            test("Basslines are reproducible and silence an empty progression") {
+                assertEqual(
+                    BasslineGenerator.generate(progression: popProgression(), feel: .rootNotes, seed: 42),
+                    BasslineGenerator.generate(progression: popProgression(), feel: .rootNotes, seed: 42)
+                )
+                assertTrue(BasslineGenerator.generate(progression: Progression(name: "Empty"), feel: .walking).isEmpty)
+            }
+
+            test("Feel follows the style, and clips wrap the line") {
+                assertEqual(BasslineGenerator.feel(forStyleName: "Jazz Standard"), .walking)
+                assertEqual(BasslineGenerator.feel(forStyleName: "Neo-Soul"), .syncopated)
+                assertEqual(BasslineGenerator.feel(forStyleName: "Deep House"), .octavePulse)
+                assertEqual(BasslineGenerator.feel(forStyleName: "Cinematic Trailer"), .drone)
+                assertEqual(BasslineGenerator.feel(forStyleName: "Pop / Royal Road"), .rootNotes)
+
+                let clip = BasslineGenerator.clip(progression: popProgression(), feel: .walking, seed: 1)
+                assertEqual(clip.startTick, 0)
+                assertEqual(clip.durationTicks, SequencerGrid.ticksPerBar * 8)
+                assertTrue(clip.name.hasPrefix("Bass"))
+                assertEqual(clip.notes.count, BasslineGenerator.generate(progression: popProgression(), feel: .walking, seed: 1).count)
+            }
+
+            test("AppState writes a bassline onto the bass track and keeps the loop audible") {
+                let appState = AppState()
+                appState.harmonicStyle = HarmonicStyleLibrary.deepHouse
+                appState.sequencer.insertProgressionClip(appState.activeProgression, targetTrack: .chords)
+
+                let clip = appState.sendBasslineToSequencer()
+                assertNotNil(clip)
+                assertTrue(appState.sequencer.populatedTracks.contains(.bass))
+                assertTrue(appState.sequencer.populatedTracks.contains(.chords), "inserting must not wipe other parts")
+
+                let scene = appState.sequencer.scenes[appState.sequencer.activeSceneIndex]
+                let bassTrack = scene.tracks.first { $0.type == .bass }
+                assertEqual(bassTrack?.clips.count, 1)
+                assertTrue((bassTrack?.clips.first?.notes.isEmpty ?? true) == false)
+                assertTrue(scene.loopLengthTicks >= SequencerGrid.ticksPerBar)
             }
         }
 

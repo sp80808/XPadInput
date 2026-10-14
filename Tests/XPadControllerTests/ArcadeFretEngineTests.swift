@@ -79,12 +79,13 @@ final class ArcadeFretEngineTests: XCTestCase {
         var engine = ArcadeFretEngine()
         let frame = engine.process(
             input: ArcadeFretInput(leftTriggerValue: 0.8, southPressed: true),
-            chords: Chord.diatonicChords(root: .a, scale: .minor),
+            chords: Chord.diatonicChords(root: .a, scale: .naturalMinor),
             timestamp: 0
         )
-        // A natural minor degree vi is F major → ✕ yields Fmaj7.
-        XCTAssertEqual(frame.strikes.first?.chord.quality, .major7)
-        XCTAssertEqual(frame.strikes.first?.chord.root, PitchClass.f)
+        // The tonic of A natural minor is A minor, so the seventh modifier must
+        // colour it as Am7 rather than forcing a major seventh onto it.
+        XCTAssertEqual(frame.strikes.first?.chord.quality, .minor7)
+        XCTAssertEqual(frame.strikes.first?.chord.root, PitchClass.a)
     }
 
     func testModifierPriorityIsDeterministicWhenStacked() {
