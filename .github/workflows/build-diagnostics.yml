@@ -1,0 +1,60 @@
+name: Build Diagnostics
+
+# Surfaces Swift compiler errors as GitHub check-run annotations.
+#
+# `swift build` output only lives in the job log, which is awkward to read from
+# a terminal or from an agent session. This job re-runs the build, captures the
+# output, and re-emits every diagnostic as an annotation so it can be read with:
+#
+#   gh api /repos/{owner}/{repo}/check-runs/{id}/annotations
+#
+# It deliberately never fails the workflow: it is a reporting job, not a gate.
+# The real gate remains the macOS CI build-test job.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-diagnostics-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  annotate:
+    name: Annotate Swift diagnostics
+    runs-on: macos-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build (diagnostics only)
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          swift build 2>&1 | tee /tmp/xpi-build.log
+          status=${PIPESTATUS[0]}
+          echo "swift build exit status: ${status}"
+          echo "### Swift build exit status: ${status}" >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+
+      - name: Emit annotations
+        if: always()
+        run: |
+          log=/tmp/xpi-build.log
+          count=$(grep -c "error:" "$log" || true)
+          echo "Compiler errors detected: ${count}"
+          if [ "$count" = "0" ]; then
+            echo "### No compiler errors" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          grep -n "error:" "$log" | head -n 40 | while IFS= read -r line; do
+            message=$(printf '%s' "$line" | sed -e 's/"/\\"/g' | cut -c1-900)
+            echo "::error title=Swift build::${message}"
+          done
+          head -n 40 "$log" >> "$GITHUB_STEP_SUMMARY" || true
