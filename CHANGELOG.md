@@ -30,11 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Switching temperament broadcasts a tuning table to every virtual port, and dynamic temperaments push real-time single-note retunes whenever the chord changes. The Tuning menu exposes a manual send.
 
 ### Fixed
+- **The XCTest targets compile and pass again.** Between them the eleven XCTest suites now run 1185 test cases with zero failures; they had never been built by CI (`swift test` is non-gating there), which hid a scale preset that does not exist, UMP words read in the wrong byte order, stale preset/scheme counts, a wizard fallback asserted as a measured value, and a progress test that wrote tracker internals by hand instead of recording sessions.
+- **Chromatic bend targets rank by distance.** With chromatic override on, interval consonance still influenced scoring, so the whole tone outranked the semitone the player reaches first — the opposite of what the override is for.
 - Generated progressions honour an explicit start degree: the opening chord is no longer re-coloured by the substitution layers, so "start on the IV" always sounds like the IV.
 - `HarmonicStyleLibrary.jazzStandard` degree weights were declared with a `)` instead of `]`, which broke the build.
 
 ### Changed
-- The diagnostics workflow now also builds the test targets, so XCTest sources are type-checked in CI.
+- The diagnostics workflow now builds the test targets and runs `swift test` as well, reporting compile errors, XCTest failures and the exhaustive runner's totals as check-run annotations (the job log is not reliably reachable from every environment).
+- `ProgressTracker` tests snapshot and restore the shared store, so a test that records sessions no longer depends on — or disturbs — whatever state the user's own practice history is in.
 - `CoreHapticsEngine` no longer swallows a failed haptic-engine start or restart: both are logged with `os.Logger` and published as `lastError` (was a `print` and a silent `catch`).
 - `RecordedNoteEvent` is `Equatable`/`Hashable`, so generated and recorded parts can be compared and de-duplicated.
 
