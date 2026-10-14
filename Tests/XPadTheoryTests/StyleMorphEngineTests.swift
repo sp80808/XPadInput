@@ -231,6 +231,14 @@ final class StyleMorphEngineTests: XCTestCase {
         }
     }
 
+    func testReharmonisePreservesTheRequestedKeyAndScale() {
+        let source = engine.generate(style: HarmonicStyleLibrary.popRoyalRoad, key: .d, bars: 4, seed: 5)
+        let reharmonised = engine.reharmonise(source, style: HarmonicStyleLibrary.gospelSoul, seed: 6)
+        XCTAssertEqual(reharmonised.root, .d)
+        XCTAssertEqual(reharmonised.scale, source.scale)
+        XCTAssertEqual(reharmonised.blocks.count, source.blocks.count)
+    }
+
     func testRichStyleAddsExtensions() {
         let progression = engine.generate(style: HarmonicStyleLibrary.neoSoul, key: .d, bars: 4, seed: 99)
         let extendedCount = progression.blocks.filter { $0.chord.quality.intervals.count >= 4 }.count
@@ -240,6 +248,12 @@ final class StyleMorphEngineTests: XCTestCase {
     func testProgressionsStartWhereAsked() {
         let progression = engine.generate(style: HarmonicStyleLibrary.deepHouse, key: .f, bars: 4, seed: 2, startDegree: 3)
         XCTAssertEqual(progression.blocks.first?.chord.root, PitchClass.f.transposed(by: 5))
+
+        // The opening degree survives substitution-heavy styles too.
+        for style in HarmonicStyleLibrary.all {
+            let anchored = engine.generate(style: style, key: .f, bars: 4, seed: 2, startDegree: 3)
+            XCTAssertEqual(anchored.blocks.first?.chord.root, PitchClass.f.transposed(by: 5), style.name)
+        }
     }
 
     func testGeneratedProgressionIsPlayableByTheSequencerModel() {

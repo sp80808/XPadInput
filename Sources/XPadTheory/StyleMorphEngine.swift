@@ -98,6 +98,7 @@ public struct StyleMorphEngine: Sendable {
                 dna: dna,
                 key: key,
                 scale: resolvedScale,
+                isOpening: index == 0,
                 random: &random
             )
             let velocity = UInt8(
@@ -281,6 +282,7 @@ public struct StyleMorphEngine: Sendable {
         dna: HarmonicStyleDNA,
         key: PitchClass,
         scale: Scale,
+        isOpening: Bool,
         random: inout DeterministicRandom
     ) -> Coloured {
         var root = chord.root
@@ -289,8 +291,12 @@ public struct StyleMorphEngine: Sendable {
         var explicitRoman: String?
         var isSubstituted = false
 
+        // The opening chord anchors the progression by ear, so it is never
+        // substituted: "start on the IV" always sounds like the IV.
+        let canSubstitute = !isOpening
+
         // Chromatic planing: same shape, re-rooted by a third.
-        if random.chance(dna.mediantShiftRate) {
+        if canSubstitute, random.chance(dna.mediantShiftRate) {
             let shift = random.chance(0.5) ? 3 : 4
             let direction = random.chance(0.5) ? shift : -shift
             root = root.transposed(by: direction)
@@ -299,7 +305,7 @@ public struct StyleMorphEngine: Sendable {
         }
 
         // Modal interchange.
-        if !isSubstituted, random.chance(dna.borrowing) {
+        if canSubstitute, !isSubstituted, random.chance(dna.borrowing) {
             if let borrowed = random.pick(borrowedChords(key: key, isMinor: scale.type.isMinor)) {
                 root = borrowed.root
                 quality = borrowed.quality
@@ -308,7 +314,8 @@ public struct StyleMorphEngine: Sendable {
         }
 
         // Secondary dominant targeting the following chord.
-        if !isSubstituted,
+        if canSubstitute,
+           !isSubstituted,
            let nextDegree,
            nextDegree < palette.count,
            random.chance(dna.secondaryDominantRate) {
@@ -320,7 +327,7 @@ public struct StyleMorphEngine: Sendable {
         }
 
         // Tritone substitution of a dominant.
-        if random.chance(dna.tritoneSubstitutionRate), isDominantQuality(quality) {
+        if canSubstitute, random.chance(dna.tritoneSubstitutionRate), isDominantQuality(quality) {
             root = root.transposed(by: 6)
             quality = .dominant7
             explicitRoman = "subV7"

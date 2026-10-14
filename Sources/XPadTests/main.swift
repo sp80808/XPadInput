@@ -4051,8 +4051,10 @@ final class TestRunner {
             }
 
             test("An explicit start degree is honoured exactly") {
-                let progression = engine.generate(style: HarmonicStyleLibrary.deepHouse, key: .f, bars: 4, seed: 8, startDegree: 3)
-                assertTrue(progression.blocks.first?.chord.root == PitchClass.f.transposed(by: 5))
+                for style in HarmonicStyleLibrary.all {
+                    let progression = engine.generate(style: style, key: .f, bars: 4, seed: 8, startDegree: 3)
+                    assertTrue(progression.blocks.first?.chord.root == PitchClass.f.transposed(by: 5), style.name)
+                }
             }
 
             test("Reharmonising keeps rhythm and block count while changing harmony") {
