@@ -3944,7 +3944,9 @@ final class TestRunner {
                 for _ in 0..<32 {
                     assertTrue(a.pickWeightedIndex(weights: [0, 0, 5, 0]) == 2)
                 }
-                assertTrue(DeterministicRandom(seed: "XPI").next() == DeterministicRandom(seed: "XPI").next())
+                var c = DeterministicRandom(seed: "XPI")
+                var d = DeterministicRandom(seed: "XPI")
+                assertEqual(c.next(), d.next())
             }
 
             test("Style DNA normalises weights and clamps every axis") {
