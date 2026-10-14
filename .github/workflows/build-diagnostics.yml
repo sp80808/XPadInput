@@ -82,6 +82,30 @@ jobs:
             echo "::error file=${file},line=${num},col=${col},title=Swift build error::${msg}"
           done < /tmp/xpi-errors.txt
 
+      - name: XCTest suite (diagnostics only)
+        if: always()
+        continue-on-error: true
+        run: |
+          set +e
+          swift test > /tmp/xpi-xctest.log 2>&1
+          echo "swift test exit status: $?"
+          exit 0
+
+      - name: Annotate XCTest results
+        if: always()
+        run: |
+          log=/tmp/xpi-xctest.log
+          if [ ! -f "$log" ]; then
+            echo "::warning title=XCTest diagnostics::no swift test log was produced"
+            exit 0
+          fi
+          grep -E "failed \(|error: " "$log" | sort -u | head -40 | while IFS= read -r line; do
+            msg=$(printf '%s' "$line" | sed -e 's/"/\\"/g' | cut -c1-800)
+            echo "::warning title=XCTest failure::${msg}"
+          done
+          summary=$(grep -E "Executed [0-9]+ tests?, with" "$log" | sort -u | tail -1)
+          echo "::notice title=XCTest summary::${summary:-no XCTest summary found}"
+
       - name: Exhaustive test runner (diagnostics only)
         if: always()
         continue-on-error: true
