@@ -3911,9 +3911,10 @@ final class TestRunner {
                 assertEqual(appState.selectedProgressionBlockIndex, 3)
                 assertTrue(appState.currentChord?.root == .a)
 
-                // A boundary leaves the previous selection untouched.
-                assertTrue(appState.selectProgressionBlock(atStickAngle: 0.0) == nil)
+                // A sector boundary is neutral: the previous selection stands.
+                assertTrue(appState.selectProgressionBlock(atStickAngle: Double.pi / 4) == nil)
                 assertEqual(appState.selectedProgressionBlockIndex, 3)
+                assertTrue(appState.currentChord?.root == .a)
             }
 
             test("Track mute and solo toggles in Sequencer") {
