@@ -38,7 +38,9 @@ jobs:
       - name: Build (diagnostics only)
         continue-on-error: true
         run: |
-          set -o pipefail
+          # Runner shells run with `-e`; reporting steps must *capture* failures
+          # instead of aborting, or the log the annotate step needs never exists.
+          set +e
           swift build > /tmp/xpi-build.log 2>&1
           status=$?
           echo "swift build exit status: ${status}"
@@ -56,11 +58,19 @@ jobs:
         if: always()
         run: |
           log=/tmp/xpi-all.log
-          [ -f "$log" ] || exit 0
+          if [ ! -f "$log" ]; then
+            echo "::warning title=Swift build diagnostics::no build log was produced, compile errors are unknown"
+            exit 0
+          fi
           grep -E '\.swift:[0-9]+:[0-9]+: error: ' "$log" | sort -u > /tmp/xpi-errors.txt || true
           count=$(wc -l < /tmp/xpi-errors.txt | tr -d ' ')
           echo "unique compile errors: ${count}"
           echo "### Unique compile errors: ${count}" >> "$GITHUB_STEP_SUMMARY"
+
+          # Emit the totals as annotations: the job log is not always reachable
+          # (the artifact host can refuse the request), and the counts are the
+          # whole point of this job.
+          echo "::notice title=Swift build diagnostics::unique compile errors: ${count}"
 
           while IFS= read -r line; do
             [ -z "$line" ] && continue
@@ -76,20 +86,29 @@ jobs:
         if: always()
         continue-on-error: true
         run: |
-          set -o pipefail
+          set +e
           swift run XPadTests > /tmp/xpi-tests.log 2>&1
-          echo "swift run XPadTests exit status: $?"
+          status=$?
+          echo "swift run XPadTests exit status: ${status}"
+          echo "### swift run XPadTests exit status: ${status}" >> "$GITHUB_STEP_SUMMARY"
           exit 0
 
       - name: Annotate test failures
         if: always()
         run: |
           log=/tmp/xpi-tests.log
-          [ -f "$log" ] || exit 0
+          if [ ! -f "$log" ]; then
+            echo "::warning title=Test runner diagnostics::no test log was produced, failures are unknown"
+            exit 0
+          fi
           grep -E '❌' "$log" | sort -u > /tmp/xpi-test-failures.txt || true
           count=$(wc -l < /tmp/xpi-test-failures.txt | tr -d ' ')
           echo "unique test failures: ${count}"
           echo "### Unique test-runner failures: ${count}" >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Test runner diagnostics::unique test failures: ${count}"
+          tail -n 6 "$log" | grep -E 'Total Tests Run|Passed:|Failed:|TESTS PASSED|SOME TESTS FAILED' | while IFS= read -r line; do
+            echo "::notice title=XPadTests summary::${line}"
+          done
 
           while IFS= read -r line; do
             [ -z "$line" ] && continue
