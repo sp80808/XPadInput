@@ -4144,7 +4144,7 @@ final class TestRunner {
             test("Encode and decode agree within half a fraction step") {
                 var rng = DeterministicRandom(seed: "mts-roundtrip")
                 for _ in 0..<128 {
-                    let note = UInt8(rng.index(count: 128))
+                    let note = UInt8(rng.index(count: 128) ?? 0)
                     let deviation = rng.nextDouble(in: -99.0, 99.0)
                     let word = MIDITuningStandard.frequencyData(forMIDINote: note, deviationCents: deviation)
                     let expected = Double(note) * 100 + deviation

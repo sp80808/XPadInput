@@ -43,12 +43,20 @@ jobs:
           status=$?
           echo "swift build exit status: ${status}"
           echo "### swift build exit status: ${status}" >> "$GITHUB_STEP_SUMMARY"
+          # `swift build` skips test targets, so the XCTest sources are only
+          # type-checked when they are built explicitly.
+          swift build --build-tests > /tmp/xpi-build-tests.log 2>&1
+          test_status=$?
+          echo "swift build --build-tests exit status: ${test_status}"
+          echo "### swift build --build-tests exit status: ${test_status}" >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/xpi-build.log /tmp/xpi-build-tests.log > /tmp/xpi-all.log
           exit 0
 
       - name: Annotate build errors
         if: always()
         run: |
-          log=/tmp/xpi-build.log
+          log=/tmp/xpi-all.log
+          [ -f "$log" ] || exit 0
           grep -E '\.swift:[0-9]+:[0-9]+: error: ' "$log" | sort -u > /tmp/xpi-errors.txt || true
           count=$(wc -l < /tmp/xpi-errors.txt | tr -d ' ')
           echo "unique compile errors: ${count}"
