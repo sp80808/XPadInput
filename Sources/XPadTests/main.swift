@@ -3807,7 +3807,7 @@ final class TestRunner {
                 assertFalse(chordTrack.clips[1].notes.isEmpty)
 
                 // Voiced notes in C Major triad: C3 (48), E3 (52), G3 (55)
-                let cNotes = chordTrack.clips[0].notes.map(\.noteNumber)
+                let cNotes = chordTrack.clips[0].notes.map(\.note)
                 assertTrue(cNotes.contains(48), "C3 note missing")
                 assertTrue(cNotes.contains(52), "E3 note missing")
                 assertTrue(cNotes.contains(55), "G3 note missing")
@@ -3826,7 +3826,7 @@ final class TestRunner {
                     notesOff.append(note)
                 }
 
-                let clipNote = RecordedNoteEvent(noteNumber: 60, velocity: 100, startTick: 0, durationTicks: 960)
+                let clipNote = RecordedNoteEvent(note: 60, velocity: 100, startTick: 0, durationTicks: 960)
                 let testClip = SequencerClip(name: "Test", startTick: 0, durationTicks: 960, notes: [clipNote])
                 sequencer.scenes[0].tracks[0].clips = [testClip]
 
@@ -3846,7 +3846,36 @@ final class TestRunner {
                 assertEqual(sequencer.transport.currentTick, 0)
             }
 
-            test("AppState handleProgressionChordSelection selects chord block based on polar angle") {
+            test("Polar sector resolver maps stick angles clockwise from up") {
+                // Four sectors: up -> 0, right -> 1, down -> 2, left -> 3.
+                assertTrue(PolarSectorResolver.sectorIndex(angle: Double.pi / 2, sectorCount: 4) == 0)
+                assertTrue(PolarSectorResolver.sectorIndex(angle: 0, sectorCount: 4) == 1)
+                assertTrue(PolarSectorResolver.sectorIndex(angle: -Double.pi / 2, sectorCount: 4) == 2)
+                assertTrue(PolarSectorResolver.sectorIndex(angle: Double.pi, sectorCount: 4) == 3)
+
+                // Seven diatonic sectors keep "up" centred on the tonic.
+                assertTrue(PolarSectorResolver.sectorIndex(angle: Double.pi / 2, sectorCount: 7) == 0)
+
+                // Sector boundaries are neutral so analog jitter cannot flicker.
+                assertTrue(PolarSectorResolver.sectorIndex(angle: Double.pi / 4, sectorCount: 4) == nil)
+                assertTrue(PolarSectorResolver.sectorIndex(angle: Double.pi / 2, sectorCount: 0) == nil)
+
+                // Dead centre of a sector reports the midpoint of the slice.
+                let middle = PolarSectorResolver.slot(angle: Double.pi / 2, sectorCount: 4)
+                assertNotNil(middle)
+                if let middle {
+                    assertTrue(abs(middle.positionWithinSector - 0.5) < 0.0001)
+                }
+
+                // Wrapping short distances must not report a full circle.
+                let wrapped = PolarSectorResolver.shortestAngularDistance(
+                    from: -Double.pi + 0.1,
+                    to: Double.pi - 0.1
+                )
+                assertTrue(abs(wrapped + 0.2) < 0.0001)
+            }
+
+            test("AppState selects progression blocks from the left stick angle") {
                 let appState = AppState()
                 var progression = Progression(scale: Scale(root: .c, type: .major))
                 let cMajor = Chord(root: .c, quality: .major)
@@ -3862,20 +3891,29 @@ final class TestRunner {
                 appState.activeProgression = progression
                 appState.chordPerformanceSource = .activeProgression
 
-                // Angle 0 rad (pointing right) -> Sector 0 -> C Major
-                appState.handleProgressionChordSelection(PolarCoordinate(radius: 0.8, angle: 0.0))
+                // Up -> sector 0 -> C Major
+                appState.selectProgressionBlock(atStickAngle: Double.pi / 2)
                 assertEqual(appState.selectedProgressionBlockIndex, 0)
-                assertEqual(appState.currentChord?.root, .c)
+                assertTrue(appState.currentChord?.root == .c)
 
-                // Angle pi/2 rad (pointing up) -> Sector 1 -> F Major
-                appState.handleProgressionChordSelection(PolarCoordinate(radius: 0.8, angle: .pi / 2.0))
+                // Right -> sector 1 -> F Major
+                appState.selectProgressionBlock(atStickAngle: 0.0)
                 assertEqual(appState.selectedProgressionBlockIndex, 1)
-                assertEqual(appState.currentChord?.root, .f)
+                assertTrue(appState.currentChord?.root == .f)
 
-                // Angle pi rad (pointing left) -> Sector 2 -> G Major
-                appState.handleProgressionChordSelection(PolarCoordinate(radius: 0.8, angle: .pi))
+                // Down -> sector 2 -> G Major
+                appState.selectProgressionBlock(atStickAngle: -Double.pi / 2)
                 assertEqual(appState.selectedProgressionBlockIndex, 2)
-                assertEqual(appState.currentChord?.root, .g)
+                assertTrue(appState.currentChord?.root == .g)
+
+                // Left -> sector 3 -> A Minor
+                appState.selectProgressionBlock(atStickAngle: Double.pi)
+                assertEqual(appState.selectedProgressionBlockIndex, 3)
+                assertTrue(appState.currentChord?.root == .a)
+
+                // A boundary leaves the previous selection untouched.
+                assertTrue(appState.selectProgressionBlock(atStickAngle: 0.0) == nil)
+                assertEqual(appState.selectedProgressionBlockIndex, 3)
             }
 
             test("Track mute and solo toggles in Sequencer") {
@@ -3884,9 +3922,9 @@ final class TestRunner {
                 sequencer.toggleMute(trackIndex: 0)
                 assertTrue(sequencer.scenes[0].tracks[0].isMuted)
 
-                assertFalse(sequencer.scenes[0].tracks[0].isSoloed)
+                assertFalse(sequencer.scenes[0].tracks[0].isSolo)
                 sequencer.toggleSolo(trackIndex: 0)
-                assertTrue(sequencer.scenes[0].tracks[0].isSoloed)
+                assertTrue(sequencer.scenes[0].tracks[0].isSolo)
             }
         }
 

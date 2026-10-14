@@ -20,6 +20,14 @@ public enum BuiltInDrumSound: String, CaseIterable, Codable, Sendable, Identifia
         }
     }
 
+    /// Reverse mapping used when a recorded or sequenced drum part is played back.
+    public init?(midiNote: UInt8) {
+        guard let match = BuiltInDrumSound.allCases.first(where: { $0.midiNote == midiNote }) else {
+            return nil
+        }
+        self = match
+    }
+
     var duration: Double {
         switch self {
         case .kick: 0.42

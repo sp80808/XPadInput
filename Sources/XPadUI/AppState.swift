@@ -575,19 +575,54 @@ public final class AppState: @unchecked Sendable {
     }
 
     private func setupSequencerPlaybackRouting() {
-        sequencer.onPlaybackNoteOn = { [weak self] note, velocity in
+        // Route each timeline track to the endpoint and channel its live part uses.
+        // The maps are resolved once, on the main actor, so playback callbacks never
+        // have to reach back into isolated state while the clock is running.
+        var ports: [TrackType: VirtualPort] = [:]
+        var channels: [TrackType: UInt8] = [:]
+        for track in TrackType.allCases {
+            let port = Self.virtualPort(for: track)
+            ports[track] = port
+            channels[track] = midiChannel(for: port)
+        }
+        let drumNotes = BuiltInDrumSound.allCases.map(\.midiNote)
+
+        sequencer.onPlaybackNoteOn = { [weak self] note, velocity, track in
             guard let self, !self.audioEngine.isMuted else { return }
-            self.audioEngine.noteOn(note: note, velocity: velocity)
-            if self.midiEngine.virtualMIDIEnabled {
-                self.midiEngine.sendNoteOn(port: .chords, channel: 0, note: note, velocity: velocity)
+            if track == .drums, drumNotes.contains(note), let sound = BuiltInDrumSound(midiNote: note) {
+                self.audioEngine.triggerDrum(sound, velocity: velocity)
+            } else {
+                self.audioEngine.noteOn(note: note, velocity: velocity)
+            }
+            if self.midiEngine.virtualMIDIEnabled, let port = ports[track] {
+                self.midiEngine.sendNoteOn(
+                    port: port,
+                    channel: channels[track] ?? 0,
+                    note: note,
+                    velocity: velocity
+                )
             }
         }
-        sequencer.onPlaybackNoteOff = { [weak self] note in
+        sequencer.onPlaybackNoteOff = { [weak self] note, track in
             guard let self else { return }
-            self.audioEngine.noteOff(note: note)
-            if self.midiEngine.virtualMIDIEnabled {
-                self.midiEngine.sendNoteOff(port: .chords, channel: 0, note: note)
+            if track != .drums || !drumNotes.contains(note) {
+                self.audioEngine.noteOff(note: note)
             }
+            if self.midiEngine.virtualMIDIEnabled, let port = ports[track] {
+                self.midiEngine.sendNoteOff(port: port, channel: channels[track] ?? 0, note: note)
+            }
+        }
+    }
+
+    /// Virtual endpoint a timeline track plays through, so sequencer playback
+    /// arrives at a DAW the same way a live performance of that part would.
+    public static func virtualPort(for track: TrackType) -> VirtualPort {
+        switch track {
+        case .chords: return .chords
+        case .melody: return .melody
+        case .bass: return .bass
+        case .drums: return .drums
+        case .gesture: return .main
         }
     }
 
@@ -1303,22 +1338,15 @@ public final class AppState: @unchecked Sendable {
             return
         }
 
-        let angle = state.leftStickAngle
         let chordCount = diatonicChords.count
         guard chordCount > 0 else { return }
 
-        var normalised = -(angle - .pi / 2)
-        if normalised < 0 { normalised += 2 * .pi }
-
-        let sliceAngle = (2.0 * .pi) / Double(chordCount)
-        let centred = (normalised + sliceAngle / 2).truncatingRemainder(dividingBy: 2 * .pi)
-        let slicePosition = centred / sliceAngle
-        let index = Int(slicePosition) % chordCount
-        let positionWithinSlice = slicePosition - floor(slicePosition)
-
-        // Leave a narrow neutral band at sector boundaries so small analog
-        // jitter cannot make the harmonic wheel flicker between neighbours.
-        guard positionWithinSlice > 0.14, positionWithinSlice < 0.86 else { return }
+        // Shared polar geometry: the same resolver drives the progression selector,
+        // so a sector always means the same musical slot on either surface.
+        guard let index = PolarSectorResolver.sectorIndex(
+            angle: state.leftStickAngle,
+            sectorCount: chordCount
+        ) else { return }
 
         if index != selectedChordIndex {
             let old = currentChord ?? diatonicChords[selectedChordIndex]
@@ -1338,33 +1366,47 @@ public final class AppState: @unchecked Sendable {
     }
 
     private func handleProgressionChordSelection(_ state: ControllerState) {
+        selectProgressionBlock(atStickAngle: state.leftStickAngle)
+    }
+
+    /// Selects the active progression's block for a left-stick angle.
+    ///
+    /// Sector `0` sits at "up" and indices advance clockwise, matching the
+    /// harmonic wheel. Returns the selected index, or `nil` when the stick rests
+    /// inside a neutral boundary band or the progression is empty.
+    @discardableResult
+    public func selectProgressionBlock(atStickAngle angle: Double) -> Int? {
         let blockCount = activeProgression.blocks.count
-        guard blockCount > 0 else { return }
-
-        let angle = state.leftStickAngle
-        var normalised = -(angle - .pi / 2)
-        if normalised < 0 { normalised += 2 * .pi }
-
-        let sliceAngle = (2.0 * .pi) / Double(blockCount)
-        let centred = (normalised + sliceAngle / 2).truncatingRemainder(dividingBy: 2 * .pi)
-        let slicePosition = centred / sliceAngle
-        let index = Int(slicePosition) % blockCount
-        let positionWithinSlice = slicePosition - floor(slicePosition)
-
-        guard positionWithinSlice > 0.14, positionWithinSlice < 0.86 else { return }
-
-        if index != selectedProgressionBlockIndex {
-            let old = currentChord ?? activeProgression.blocks[selectedProgressionBlockIndex].chord
-            selectedProgressionBlockIndex = index
-            var new = activeProgression.blocks[index].chord
-            new.inversion = voicingInversion
-            currentChord = new
-            recordChordHistory(new)
-            retargetHeldChordTones()
-            controllerManager.playTechniqueHaptic(.chordChange)
-            multiJamManager.updateSharedHarmony(key: currentKey, scale: currentScale, chord: new)
-            _ = smartSoloEngine.handleChordChange(oldChord: old, newChord: new, context: musicalContext())
+        guard blockCount > 0 else { return nil }
+        guard selectedProgressionBlockIndex < blockCount else {
+            selectedProgressionBlockIndex = 0
+            return nil
         }
+        guard let index = PolarSectorResolver.sectorIndex(angle: angle, sectorCount: blockCount) else {
+            return nil
+        }
+        guard index != selectedProgressionBlockIndex else {
+            // Re-assert the chord so switching harmony sources with the stick already
+            // parked in a sector cannot leave the sounding chord out of sync with it.
+            var same = activeProgression.blocks[index].chord
+            same.inversion = voicingInversion
+            if currentChord != same {
+                currentChord = same
+            }
+            return index
+        }
+
+        let old = currentChord ?? activeProgression.blocks[selectedProgressionBlockIndex].chord
+        selectedProgressionBlockIndex = index
+        var new = activeProgression.blocks[index].chord
+        new.inversion = voicingInversion
+        currentChord = new
+        recordChordHistory(new)
+        retargetHeldChordTones()
+        controllerManager.playTechniqueHaptic(.chordChange)
+        multiJamManager.updateSharedHarmony(key: currentKey, scale: currentScale, chord: new)
+        _ = smartSoloEngine.handleChordChange(oldChord: old, newChord: new, context: musicalContext())
+        return index
     }
 
     // MARK: - Workspace-Specific Controller Actions
