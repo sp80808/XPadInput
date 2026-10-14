@@ -4455,6 +4455,121 @@ final class TestRunner {
             }
         }
 
+        // MARK: - Suite: Generated Basslines
+        suite("XPadSequencer: Bassline Generator & Clip Insertion") {
+            func popProgression() -> Progression {
+                let blocks: [ChordBlock] = [
+                    ChordBlock(chord: Chord(root: .c, quality: .major), durationBeats: 4, romanNumeral: "I"),
+                    ChordBlock(chord: Chord(root: .a, quality: .minor), durationBeats: 4, romanNumeral: "vi"),
+                    ChordBlock(chord: Chord(root: .f, quality: .major), durationBeats: 4, romanNumeral: "IV"),
+                    ChordBlock(chord: Chord(root: .g, quality: .dominant7), durationBeats: 4, romanNumeral: "V7")
+                ]
+                return Progression(name: "Pop Loop", root: .c, scale: .major, blocks: blocks + blocks)
+            }
+
+            test("Bass register follows MIDI conventions") {
+                assertEqual(BasslineGenerator.note(for: .c, octave: 4), 60)
+                assertEqual(BasslineGenerator.note(for: .c, octave: 2), 36)
+                assertEqual(BasslineGenerator.note(for: .a, octave: 4), 69)
+                assertEqual(BasslineGenerator.note(for: .c, octave: 8), 96, "the octave itself clamps")
+                assertEqual(BasslineGenerator.note(for: .b, octave: 7), 107)
+            }
+
+            test("Every feel produces an in-range, sorted line below middle C") {
+                for feel in BasslineGenerator.Feel.allCases {
+                    let events = BasslineGenerator.generate(progression: popProgression(), feel: feel, seed: 3)
+                    assertTrue(!events.isEmpty, feel.rawValue)
+                    assertEqual(events, events.sorted { $0.startTick < $1.startTick }, feel.rawValue)
+                    for event in events {
+                        assertTrue(event.note >= 36 && event.note <= 59, "\(feel.rawValue) went out of bass range")
+                        assertTrue(event.velocity > 0 && event.velocity <= 127)
+                        assertTrue(event.durationTicks > 0)
+                        assertTrue(event.startTick < SequencerGrid.ticksPerBar * 8)
+                    }
+                }
+            }
+
+            test("Downbeats land on a chord tone for every feel") {
+                let progression = popProgression()
+                for feel in BasslineGenerator.Feel.allCases {
+                    let events = BasslineGenerator.generate(progression: progression, feel: feel, seed: 1)
+                    for (index, block) in progression.blocks.enumerated() {
+                        let downbeat = UInt64(index) * SequencerGrid.ticksPerBar
+                        guard let hit = events.first(where: { $0.startTick == downbeat }) else {
+                            assertTrue(false, "\(feel.rawValue) missed the downbeat of block \(index)")
+                            continue
+                        }
+                        let root = BasslineGenerator.note(for: block.chord.root, octave: 2)
+                        let chordTones = block.chord.quality.intervals.map { UInt8(Int(root) + $0) }
+                        assertTrue(chordTones.contains(hit.note), "\(feel.rawValue) played a non-chord tone on a downbeat")
+                    }
+                }
+            }
+
+            test("Jazz walks in and neo-soul leans into the next chord") {
+                let progression = popProgression()
+                let lastBeat = SequencerGrid.ticksPerBar - SequencerGrid.ticksPerBeat
+                let walking = BasslineGenerator.generate(progression: progression, feel: .walking, seed: 5)
+                assertEqual(walking.first(where: { $0.startTick == lastBeat })?.note, BasslineGenerator.note(for: .a, octave: 2) - 1)
+
+                let lastEighth = SequencerGrid.ticksPerBar - SequencerGrid.ticksPerBeat / 2
+                let syncopated = BasslineGenerator.generate(progression: progression, feel: .syncopated, seed: 2)
+                assertEqual(syncopated.first(where: { $0.startTick == lastEighth })?.note, BasslineGenerator.note(for: .a, octave: 2))
+            }
+
+            test("House pumps root and octave eighths, drone holds the root") {
+                let progression = popProgression()
+                let pulse = BasslineGenerator.generate(progression: progression, feel: .octavePulse, seed: 4)
+                let firstBar = pulse.filter { $0.startTick < SequencerGrid.ticksPerBar }
+                assertEqual(firstBar.count, 8)
+                let root = BasslineGenerator.note(for: .c, octave: 2)
+                assertEqual(firstBar.map(\.note), [root, root + 12, root, root + 12, root, root + 12, root, root + 12])
+
+                let drone = BasslineGenerator.generate(progression: progression, feel: .drone, seed: 6)
+                assertEqual(drone.count, progression.blocks.count, "one sustained root per chord")
+                assertTrue(drone.allSatisfy { $0.durationTicks > SequencerGrid.ticksPerBar / 2 })
+            }
+
+            test("Basslines are reproducible and silence an empty progression") {
+                assertEqual(
+                    BasslineGenerator.generate(progression: popProgression(), feel: .rootNotes, seed: 42),
+                    BasslineGenerator.generate(progression: popProgression(), feel: .rootNotes, seed: 42)
+                )
+                assertTrue(BasslineGenerator.generate(progression: Progression(name: "Empty"), feel: .walking).isEmpty)
+            }
+
+            test("Feel follows the style, and clips wrap the line") {
+                assertEqual(BasslineGenerator.feel(forStyleName: "Jazz Standard"), .walking)
+                assertEqual(BasslineGenerator.feel(forStyleName: "Neo-Soul"), .syncopated)
+                assertEqual(BasslineGenerator.feel(forStyleName: "Deep House"), .octavePulse)
+                assertEqual(BasslineGenerator.feel(forStyleName: "Cinematic Trailer"), .drone)
+                assertEqual(BasslineGenerator.feel(forStyleName: "Pop / Royal Road"), .rootNotes)
+
+                let clip = BasslineGenerator.clip(progression: popProgression(), feel: .walking, seed: 1)
+                assertEqual(clip.startTick, 0)
+                assertEqual(clip.durationTicks, SequencerGrid.ticksPerBar * 8)
+                assertTrue(clip.name.hasPrefix("Bass"))
+                assertEqual(clip.notes.count, BasslineGenerator.generate(progression: popProgression(), feel: .walking, seed: 1).count)
+            }
+
+            test("AppState writes a bassline onto the bass track and keeps the loop audible") {
+                let appState = AppState()
+                appState.harmonicStyle = HarmonicStyleLibrary.deepHouse
+                appState.sequencer.insertProgressionClip(appState.activeProgression, targetTrack: .chords)
+
+                let clip = appState.sendBasslineToSequencer()
+                assertNotNil(clip)
+                assertTrue(appState.sequencer.populatedTracks.contains(.bass))
+                assertTrue(appState.sequencer.populatedTracks.contains(.chords), "inserting must not wipe other parts")
+
+                let scene = appState.sequencer.scenes[appState.sequencer.activeSceneIndex]
+                let bassTrack = scene.tracks.first { $0.type == .bass }
+                assertEqual(bassTrack?.clips.count, 1)
+                assertTrue((bassTrack?.clips.first?.notes.isEmpty ?? true) == false)
+                assertTrue(scene.loopLengthTicks >= SequencerGrid.ticksPerBar)
+            }
+        }
+
         // MARK: - Final Summary
         print("\n==================================================")
         print("📊 Test Execution Summary")

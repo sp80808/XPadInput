@@ -1,7 +1,11 @@
 import Foundation
 import XPadCore
 
-public struct RecordedNoteEvent: Codable, Sendable {
+/// A note captured by the sequencer or the live recorder.
+///
+/// `Equatable`/`Hashable` so clips and generated parts can be compared and
+/// de-duplicated — handy for tests and for change detection in the UI.
+public struct RecordedNoteEvent: Codable, Sendable, Equatable, Hashable {
     public let note: UInt8
     public let velocity: UInt8
     public let startTick: UInt64

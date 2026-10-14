@@ -71,7 +71,7 @@ This document outlines the multi-phase vision, milestones, and technical traject
 ## Phase 2: DAW Plugin & Inter-App Audio Routing (Q3 2026)
 - [x] **AUv3 / VST3 Plugin Targets**: Package XPI as an Audio Unit v3 MIDI FX and Instrument plugin for direct hosting inside Logic Pro, Ableton Live, Bitwig Studio, Reaper, and Cubase.
 - [x] **CoreAudio Virtual Audio Driver**: Provide a direct virtual loopback audio stream for zero-configuration system audio capture.
-- [ ] **Custom Scale & Microtuning Importer**: Support Scala (`.scl`) and MIDI Tuning Standard (MTS / MTS-ESP) for microtonal, just intonation, and non-Western harmonic wheels.
+- [ ] **Custom Scale & Microtuning Importer**: Support Scala (`.scl`) and MIDI Tuning Standard (MTS / MTS-ESP) for microtonal, just intonation, and non-Western harmonic wheels. *MTS outbound is implemented (`MIDITuningStandard`: bulk dump, single note change, both scale/octave forms) and `AppState` broadcasts the active temperament to every virtual port, including real-time retunes for dynamic temperaments; the Scala importer is still tracked separately.*
 - [ ] **Preset Cloud Synchronization & Community Exchange**: Sharing progression templates, custom chord wheels, and controller mapping profiles.
 
 ---
@@ -86,8 +86,9 @@ This document outlines the multi-phase vision, milestones, and technical traject
 ---
 
 ## Phase 4: AI Jam Co-Pilot & Generative Progression Explorer (Q1 2027)
-- [ ] **On-Device Neural Co-Pilot**: Local CoreML neural network analyzing real-time strumming and chord selections to generate dynamic counter-melodies, basslines, and drum fills.
-- [ ] **Generative Harmonic Morphing**: Continuous vector-space interpolation between distinct genre styles (e.g. morphing a Neo-Soul progression smoothly into Synthwave or Cinematic Trailer).
+- [x] **Rule-Based Jam Co-Pilot**: `JamCoPilot` reads player energy, sounding roles and progression age on every bar boundary and returns an explainable directive — drop a role out, build one in, play a `DrumFillGenerator` turn-around, open the arrangement up, or re-harmonise when the player has circled one progression. `Sequencer` gained the bar-boundary hook and role-level mute control it needs.
+- [ ] **On-Device Neural Co-Pilot**: Local CoreML neural network analyzing real-time strumming and chord selections to generate dynamic counter-melodies, basslines, and drum fills. The rule-based co-pilot above is the deterministic foundation it will replace.
+- [x] **Generative Harmonic Morphing**: Continuous vector-space interpolation between distinct genre styles — `HarmonicStyleDNA` carries ten researched dialects plus `blend(_:_:amount:)`, and `StyleMorphEngine` generates seeded, roman-numeral-labelled progressions and re-harmonises existing ones without changing their rhythm (`docs/guides/style-morphing.md`).
 - [x] **Voice-Led Lead Guitar Solo Mode**: Smart soloing engine on the right stick that automatically stays locked to chord tones and passing notes of the active chord block.
 
 ---

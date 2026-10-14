@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Style Morphing & Generative Harmony (`DeterministicRandom.swift`, `HarmonicStyle.swift`, `StyleMorphEngine.swift`)**:
+  - `HarmonicStyleDNA` measures a style on ten axes (degree emphasis, minor lean, extension richness, suspended colour, modal interchange, secondary dominants, tritone substitution, chromatic mediant shifts, harmonic rhythm, cadence strength) with `blend(_:_:amount:)` interpolating between two styles.
+  - `HarmonicStyleLibrary` ships ten researched dialects: Pop / Royal Road, Neo-Soul, Synthwave, Cinematic Trailer, Lo-Fi Hip Hop, Gospel Soul, Deep House, Ambient Modal, Jazz Standard, Liquid Drum & Bass.
+  - `StyleMorphEngine` generates seeded, roman-numeral-labelled progressions (degree walk → substitutions → extension colour) and re-harmonises an existing progression without touching its rhythm.
+  - `DeterministicRandom` (SplitMix64) makes every generative feature reproducible from a seed or a string.
+  - Harmony workspace gains a Style Morph card (from/to pickers, morph slider, bar length, Generate, Reharmonise).
+- **Jam Co-Pilot & Generated Drum Fills (`JamCoPilot.swift`, `DrumFillGenerator.swift`, `Sequencer.swift`, `AppState.swift`)**:
+  - `Sequencer` reports the bar it enters (`onBarBoundary`) and can mute by musical role (`setMuted(_:forType:)`, `isMuted(_:)`, `audibleTracks`, `populatedTracks`).
+  - `JamCoPilot` turns player energy, sounding roles and progression age into an explainable `CoPilotDirective` (hold, drop out, add layer, fill, lift, regenerate harmony). Decisions are seeded and reproducible.
+  - `DrumFillGenerator` writes turn-arounds that end before the downbeat (pickup, eighth-note run, or sixteenth run with ghost notes) and wraps them in a drums clip.
+  - Compose workspace gains a Co-Pilot toggle, a manual Fill button and a readout of the last decision.
+- **MIDI Tuning Standard output (`MIDITuningStandard.swift`, `AppState.swift`)**:
+  - Frequency-word encoding, bulk tuning dump (with checksum), bulk dump request, single note tuning change, and both scale/octave tuning forms, plus the shared channel mask.
+  - Switching temperament broadcasts a tuning table to every virtual port, and dynamic temperaments push real-time single-note retunes whenever the chord changes. The Tuning menu exposes a manual send.
+
+### Fixed
+- Generated progressions honour an explicit start degree: the opening chord is no longer re-coloured by the substitution layers, so "start on the IV" always sounds like the IV.
+- `HarmonicStyleLibrary.jazzStandard` degree weights were declared with a `)` instead of `]`, which broke the build.
+
+### Changed
+- The diagnostics workflow now also builds the test targets, so XCTest sources are type-checked in CI.
+
+---
+
 ## [0.0.05] - 2026-08-24
 
 ### Added

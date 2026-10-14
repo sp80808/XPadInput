@@ -102,6 +102,15 @@ public struct HarmonyWorkspaceView: View {
                                 }
                             }
                             .xButton(.primary, size: .small)
+
+                            // Write a matching bassline into the sequencer
+                            Button {
+                                appState.sendBasslineToSequencer()
+                            } label: {
+                                Label("Add Bassline", systemImage: "waveform.path")
+                            }
+                            .xButton(.secondary, size: .small)
+                            .help("Generate a bassline that follows this progression's chords.")
                         }
 
                         // Chord Blocks Row with Controller Focus

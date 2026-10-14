@@ -329,6 +329,26 @@ public final class Sequencer: ObservableObject {
         return clips
     }
 
+    /// Inserts a clip on the track carrying `type`, extending the scene loop so
+    /// the new material stays audible.
+    ///
+    /// Unlike `insertProgressionClip` this appends rather than replaces, so a
+    /// generated bassline or drum part can be layered onto existing chords.
+    @discardableResult
+    public func insertClip(_ clip: SequencerClip, on type: TrackType) -> SequencerClip? {
+        guard activeSceneIndex < scenes.count else { return nil }
+        guard let index = scenes[activeSceneIndex].tracks.firstIndex(where: { $0.type == type }) else { return nil }
+
+        scenes[activeSceneIndex].tracks[index].clips.append(clip)
+        let contentTicks = scenes[activeSceneIndex].contentLengthTicks
+        scenes[activeSceneIndex].lengthBars = max(
+            scenes[activeSceneIndex].lengthBars,
+            SequencerGrid.bars(forTicks: contentTicks)
+        )
+        transport.loopEndTick = scenes[activeSceneIndex].loopLengthTicks
+        return clip
+    }
+
     /// Clip label such as `I C` or `vi Am`, deriving the roman numeral when the
     /// block does not carry one.
     private func blockName(_ block: ChordBlock, in progression: Progression) -> String {

@@ -831,6 +831,27 @@ public final class AppState: @unchecked Sendable {
         }
     }
 
+    // MARK: - Generated Parts
+
+    /// Writes a bassline for the active progression onto the bass track.
+    ///
+    /// The feel follows the current style unless one is supplied, so a deep
+    /// house progression pumps octaves while a jazz standard walks.
+    @discardableResult
+    public func sendBasslineToSequencer(feel: BasslineGenerator.Feel? = nil) -> SequencerClip? {
+        let resolved = feel ?? BasslineGenerator.feel(forStyleName: harmonicStyle.name)
+        let clip = BasslineGenerator.clip(
+            progression: activeProgression,
+            feel: resolved,
+            octave: 2,
+            seed: styleMorphSeed &+ 11,
+            name: "Bass \(activeProgression.root.standardName) \(resolved.rawValue)"
+        )
+        guard let inserted = sequencer.insertClip(clip, on: .bass) else { return nil }
+        showToast("Bassline written (\(resolved.rawValue))")
+        return inserted
+    }
+
     /// Sends a real-time single-note retune for the notes of `chord`.
     ///
     /// Dynamic temperaments (just intonation, Hermode) follow the harmony, so

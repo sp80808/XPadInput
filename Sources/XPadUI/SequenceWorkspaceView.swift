@@ -121,6 +121,18 @@ public struct SequenceWorkspaceView: View {
                         }
                         .xButton(.primary, size: .small)
 
+                        // Insert a generated bassline for the active progression
+                        Button {
+                            appState.sendBasslineToSequencer()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "waveform.path")
+                                Text("Bassline")
+                            }
+                        }
+                        .xButton(.secondary, size: .small)
+                        .help("Write a bassline that follows the active progression, in a feel that suits the current style.")
+
                         // Jam Co-Pilot
                         Button {
                             appState.isCoPilotEnabled.toggle()
