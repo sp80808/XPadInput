@@ -96,7 +96,8 @@ final class BasslineGeneratorTests: XCTestCase {
     }
 
     func testDroneHoldsThroughShortBlocks() {
-        let events = BasslineGenerator.generate(progression: progression(), feel: .drone, seed: 6)
+        let progression = progression()
+        let events = BasslineGenerator.generate(progression: progression, feel: .drone, seed: 6)
         for (index, block) in progression.blocks.enumerated() {
             let start = UInt64(index) * SequencerGrid.ticksPerBar
             let hit = events.first { $0.startTick == start }

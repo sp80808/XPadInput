@@ -178,10 +178,11 @@ final class CoreMIDILoopbackTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(snapshot.1.count, 2)
         guard snapshot.1.count >= 2 else { return }
 
-        XCTAssertEqual(snapshot.1[0] >> 28, 0x4)
-        XCTAssertEqual((snapshot.1[0] >> 16) & 0xFF, (0x90 | channel))
-        XCTAssertEqual((snapshot.1[0] >> 8) & 0xFF, note)
-        XCTAssertEqual(snapshot.1[0] & 0xFF, UInt32(MIDI2UMPEncoder.scale7To16(velocity)))
+        let word = snapshot.1[0]
+        XCTAssertEqual(word >> 28, 0x4)
+        XCTAssertEqual((word >> 16) & 0xFF, UInt32(0x90 | channel))
+        XCTAssertEqual((word >> 8) & 0xFF, UInt32(note))
+        XCTAssertEqual(word & 0xFF, UInt32(MIDI2UMPEncoder.scale7To16(velocity)))
     }
 
     func testMIDI1VirtualSourceProtocolConversion() throws {
@@ -251,13 +252,14 @@ final class CoreMIDILoopbackTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(snapshot.1.count, 1)
         guard snapshot.1.count >= 1 else { return }
 
-        let statusByte = snapshot.1[0] & 0xFF
-        let ccController = (snapshot.1[0] >> 8) & 0xFF
-        let ccValue = (snapshot.1[0] >> 16) & 0xFF
+        let word = snapshot.1[0]
+        let statusByte = word & 0xFF
+        let ccController = (word >> 8) & 0xFF
+        let ccValue = (word >> 16) & 0xFF
 
-        XCTAssertEqual(statusByte, 0xB0 | channel)
-        XCTAssertEqual(ccController, controller)
-        XCTAssertEqual(ccValue, value)
+        XCTAssertEqual(statusByte, UInt32(0xB0 | channel))
+        XCTAssertEqual(ccController, UInt32(controller))
+        XCTAssertEqual(ccValue, UInt32(value))
     }
 
     private func source(named expectedName: String) -> MIDIEndpointRef? {
