@@ -661,6 +661,97 @@ public final class AppState: @unchecked Sendable {
         audioEngine.temperament = temperament
         audioEngine.scaleRoot = currentKey
         mpeManager.temperament = temperament
+        // Keep external gear in the same tuning as the built-in synth.
+        broadcastTuningTable()
+    }
+
+    // MARK: - MIDI Tuning Standard
+
+    /// Tuning program number used for XPI's outgoing MTS messages.
+    public static let tuningProgram: UInt8 = 1
+
+    /// Per-key deviation in cents from 12-TET for the active temperament.
+    ///
+    /// Indexed by MIDI note number so the result can be handed straight to the
+    /// MIDI Tuning Standard encoders.
+    public func tuningDeviationsCents() -> [Double] {
+        let root = currentKey
+        let chordRoot = currentChord?.root
+        let isMinorChord = currentChord?.quality.intervals.contains(3) ?? false
+        return (0...127).map { key in
+            currentTemperament.tuningOffsetInCents(
+                for: UInt8(key),
+                scaleRoot: root,
+                activeChordRoot: chordRoot,
+                isMinorChord: isMinorChord
+            )
+        }
+    }
+
+    /// Is the active temperament anything other than plain 12-TET?
+    public var hasMicrotonalTuning: Bool {
+        currentTemperament != .equalTemperament
+    }
+
+    /// Sends the active temperament to every virtual port using the MIDI Tuning Standard.
+    ///
+    /// MTS hands the destination's oscillators a tuning table, so hardware and
+    /// third-party soft synths track XPI's temperament — including non-octave
+    /// scales that a per-note pitch bend cannot express.
+    @discardableResult
+    public func broadcastTuningTable(name: String? = nil, program: UInt8 = AppState.tuningProgram) -> Int {
+        let deviations = tuningDeviationsCents()
+        let bulk = MIDITuningStandard.bulkDump(
+            name: name ?? currentTemperament.rawValue,
+            deviationsCents: deviations,
+            program: program
+        )
+        let scaleOctave = MIDITuningStandard.scaleOctaveTuning2Byte(
+            deviationsCents: midiTuningDegreeDeviations(from: deviations)
+        )
+
+        var sent = 0
+        for port in VirtualPort.allCases {
+            midiEngine.sendSysEx(bulk, to: port)
+            midiEngine.sendSysEx(scaleOctave, to: port)
+            sent += 2
+        }
+        return sent
+    }
+
+    /// The twelve scale-degree deviations, in the conventional C-major order.
+    private func midiTuningDegreeDeviations(from deviations: [Double]) -> [Double] {
+        (0..<12).map { degree in
+            let key = (Int(currentKey.rawValue) + degree) % 12
+            return key < deviations.count ? deviations[key] : 0
+        }
+    }
+
+    /// Sends a real-time single-note retune for the notes of `chord`.
+    ///
+    /// Dynamic temperaments (just intonation, Hermode) follow the harmony, so
+    /// this keeps an external instrument's sustained notes locked to the chord.
+    @discardableResult
+    public func retuneExternalNotes(for chord: Chord) -> Bool {
+        guard currentTemperament.isDynamic else { return false }
+        let isMinorChord = chord.quality.intervals.contains(3)
+        let deviations = (0...127).map { key in
+            currentTemperament.tuningOffsetInCents(
+                for: UInt8(key),
+                scaleRoot: currentKey,
+                activeChordRoot: chord.root,
+                isMinorChord: isMinorChord
+            )
+        }
+        let message = MIDITuningStandard.singleNoteTuningChange(
+            deviationsCents: deviations,
+            program: AppState.tuningProgram
+        )
+        guard !message.isEmpty else { return false }
+        for port in VirtualPort.allCases {
+            midiEngine.sendSysEx(message, to: port)
+        }
+        return true
     }
 
     public func setInstrument(_ profile: InstrumentProfile) {
@@ -1356,6 +1447,7 @@ public final class AppState: @unchecked Sendable {
             currentChord = new
             recordChordHistory(new)
             retargetHeldChordTones()
+            retuneExternalNotes(for: new)
             controllerManager.playTechniqueHaptic(.chordChange)
             multiJamManager.updateSharedHarmony(key: currentKey, scale: currentScale, chord: new)
             _ = smartSoloEngine.handleChordChange(oldChord: old, newChord: new, context: musicalContext())
@@ -1403,6 +1495,7 @@ public final class AppState: @unchecked Sendable {
         currentChord = new
         recordChordHistory(new)
         retargetHeldChordTones()
+        retuneExternalNotes(for: new)
         controllerManager.playTechniqueHaptic(.chordChange)
         multiJamManager.updateSharedHarmony(key: currentKey, scale: currentScale, chord: new)
         _ = smartSoloEngine.handleChordChange(oldChord: old, newChord: new, context: musicalContext())
@@ -1414,6 +1507,7 @@ public final class AppState: @unchecked Sendable {
     public func auditionChord(_ chord: Chord, duration: Double = 1.0) {
         let notes = chord.voicedNotes()
         let midiNotes = notes.map(\.midiNumber)
+        retuneExternalNotes(for: chord)
         for note in midiNotes {
             audioEngine.noteOn(note: note, velocity: 100)
         }

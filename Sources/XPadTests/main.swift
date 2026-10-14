@@ -4107,6 +4107,173 @@ final class TestRunner {
             }
         }
 
+        // MARK: - Suite: MIDI Tuning Standard
+        suite("XPadCore: MIDI Tuning Standard (MTS)") {
+            func decodedCents(_ word: ArraySlice<UInt8>) -> Double {
+                let bytes = Array(word)
+                let semitone = Double(bytes[0]) * 100
+                let fraction = Double(Int(bytes[1]) << 7 | Int(bytes[2])) / MIDITuningStandard.fractionStepsPerSemitone * 100
+                return semitone + fraction
+            }
+
+            test("Whole semitones encode as their own key number") {
+                assertEqual(MIDITuningStandard.frequencyData(forMIDINote: 60, deviationCents: 0), [60, 0, 0])
+                assertEqual(MIDITuningStandard.frequencyData(forMIDINote: 0, deviationCents: 0), [0, 0, 0])
+                // +50 cents is half a semitone: 8192/16384.
+                assertEqual(MIDITuningStandard.frequencyData(forMIDINote: 69, deviationCents: 50), [69, 64, 0])
+                // -25 cents stays inside the semitone below.
+                assertEqual(MIDITuningStandard.frequencyData(forMIDINote: 60, deviationCents: -25), [59, 96, 0])
+            }
+
+            test("Fraction carries into the next semitone and clamps at the ends") {
+                assertEqual(MIDITuningStandard.frequencyData(forMIDINote: 60, deviationCents: 99.999), [61, 0, 0])
+                assertEqual(MIDITuningStandard.frequencyData(forMIDINote: 0, deviationCents: -50), [0, 0, 0])
+                assertEqual(MIDITuningStandard.frequencyData(centsAboveNoteZero: 99_999), [127, 0, 0])
+                assertEqual(MIDITuningStandard.frequencyData(centsAboveNoteZero: .nan), MIDITuningStandard.noChange)
+            }
+
+            test("Frequency words are always legal except for the reserved no-change word") {
+                for cents in stride(from: -200.0, through: 13_000.0, by: 7.3) {
+                    assertTrue(
+                        MIDITuningStandard.frequencyData(centsAboveNoteZero: cents) != MIDITuningStandard.noChange,
+                        "\(cents) cents produced the reserved word"
+                    )
+                }
+            }
+
+            test("Encode and decode agree within half a fraction step") {
+                var rng = DeterministicRandom(seed: "mts-roundtrip")
+                for _ in 0..<128 {
+                    let note = UInt8(rng.index(count: 128))
+                    let deviation = rng.nextDouble(in: -99.0, 99.0)
+                    let word = MIDITuningStandard.frequencyData(forMIDINote: note, deviationCents: deviation)
+                    let expected = Double(note) * 100 + deviation
+                    assertTrue(
+                        abs(decodedCents(word[0...2]) - expected) <= MIDITuningStandard.centsPerFractionStep,
+                        "note \(note) deviation \(deviation) round-tripped to \(decodedCents(word[0...2]))"
+                    )
+                }
+            }
+
+            test("Tuning names are exactly sixteen seven-bit characters") {
+                assertEqual(MIDITuningStandard.nameBytes("XPI").count, 16)
+                assertEqual(Array(MIDITuningStandard.nameBytes("XPI").prefix(3)), Array("XPI".utf8))
+                assertEqual(MIDITuningStandard.nameBytes("XPI").last, 0x20)
+                assertEqual(MIDITuningStandard.nameBytes("0123456789ABCDEFGHIJ").count, 16)
+                assertEqual(MIDITuningStandard.nameBytes("é")[0], 0x3F)
+            }
+
+            test("Channel masks address the documented channels") {
+                assertEqual(MIDITuningChannelMask.all.channels.count, 16)
+                assertEqual(MIDITuningChannelMask.single(3).channels, [3])
+                assertEqual(MIDITuningChannelMask(channels: [1, 7, 8, 14, 15, 16]).channels, [1, 7, 8, 14, 15, 16])
+                assertEqual(MIDITuningChannelMask.single(1).bytes, [0, 0, 1])
+                assertEqual(MIDITuningChannelMask.single(16).bytes, [2, 0, 0])
+            }
+
+            test("Bulk dump frames 128 notes with a checksum") {
+                var deviations = [Double](repeating: 0, count: 128)
+                deviations[61] = -13.7
+                let message = MIDITuningStandard.bulkDump(name: "JI 5-limit", deviationsCents: deviations, program: 3)
+
+                assertEqual(message.count, 408)
+                assertEqual(Array(message.prefix(6)), [0xF0, 0x7E, 0x7F, 0x08, 0x01, 3])
+                assertEqual(Array(message[6..<22]).count, 16)
+                assertEqual(message.last, 0xF7)
+
+                let body = Array(message[1..<(message.count - 2)])
+                assertEqual(message[message.count - 2], body.reduce(UInt8(0)) { $0 ^ $1 })
+
+                let first = 22
+                assertEqual(Array(message[first..<(first + 3)]), [0, 0, 0])
+                assertEqual(Array(message[(first + 3 * 61)..<(first + 3 * 61 + 3)]), [60, 110, 59])
+                assertTrue(message.allSatisfy { $0 < 0x80 })
+            }
+
+            test("Bulk dump tolerates a short deviation table") {
+                let message = MIDITuningStandard.bulkDump(name: "Short", deviationsCents: [0, 10])
+                assertEqual(message.count, 408)
+                assertEqual(Array(message.prefix(5)), [0xF0, 0x7E, 0x7F, 0x08, 0x01])
+            }
+
+            test("Bulk dump request matches the specification example") {
+                assertEqual(
+                    MIDITuningStandard.bulkDumpRequest(program: 16, deviceID: 1),
+                    [0xF0, 0x7E, 0x01, 0x08, 0x00, 0x10, 0xF7]
+                )
+            }
+
+            test("Single note tuning changes skip unchanged notes") {
+                var deviations = [Double](repeating: 0, count: 128)
+                deviations[60] = -13.686
+                deviations[64] = 2.0
+                let message = MIDITuningStandard.singleNoteTuningChange(deviationsCents: deviations)
+
+                assertEqual(Array(message.prefix(7)), [0xF0, 0x7F, 0x7F, 0x08, 0x02, 0x00, 2])
+                assertEqual(message.count, 7 + 2 * 4 + 1)
+                assertEqual(message[7], 60)
+                assertEqual(message[11], 64)
+                assertEqual(message.last, 0xF7)
+            }
+
+            test("Equal temperament sends no single note changes") {
+                let message = MIDITuningStandard.singleNoteTuningChange(
+                    deviationsCents: [Double](repeating: 0, count: 128)
+                )
+                assertTrue(message.isEmpty)
+            }
+
+            test("Scale/octave tuning centres on equal temperament") {
+                let flat = [Double](repeating: 0, count: 12)
+                let oneByte = MIDITuningStandard.scaleOctaveTuning1Byte(deviationsCents: flat)
+                assertEqual(Array(oneByte.prefix(8)), [0xF0, 0x7F, 0x7F, 0x08, 0x08, 0x03, 0x7F, 0x7F])
+                assertEqual(Array(oneByte[8..<20]), [UInt8](repeating: 0x40, count: 12))
+                assertEqual(oneByte.count, 21)
+
+                let twoByte = MIDITuningStandard.scaleOctaveTuning2Byte(deviationsCents: flat)
+                assertEqual(Array(twoByte.prefix(5)), [0xF0, 0x7F, 0x7F, 0x08, 0x09])
+                assertEqual(Array(twoByte[8..<10]), [0x40, 0x00])
+                assertEqual(twoByte.count, 33)
+
+                for message in [oneByte, twoByte] {
+                    assertEqual(message.first, 0xF0)
+                    assertEqual(message.last, 0xF7)
+                    assertTrue(message.dropFirst().dropLast().allSatisfy { $0 < 0x80 })
+                }
+            }
+
+            test("AppState broadcasts the active temperament to MIDI gear") {
+                let appState = AppState()
+                appState.setKey(.c)
+                appState.setTemperament(.equalTemperament)
+                assertFalse(appState.hasMicrotonalTuning)
+                assertTrue(appState.tuningDeviationsCents().allSatisfy { $0 == 0 })
+                assertEqual(appState.tuningDeviationsCents().count, 128)
+
+                appState.setTemperament(.pythagorean)
+                assertTrue(appState.hasMicrotonalTuning)
+                let deviations = appState.tuningDeviationsCents()
+                assertEqual(deviations[60], 0.0)
+                assertTrue(abs(deviations[67] - 1.95) < 0.0001, "pure fifth is +1.95 cents")
+
+                appState.setTemperament(.quarterCommaMeantone)
+                let meantone = appState.tuningDeviationsCents()
+                assertTrue(abs(meantone[64] + 14.0) < 0.0001, "meantone major third is -14 cents")
+
+                assertTrue(appState.broadcastTuningTable() > 0)
+            }
+
+            test("Dynamic temperaments retune external notes to the chord root") {
+                let appState = AppState()
+                appState.setKey(.c)
+                appState.setTemperament(.equalTemperament)
+                assertFalse(appState.retuneExternalNotes(for: Chord(root: .c, quality: .major)))
+
+                appState.setTemperament(.dynamicJustIntonation)
+                assertTrue(appState.retuneExternalNotes(for: Chord(root: .c, quality: .major)))
+            }
+        }
+
         // MARK: - Final Summary
         print("\n==================================================")
         print("📊 Test Execution Summary")

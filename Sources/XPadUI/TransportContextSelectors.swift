@@ -61,6 +61,14 @@ struct ScaleSelectorView: View {
                         }
                     }
                 }
+                Divider()
+                Button {
+                    appState.broadcastTuningTable()
+                    appState.showToast("Sent \(appState.currentTemperament.rawValue) to MIDI gear (MTS)")
+                } label: {
+                    Label("Send Tuning to MIDI", systemImage: "tuningfork")
+                }
+                .help("Broadcasts the active temperament to connected gear with the MIDI Tuning Standard.")
             }
         } label: {
             Text(appState.currentScale.shortDisplayName)
