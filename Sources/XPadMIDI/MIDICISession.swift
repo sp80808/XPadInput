@@ -314,7 +314,7 @@ public final class MIDICISession: @unchecked Sendable {
         let jsonPayload: String
         switch resourceName {
         case "DeviceInfo":
-            jsonPayload = "{\"manufacturer\":\"XPadInput\",\"model\":\"XPI Workstation\",\"version\":\"0.0.02\",\"midiVersion\":\"2.0\",\"mpeSupported\":true}"
+            jsonPayload = "{\"manufacturer\":\"XPadInput\",\"model\":\"XPI Workstation\",\"version\":\"\(XPadVersion.current)\",\"midiVersion\":\"2.0\",\"mpeSupported\":true}"
         case "MPEConfiguration":
             jsonPayload = "{\"masterChannel\":0,\"memberChannels\":\"1-15\",\"pitchBendRange\":48,\"perNotePitchBend\":true,\"perNotePressure\":true,\"perNoteTimbre\":true}"
         default:

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Scala (`.scl`) Microtuning Importer (`ScalaTuning.swift`)**:
+  - `ScalaTuning.parse(_:)` reads Scala scale files (cents and `n/d` ratios, comments, CRLF, non-octave periods) and reports typed `ScalaTuningError`s for malformed input.
+  - `centsOffset(forMIDINote:rootNote:)` / `semitoneOffset(forMIDINote:rootNote:)` return per-note offsets from 12-TET, in the same form `MicrotonalTemperament` feeds the synth and MPE pitch bend. Wiring into the temperament selector is not done yet.
+- `XPadVersion.current` as the single app-version constant.
+
+### Fixed
+- Control scheme archives and MIDI-CI DeviceInfo reported stale versions (`0.0.04` / `0.0.02`); both now use `XPadVersion.current`.
+- CI packaged `0.0.02` artifacts; it now packages `0.0.05`.
+
+### Removed
+- Stray `scratch.swift` from the repository root.
+
+---
+
 ## [0.0.05] - 2026-08-24
 
 ### Added
