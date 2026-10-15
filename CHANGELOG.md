@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Scala (`.scl`) Microtuning Importer (`ScalaTuning.swift`)**:
   - `ScalaTuning.parse(_:)` reads Scala scale files (cents and `n/d` ratios, comments, CRLF, non-octave periods) and reports typed `ScalaTuningError`s for malformed input.
   - `centsOffset(forMIDINote:rootNote:)` / `semitoneOffset(forMIDINote:rootNote:)` return per-note offsets from 12-TET, in the same form `MicrotonalTemperament` feeds the synth and MPE pitch bend. Wiring into the temperament selector is not done yet.
+- **Scala keyboard mapping (`.kbm`) (`ScalaKeyboardMap.swift`)**: `ScalaKeyboardMap.parse(_:)` reads the 7-field header and per-key degree entries (including `x` for unmapped keys), with typed `ScalaKeyboardMapError`s. `ScalaTuning.centsOffset(forMIDINote:map:)` lays a scale out on the keyboard and anchors it at the map's reference frequency; unmapped and out-of-range keys return `nil` so callers can keep 12-TET.
 - `XPadVersion.current` as the single app-version constant.
 
 ### Fixed
