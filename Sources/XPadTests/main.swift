@@ -3844,7 +3844,8 @@ final class TestRunner {
                 assertTrue(cNotes.contains(52), "E3 note missing")
                 assertTrue(cNotes.contains(55), "G3 note missing")
 
-                assertEqual(scene.loopLengthTicks, 7680)
+                assertEqual(scene.lengthBars, 2)
+                assertEqual(UInt64(scene.lengthBars) * 4 * 960, 7680)
             }
 
             test("Sequencer real-time tick dispatches noteOn and noteOff callbacks") {
