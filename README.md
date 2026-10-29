@@ -14,6 +14,16 @@
 
 ---
 
+## 💜 Support XPI development (optional)
+
+XPI remains **free, MIT-licensed, and fully usable without payment**. If the native gamepad-to-MIDI/MPE app is useful to you, you can make an optional **£10 one-time contribution** to support its continued development.
+
+**[Become an XPI Early Supporter — £10](https://buy.stripe.com/3cI9ASdq8eAkfgtbMr3ZK0d)**
+
+This is a voluntary supporter contribution, **not** a paid software licence or a promise of new features, support, or early-access privileges. The same alpha downloads and source remain available to everyone.
+
+---
+
 ## ⬇️ Download Alpha Releases
 
 Pre-built native macOS universal releases are packaged directly via GitHub Actions CI.
