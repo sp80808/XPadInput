@@ -87,10 +87,14 @@ public struct ScalaKeyboardMap: Equatable, Sendable {
             patternRepeat -= 1
         }
         guard let entry = entries[index] else { return nil }
-        return patternRepeat * formalOctaveDegree + entry
+        // Wrapping arithmetic: hand-built maps with extreme values must not trap.
+        return patternRepeat &* formalOctaveDegree &+ entry
     }
 
     // MARK: - Parsing
+
+    /// Sanity bound on a mapped scale degree in a file; real maps stay in the low hundreds.
+    private static let degreeLimit = -100_000...100_000
 
     private static let fieldNames = [
         "map size", "first note", "last note", "middle note",
@@ -154,7 +158,7 @@ public struct ScalaKeyboardMap: Equatable, Sendable {
         for token in entryTokens.prefix(mapSize) {
             if token == "x" || token == "X" {
                 entries.append(nil)
-            } else if let degree = Int(token) {
+            } else if let degree = Int(token), Self.degreeLimit.contains(degree) {
                 entries.append(degree)
             } else {
                 throw ScalaKeyboardMapError.invalidField(name: "mapping entry", text: token)
@@ -193,7 +197,8 @@ extension ScalaTuning {
         let centsAboveReference = cents(atStep: degree) - cents(atStep: referenceDegree)
         let frequency = map.referenceFrequency * pow(2.0, centsAboveReference / 1200.0)
         let equalTemperamentFrequency = 440.0 * pow(2.0, (Double(note) - 69.0) / 12.0)
-        return 1200.0 * log2(frequency / equalTemperamentFrequency)
+        let offset = 1200.0 * log2(frequency / equalTemperamentFrequency)
+        return offset.isFinite ? offset : nil
     }
 
     /// Offset in fractional semitones; see ``centsOffset(forMIDINote:map:)``.

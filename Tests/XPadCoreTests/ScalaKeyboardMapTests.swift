@@ -84,6 +84,14 @@ final class ScalaKeyboardMapTests: XCTestCase {
         XCTAssertNil(try ptolemaic().centsOffset(forMIDINote: 62, map: map))
     }
 
+    func testExtremeHandBuiltMapsDoNotTrap() throws {
+        let map = ScalaKeyboardMap(formalOctaveDegree: Int.max, entries: [Int.max])
+        _ = map.scaleDegree(forMIDINote: 127)
+        // An absurd degree gives a non-finite pitch, which is reported as "no offset".
+        let farAway = ScalaKeyboardMap(referenceNote: 60, entries: [0, 1_000_000_000])
+        XCTAssertNil(try ptolemaic().centsOffset(forMIDINote: 61, map: farAway))
+    }
+
     func testRejectsMalformedFiles() {
         XCTAssertThrowsError(try ScalaKeyboardMap.parse("0\n0\n127\n60")) {
             XCTAssertEqual($0 as? ScalaKeyboardMapError, .missingField("reference note"))
@@ -99,6 +107,9 @@ final class ScalaKeyboardMapTests: XCTestCase {
         }
         XCTAssertThrowsError(try ScalaKeyboardMap.parse("2\n0\n127\n60\n60\n261.6\n7\nx\n1")) {
             XCTAssertEqual($0 as? ScalaKeyboardMapError, .unmappedReferenceNote)
+        }
+        XCTAssertThrowsError(try ScalaKeyboardMap.parse("1\n0\n127\n60\n60\n261.6\n7\n9223372036854775807")) {
+            XCTAssertEqual($0 as? ScalaKeyboardMapError, .invalidField(name: "mapping entry", text: "9223372036854775807"))
         }
         XCTAssertThrowsError(try ScalaKeyboardMap.parse("1\n0\n127\n60\n60\n261.6\n0\n0")) {
             XCTAssertEqual($0 as? ScalaKeyboardMapError, .invalidField(name: "formal octave degree", text: "0"))
