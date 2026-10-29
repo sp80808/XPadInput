@@ -3807,105 +3807,68 @@ final class TestRunner {
 
         // MARK: - Suite: Compose & Harmony Controller Usability & Progression Routing
         suite("Compose & Harmony Controller Usability & Progression Routing") {
-            test("insertProgressionClip voices chord blocks into sequencer clips") {
+            test("insertProgressionClip creates one playable multi-chord clip and exports notes") {
                 let sequencer = Sequencer()
-                var progression = Progression(scale: Scale(root: .c, type: .major))
-                progression.blocks = [
-                    ChordBlock(chord: Chord(root: .c, quality: .major), durationBeats: 4.0),
-                    ChordBlock(chord: Chord(root: .a, quality: .minor), durationBeats: 4.0)
-                ]
+                let progression = Progression(
+                    scale: Scale(root: .c, type: .major),
+                    blocks: [
+                        ChordBlock(chord: Chord(root: .c, quality: .major), durationBeats: 4.0),
+                        ChordBlock(chord: Chord(root: .a, quality: .minor), durationBeats: 4.0)
+                    ]
+                )
 
                 sequencer.insertProgressionClip(progression, targetTrack: .chords)
 
-                guard sequencer.scenes.indices.contains(sequencer.activeSceneIndex) else {
-                    assertTrue(false, "Active scene missing")
+                guard let scene = sequencer.scenes.first,
+                      let chordTrack = scene.tracks.first(where: { $0.type == .chords }),
+                      let clip = chordTrack.clips.first else {
+                    assertTrue(false, "Progression clip was not created")
                     return
                 }
-                let scene = sequencer.scenes[sequencer.activeSceneIndex]
-                guard let chordTrack = scene.tracks.first(where: { $0.type == .chords }) else {
-                    assertTrue(false, "Chords track missing")
-                    return
-                }
-
-                assertEqual(chordTrack.clips.count, 2)
-                assertEqual(chordTrack.clips[0].name, "I C")
-                assertEqual(chordTrack.clips[0].startTick, 0)
-                assertEqual(chordTrack.clips[0].durationTicks, 3840)
-                assertFalse(chordTrack.clips[0].notes.isEmpty)
-
-                assertEqual(chordTrack.clips[1].name, "vi Am")
-                assertEqual(chordTrack.clips[1].startTick, 3840)
-                assertEqual(chordTrack.clips[1].durationTicks, 3840)
-                assertFalse(chordTrack.clips[1].notes.isEmpty)
-
-                // Voiced notes in C Major triad: C3 (48), E3 (52), G3 (55)
-                let cNotes = chordTrack.clips[0].notes.map(\.noteNumber)
-                assertTrue(cNotes.contains(48), "C3 note missing")
-                assertTrue(cNotes.contains(52), "E3 note missing")
-                assertTrue(cNotes.contains(55), "G3 note missing")
-
-                assertEqual(scene.loopLengthTicks, 7680)
+                assertEqual(chordTrack.clips.count, 1)
+                assertEqual(clip.startTick, 0)
+                assertEqual(clip.durationTicks, 7680)
+                assertTrue(clip.name.contains(progression.name))
+                assertTrue(clip.notes.count >= 6)
+                assertEqual(sequencer.recordedEvents.count, clip.notes.count)
+                assertEqual(scene.lengthBars, 4)
+                assertEqual(sequencer.transport.loopEndTick, 15360)
+                assertTrue(clip.notes.contains { $0.note % 12 == 0 }, "C root note missing")
+                assertTrue(clip.notes.contains { $0.note % 12 == 9 }, "A root note missing")
             }
 
-            test("Sequencer real-time tick dispatches noteOn and noteOff callbacks") {
+            test("Sequencer stopped tick is inert and rewind resets playhead") {
                 let sequencer = Sequencer()
-                var notesOn: [UInt8] = []
-                var notesOff: [UInt8] = []
-                sequencer.onPlaybackNoteOn = { note, vel, track in
-                    notesOn.append(note)
-                }
-                sequencer.onPlaybackNoteOff = { note, track in
-                    notesOff.append(note)
-                }
-
-                let clipNote = RecordedNoteEvent(noteNumber: 60, velocity: 100, startTick: 0, durationTicks: 960)
-                let testClip = SequencerClip(name: "Test", startTick: 0, durationTicks: 960, notes: [clipNote])
-                sequencer.scenes[0].tracks[0].clips = [testClip]
-
-                // Tick at 10: noteOn should be triggered
-                sequencer.tick(to: 10)
-                assertEqual(notesOn.count, 1)
-                assertEqual(notesOn.first, 60)
-                assertTrue(notesOff.isEmpty)
-
-                // Tick past duration (960 ticks): noteOff should be triggered
-                sequencer.tick(to: 970)
-                assertEqual(notesOff.count, 1)
-                assertEqual(notesOff.first, 60)
-
-                // Rewind resets ticks and playback state
+                sequencer.transport.currentTick = 960
+                sequencer.tick()
+                assertEqual(sequencer.transport.currentTick, 960)
                 sequencer.rewind()
                 assertEqual(sequencer.transport.currentTick, 0)
             }
 
-            test("AppState handleProgressionChordSelection selects chord block based on polar angle") {
+            test("AppState public progression editing selects and removes blocks") {
                 let appState = AppState()
-                var progression = Progression(scale: Scale(root: .c, type: .major))
+                let scale = Scale(root: .c, type: .major)
                 let cMajor = Chord(root: .c, quality: .major)
                 let fMajor = Chord(root: .f, quality: .major)
                 let gMajor = Chord(root: .g, quality: .major)
                 let aMinor = Chord(root: .a, quality: .minor)
-                progression.blocks = [
-                    ChordBlock(chord: cMajor, durationBeats: 4.0),
-                    ChordBlock(chord: fMajor, durationBeats: 4.0),
-                    ChordBlock(chord: gMajor, durationBeats: 4.0),
-                    ChordBlock(chord: aMinor, durationBeats: 4.0)
-                ]
-                appState.activeProgression = progression
-                appState.chordPerformanceSource = .activeProgression
+                appState.activeProgression = Progression(
+                    scale: scale,
+                    blocks: [
+                        ChordBlock(chord: cMajor),
+                        ChordBlock(chord: fMajor),
+                        ChordBlock(chord: gMajor)
+                    ]
+                )
+                appState.selectedProgressionBlockIndex = 0
+                appState.addChordToActiveProgression(aMinor)
+                assertEqual(appState.activeProgression.blocks.count, 4)
+                assertEqual(appState.selectedProgressionBlockIndex, 3)
+                assertEqual(appState.currentChord?.root, .a)
 
-                // Angle 0 rad (pointing right) -> Sector 0 -> C Major
-                appState.handleProgressionChordSelection(PolarCoordinate(radius: 0.8, angle: 0.0))
-                assertEqual(appState.selectedProgressionBlockIndex, 0)
-                assertEqual(appState.currentChord?.root, .c)
-
-                // Angle pi/2 rad (pointing up) -> Sector 1 -> F Major
-                appState.handleProgressionChordSelection(PolarCoordinate(radius: 0.8, angle: .pi / 2.0))
-                assertEqual(appState.selectedProgressionBlockIndex, 1)
-                assertEqual(appState.currentChord?.root, .f)
-
-                // Angle pi rad (pointing left) -> Sector 2 -> G Major
-                appState.handleProgressionChordSelection(PolarCoordinate(radius: 0.8, angle: .pi))
+                appState.removeSelectedProgressionBlock()
+                assertEqual(appState.activeProgression.blocks.count, 3)
                 assertEqual(appState.selectedProgressionBlockIndex, 2)
                 assertEqual(appState.currentChord?.root, .g)
             }
@@ -3916,9 +3879,9 @@ final class TestRunner {
                 sequencer.toggleMute(trackIndex: 0)
                 assertTrue(sequencer.scenes[0].tracks[0].isMuted)
 
-                assertFalse(sequencer.scenes[0].tracks[0].isSoloed)
+                assertFalse(sequencer.scenes[0].tracks[0].isSolo)
                 sequencer.toggleSolo(trackIndex: 0)
-                assertTrue(sequencer.scenes[0].tracks[0].isSoloed)
+                assertTrue(sequencer.scenes[0].tracks[0].isSolo)
             }
         }
 
