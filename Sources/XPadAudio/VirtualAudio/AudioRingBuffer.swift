@@ -1,7 +1,8 @@
 import Foundation
 
-/// A lock-free, single-producer single-consumer circular audio ring buffer for multi-channel 32-bit float audio.
-/// Designed specifically for real-time DSP and CoreAudio virtual loopback streaming with zero heap allocation on the audio thread.
+/// A synchronised, frame-oriented circular audio ring buffer for multi-channel 32-bit float audio.
+/// Uses NSLock (not lock-free); issue #77 tracks a real-time-safe replacement.
+/// Data copying does not allocate heap memory.
 public final class AudioRingBuffer: @unchecked Sendable {
     public let channels: Int
     public let capacityFrames: Int
@@ -76,34 +77,6 @@ public final class AudioRingBuffer: @unchecked Sendable {
         return framesToWrite
     }
 
-    /// Writes single-channel audio frames to the ring buffer.
-    @discardableResult
-    public func write(from source: UnsafePointer<Float>, frameCount: Int, channelIndex: Int = 0) -> Int {
-        guard frameCount > 0, channelIndex >= 0, channelIndex < channels else { return 0 }
-        
-        lock.lock()
-        let available = capacityFrames - (writeHead >= readHead ? (writeHead - readHead) : (capacityFrames + writeHead - readHead)) - 1
-        let framesToWrite = min(frameCount, available)
-        
-        if framesToWrite < frameCount {
-            overrunCount += (frameCount - framesToWrite)
-        }
-        
-        guard framesToWrite > 0 else {
-            lock.unlock()
-            return 0
-        }
-        
-        for f in 0..<framesToWrite {
-            let destIdx = ((writeHead + f) % capacityFrames) * channels + channelIndex
-            buffer[destIdx] = source[f]
-        }
-        
-        writeHead = (writeHead + framesToWrite) % capacityFrames
-        lock.unlock()
-        return framesToWrite
-    }
-    
     /// Writes interleaved multi-channel float audio frames to the ring buffer.
     @discardableResult
     public func writeInterleaved(from source: UnsafePointer<Float>, frameCount: Int) -> Int {
@@ -193,40 +166,47 @@ public final class AudioRingBuffer: @unchecked Sendable {
         return framesToRead
     }
     
-    /// Reads non-interleaved float frames for a single channel.
+    /// Reads one frame window into planar left and optional right buffers.
+    /// Both channels advance together, preserving frame alignment. Mono sources
+    /// are mirrored to right when supplied; for multichannel sources use
+    /// readInterleaved() to access channels beyond the first two.
+    /// Missing frames are zero padded. The caller owns destination capacity.
     @discardableResult
-    public func read(into destination: UnsafeMutablePointer<Float>, frameCount: Int, channelIndex: Int = 0) -> Int {
-        guard frameCount > 0, channelIndex >= 0, channelIndex < channels else { return 0 }
-        
+    public func readStereo(
+        left: UnsafeMutablePointer<Float>,
+        right: UnsafeMutablePointer<Float>?,
+        frameCount: Int
+    ) -> Int {
+        guard frameCount > 0 else { return 0 }
+
         lock.lock()
-        let available = writeHead >= readHead ? (writeHead - readHead) : (capacityFrames + writeHead - readHead)
+        defer { lock.unlock() }
+
+        let available = writeHead >= readHead
+            ? writeHead - readHead
+            : capacityFrames + writeHead - readHead
         let framesToRead = min(frameCount, available)
-        
         if framesToRead < frameCount {
-            underrunCount += (frameCount - framesToRead)
-            for f in framesToRead..<frameCount {
-                destination[f] = 0.0
+            underrunCount += frameCount - framesToRead
+        }
+
+        for frame in 0..<framesToRead {
+            let index = ((readHead + frame) % capacityFrames) * channels
+            let leftSample = buffer[index]
+            left[frame] = leftSample
+            if let right {
+                right[frame] = channels > 1 ? buffer[index + 1] : leftSample
             }
         }
-        
-        guard framesToRead > 0 else {
-            lock.unlock()
-            return 0
+        for frame in framesToRead..<frameCount {
+            left[frame] = 0
+            right?[frame] = 0
         }
-        
-        let startFrame = readHead
-        let endFrame = (startFrame + framesToRead) % capacityFrames
-        
-        for f in 0..<framesToRead {
-            let srcIdx = ((startFrame + f) % capacityFrames) * channels + channelIndex
-            destination[f] = buffer[srcIdx]
-        }
-        
-        readHead = endFrame
-        lock.unlock()
+
+        readHead = (readHead + framesToRead) % capacityFrames
         return framesToRead
     }
-    
+
     /// Resets buffer read and write pointers, clearing all stored audio.
     public func reset() {
         lock.lock()
@@ -234,7 +214,8 @@ public final class AudioRingBuffer: @unchecked Sendable {
         readHead = 0
         overrunCount = 0
         underrunCount = 0
-        buffer.initialize(repeating: 0.0, count: totalSamples)
+        // Overwrite already-initialised storage; do not initialise twice.
+        buffer.update(repeating: 0.0, count: totalSamples)
         lock.unlock()
     }
 }
