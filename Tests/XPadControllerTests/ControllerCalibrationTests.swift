@@ -85,7 +85,7 @@ final class ControllerCalibrationTests: XCTestCase {
         )
     }
 
-    func testCalibrationWizardFinishAveragesRestAndClampsBounds() {
+    func testCalibrationWizardFinishAveragesRestAndClampsBounds() throws {
         let wizard = CalibrationWizard()
         wizard.start()
         for _ in 0..<59 {
@@ -94,7 +94,7 @@ final class ControllerCalibrationTests: XCTestCase {
         wizard.feed(rawLeftX: 0.13, rawLeftY: 0.20, rawRightX: -0.10, rawRightY: 0.05)
         wizard.feed(rawLeftX: 0.3, rawLeftY: 0.4, rawRightX: 0.5, rawRightY: 1.2)
 
-        let calibration = wizard.finish()
+        let calibration = try XCTUnwrap(wizard.finish())
         XCTAssertEqual(calibration.leftStick.restCenterX, 0.1005, accuracy: 0.0001)
         XCTAssertEqual(calibration.leftStick.restCenterY, 0.20, accuracy: 0.0001)
         XCTAssertEqual(calibration.rightStick.restCenterX, -0.10, accuracy: 0.0001)
@@ -117,12 +117,52 @@ final class ControllerCalibrationTests: XCTestCase {
         wizard.feed(rawLeftX: 1, rawLeftY: 1, rawRightX: 1, rawRightY: 1)
         XCTAssertEqual(wizard.currentStep, .idle)
 
-        let calibration = wizard.finish()
-        XCTAssertEqual(wizard.currentStep, .completed)
+        XCTAssertNil(wizard.finish(), "Cancelled calibration must not persist")
+        XCTAssertEqual(wizard.currentStep, .idle)
         wizard.feed(rawLeftX: 0, rawLeftY: 0, rawRightX: 0, rawRightY: 0)
+        XCTAssertEqual(wizard.currentStep, .idle)
+    }
+
+    func testWizardRejectsPrematureFinishAndRetainsNeutralUnmeasuredStick() throws {
+        let wizard = CalibrationWizard()
+        XCTAssertFalse(wizard.canFinish)
+        XCTAssertNil(wizard.finish())
+        XCTAssertEqual(wizard.currentStep, .idle)
+
+        wizard.start()
+        XCTAssertNil(wizard.finish())
+        for _ in 0..<60 {
+            wizard.feed(rawLeftX: 0, rawLeftY: 0, rawRightX: 0, rawRightY: 0)
+        }
+        XCTAssertNil(wizard.finish(), "No range samples yet")
+        XCTAssertFalse(wizard.canFinish)
+        wizard.feed(rawLeftX: 0.1, rawLeftY: 0, rawRightX: 0, rawRightY: 0)
+        XCTAssertNil(wizard.finish(), "Insufficient reach must not complete calibration")
+        wizard.feed(rawLeftX: 0.95, rawLeftY: 0, rawRightX: 0, rawRightY: 0)
+        XCTAssertTrue(wizard.canFinish)
+        let calibration = try XCTUnwrap(wizard.finish())
+        XCTAssertEqual(calibration.leftStick.maxRadius, 0.95, accuracy: 0.001)
+        XCTAssertEqual(calibration.rightStick.maxRadius, 1.0, accuracy: 0.001)
         XCTAssertEqual(wizard.currentStep, .completed)
-        XCTAssertEqual(calibration.leftStick.maxRadius, 0.85)
-        XCTAssertEqual(calibration.rightStick.maxRadius, 0.85)
+        XCTAssertNil(wizard.finish(), "Completed sessions cannot save again")
+    }
+
+    func testNonFiniteCalibrationValuesAreRepaired() {
+        var corrupt = ControllerHardwareCalibration(
+            leftStick: StickCalibration(restCenterX: .infinity, driftRadius: .nan, maxRadius: .infinity),
+            rightStick: StickCalibration(sensitivityX: .infinity),
+            leftTrigger: TriggerCalibration(restMin: .nan, travelMax: .infinity),
+            rightTrigger: TriggerCalibration(sensitivity: .infinity)
+        )
+        XCTAssertFalse(corrupt.leftStick.isValid)
+        XCTAssertFalse(corrupt.leftTrigger.isValid)
+        corrupt.validateAndRepair()
+        XCTAssertTrue(corrupt.leftStick.isValid)
+        XCTAssertTrue(corrupt.rightStick.isValid)
+        XCTAssertTrue(corrupt.leftTrigger.isValid)
+        XCTAssertTrue(corrupt.rightTrigger.isValid)
+        XCTAssertEqual(corrupt.leftStick.maxRadius, 1.0)
+        XCTAssertEqual(corrupt.leftTrigger.travelMax, 1.0)
     }
 
     func testControllerHardwareCalibrationCodableRoundTrip() throws {

@@ -74,20 +74,20 @@ public struct StickCalibration: Codable, Sendable, Equatable {
     }
 
     public var isValid: Bool {
-        !restCenterX.isNaN && !restCenterY.isNaN &&
-        !driftRadius.isNaN && driftRadius >= 0.0 && driftRadius < 0.5 &&
-        !maxRadius.isNaN && maxRadius > driftRadius && maxRadius <= 2.0 &&
-        !sensitivityX.isNaN && sensitivityX > 0 &&
-        !sensitivityY.isNaN && sensitivityY > 0
+        restCenterX.isFinite && restCenterY.isFinite &&
+        driftRadius.isFinite && driftRadius >= 0.001 && driftRadius < 0.5 &&
+        maxRadius.isFinite && maxRadius > driftRadius && maxRadius <= 2.0 &&
+        sensitivityX.isFinite && sensitivityX > 0 &&
+        sensitivityY.isFinite && sensitivityY > 0
     }
 
     public mutating func validateAndRepair() {
-        if restCenterX.isNaN { restCenterX = 0.0 }
-        if restCenterY.isNaN { restCenterY = 0.0 }
-        if driftRadius.isNaN || driftRadius < 0.0 || driftRadius >= 0.5 { driftRadius = 0.04 }
-        if maxRadius.isNaN || maxRadius <= driftRadius || maxRadius > 2.0 { maxRadius = 1.0 }
-        if sensitivityX.isNaN || sensitivityX <= 0.0 { sensitivityX = 1.0 }
-        if sensitivityY.isNaN || sensitivityY <= 0.0 { sensitivityY = 1.0 }
+        if !restCenterX.isFinite { restCenterX = 0.0 }
+        if !restCenterY.isFinite { restCenterY = 0.0 }
+        if !driftRadius.isFinite || driftRadius < 0.001 || driftRadius >= 0.5 { driftRadius = 0.04 }
+        if !maxRadius.isFinite || maxRadius <= driftRadius || maxRadius > 2.0 { maxRadius = 1.0 }
+        if !sensitivityX.isFinite || sensitivityX <= 0.0 { sensitivityX = 1.0 }
+        if !sensitivityY.isFinite || sensitivityY <= 0.0 { sensitivityY = 1.0 }
     }
 }
 
@@ -111,15 +111,15 @@ public struct TriggerCalibration: Codable, Sendable, Equatable {
     }
 
     public var isValid: Bool {
-        !restMin.isNaN && restMin >= 0.0 && restMin < 0.8 &&
-        !travelMax.isNaN && travelMax > restMin && travelMax <= 1.5 &&
-        !sensitivity.isNaN && sensitivity > 0.0
+        restMin.isFinite && restMin >= 0.0 && restMin < 0.8 &&
+        travelMax.isFinite && travelMax > restMin && travelMax <= 1.5 &&
+        sensitivity.isFinite && sensitivity > 0.0
     }
 
     public mutating func validateAndRepair() {
-        if restMin.isNaN || restMin < 0.0 || restMin >= 0.8 { restMin = 0.0 }
-        if travelMax.isNaN || travelMax <= restMin || travelMax > 1.5 { travelMax = 1.0 }
-        if sensitivity.isNaN || sensitivity <= 0.0 { sensitivity = 1.0 }
+        if !restMin.isFinite || restMin < 0.0 || restMin >= 0.8 { restMin = 0.0 }
+        if !travelMax.isFinite || travelMax <= restMin || travelMax > 1.5 { travelMax = 1.0 }
+        if !sensitivity.isFinite || sensitivity <= 0.0 { sensitivity = 1.0 }
     }
 }
 
@@ -203,7 +203,17 @@ public final class CalibrationWizard: @unchecked Sendable {
         }
     }
 
-    public func finish() -> ControllerHardwareCalibration {
+    /// Only permit completion after rest sampling and at least one meaningful
+    /// stick excursion. Unmeasured sticks retain their neutral 1.0 reach.
+    public var canFinish: Bool {
+        guard case .measuringRange = currentStep else { return false }
+        return restLeftSamples.count >= 60 && restRightSamples.count >= 60 &&
+            (observedMaxLeftRadius > 0.4 || observedMaxRightRadius > 0.4)
+    }
+
+    /// Returns nil without changing state when capture is incomplete.
+    public func finish() -> ControllerHardwareCalibration? {
+        guard canFinish else { return nil }
         var cal = ControllerHardwareCalibration()
 
         if !restLeftSamples.isEmpty {
@@ -337,7 +347,9 @@ public final class ControllerSettingsStore: @unchecked Sendable {
 
     public func saveCalibration(_ calibration: ControllerHardwareCalibration) {
         do {
-            let data = try JSONEncoder().encode(calibration)
+            var safeCalibration = calibration
+            safeCalibration.validateAndRepair()
+            let data = try JSONEncoder().encode(safeCalibration)
             var dict = (defaults.dictionary(forKey: calibrationsKey) as? [String: Data]) ?? [:]
             dict[calibration.controllerIdentifier] = data
             defaults.set(dict, forKey: calibrationsKey)
