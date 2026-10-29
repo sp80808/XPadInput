@@ -2524,15 +2524,18 @@ final class TestRunner {
                 // Feed rotation excursion
                 wizard.feed(rawLeftX: 0.98, rawLeftY: 0.0, rawRightX: 0.0, rawRightY: 0.96)
                 let result = wizard.finish()
+                assertTrue(result != nil)
                 assertEqual(wizard.currentStep, .completed)
-                assertTrue(result.leftStick.restCenterX > 0.01)
-                assertTrue(result.leftStick.maxRadius >= 0.85)
+                assertTrue((result?.leftStick.restCenterX ?? 0) > 0.01)
+                assertTrue((result?.leftStick.maxRadius ?? 0) >= 0.85)
 
-                // Premature finish from idle does NOT impose 85% ceiling
+                // Premature finish from idle must refuse instead of completing.
                 let freshWizard = CalibrationWizard()
-                let idleResult = freshWizard.finish()
-                assertEqual(idleResult.leftStick.maxRadius, 1.0)
-                assertEqual(idleResult.rightStick.maxRadius, 1.0)
+                assertTrue(freshWizard.finish() == nil)
+                assertEqual(freshWizard.currentStep, .idle)
+                freshWizard.start()
+                assertTrue(freshWizard.finish() == nil)
+                assertEqual(freshWizard.currentStep, .measuringRest(samples: 0))
 
                 // Validation & repair of corrupt / NaN calibration
                 var corruptStick = StickCalibration(

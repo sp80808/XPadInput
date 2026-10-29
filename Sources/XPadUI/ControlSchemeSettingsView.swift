@@ -795,23 +795,25 @@ public struct ControlSchemeSettingsView: View {
                     .buttonStyle(.bordered)
                     
                     Button("Finish & Save Calibration") {
-                        let result = appState.controllerManager.calibrationWizard.finish()
+                        guard let result = appState.controllerManager.calibrationWizard.finish() else { return }
                         appState.controllerManager.applyHardwareCalibration(result)
                         isShowingCalibrationWizard = false
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(XTheme.primary)
+                    .disabled(!appState.controllerManager.calibrationWizard.canFinish)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 }
                 VStack(spacing: 8) {
                     Button("Finish & Save Calibration") {
-                        let result = appState.controllerManager.calibrationWizard.finish()
+                        guard let result = appState.controllerManager.calibrationWizard.finish() else { return }
                         appState.controllerManager.applyHardwareCalibration(result)
                         isShowingCalibrationWizard = false
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(XTheme.primary)
+                    .disabled(!appState.controllerManager.calibrationWizard.canFinish)
                     Button("Cancel") {
                         appState.controllerManager.calibrationWizard.cancel()
                         isShowingCalibrationWizard = false
