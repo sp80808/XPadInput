@@ -200,6 +200,6 @@ final class ControlSurfaceResolverTests: XCTestCase {
 
     func testAllBuiltInSchemesIncludeLeftHandedLayout() {
         XCTAssertTrue(ControlSchemePreset.allBuiltIn.contains { $0.id == "xpi_left_handed" })
-        XCTAssertEqual(ControlSchemePreset.allBuiltIn.count, 6)
+        XCTAssertEqual(ControlSchemePreset.allBuiltIn.count, 16, "all 16 built-in schemes are exposed")
     }
 }
