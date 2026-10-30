@@ -7,7 +7,8 @@ final class AudioTests: XCTestCase {
 
     // MARK: - SynthPreset Tests
     func testSynthPresets() {
-        XCTAssertEqual(SynthPreset.allPresets.count, 11)
+        XCTAssertEqual(SynthPreset.allPresets.count, 14)
+        XCTAssertEqual(Set(SynthPreset.allPresets.map(\.id)).count, 14, "preset ids are unique")
 
         let acoustic = SynthPreset.acousticSine
         XCTAssertEqual(acoustic.osc1Type, .sine)
