@@ -78,8 +78,8 @@ final class ArcadeFretEngineTests: XCTestCase {
     func testMinorDegreeReceivesMinorSeventhColouring() {
         var engine = ArcadeFretEngine()
         let frame = engine.process(
-            input: ArcadeFretInput(leftTriggerValue: 0.8, southPressed: true),
-            chords: Chord.diatonicChords(root: .a, scale: .minor),
+            input: ArcadeFretInput(rightTriggerValue: 0.8, southPressed: true),
+            chords: Chord.diatonicChords(root: .a, scale: .naturalMinor),
             timestamp: 0
         )
         // A natural minor degree vi is F major → ✕ yields Fmaj7.
