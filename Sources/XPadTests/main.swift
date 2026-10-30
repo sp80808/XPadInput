@@ -2858,6 +2858,35 @@ final class TestRunner {
             }
         }
 
+        suite("Scala (.kbm) Keyboard Mapping") {
+            test("Parses header and entries, then repeats the pattern with unmapped keys") {
+                let map = try ScalaKeyboardMap.parse("! t\n3\n0\n127\n60\n60\n261.6255653006\n4\n0\n2\nx\n")
+                assertEqual(map.entries, [0, 2, nil])
+                assertEqual(map.scaleDegree(forMIDINote: 61), 2)
+                assertEqual(map.scaleDegree(forMIDINote: 62), nil)
+                assertEqual(map.scaleDegree(forMIDINote: 63), 4)
+                assertEqual(map.scaleDegree(forMIDINote: 58), -2)
+            }
+
+            test("Reference frequency anchors the scale and the standard map keeps 12-TET") {
+                let twelveTET = try ScalaTuning(degreeCents: (1...12).map { Double($0) * 100.0 })
+                assertEqual(round((twelveTET.centsOffset(forMIDINote: 64, map: .standard) ?? 99) * 1000) / 1000, 0.0)
+
+                let just = try ScalaTuning.parse("J\n7\n9/8\n5/4\n4/3\n3/2\n5/3\n15/8\n2/1\n")
+                let map = ScalaKeyboardMap(referenceNote: 60, referenceFrequency: 261.6255653005986)
+                assertEqual(round((just.centsOffset(forMIDINote: 62, map: map) ?? 0) * 1000) / 1000, 186.314)
+            }
+
+            test("Rejects an unmapped reference note") {
+                do {
+                    _ = try ScalaKeyboardMap.parse("2\n0\n127\n60\n60\n261.6\n7\nx\n1")
+                    assertTrue(false, "Expected unmapped reference note")
+                } catch {
+                    assertEqual(error as? ScalaKeyboardMapError, .unmappedReferenceNote)
+                }
+            }
+        }
+
         // ==================================================
         // SUITE: Native MIDI 2 Per-Note Expression & Note Attributes Evaluation
         // ==================================================
