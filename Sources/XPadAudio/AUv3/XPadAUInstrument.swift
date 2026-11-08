@@ -25,6 +25,8 @@ private struct AUPolyVoice {
     var pressure: Double = 0.0
     var timbreCC74: Double = 0.5
     var channel: UInt8 = 0
+    // Monotonic note-on order for deterministic repeated-note releases.
+    var noteOnOrder: UInt64 = 0
 }
 
 /// Audio Unit v3 Polyphonic Synthesizer Instrument (Music Device).
@@ -40,6 +42,7 @@ public final class XPadAUInstrument: XPadAudioUnitBase, @unchecked Sendable {
     private let maxVoices = 16
     private var voices: [AUPolyVoice]
     private var noiseState: UInt32 = 0x9E37_79B9
+    private var nextNoteOnOrder: UInt64 = 0
     
     public override init(
         componentDescription: AudioComponentDescription,
@@ -67,7 +70,8 @@ public final class XPadAUInstrument: XPadAudioUnitBase, @unchecked Sendable {
     
     public override func allocateRenderResources() throws {
         try super.allocateRenderResources()
-        // Reset voices on render start
+        // Reset voices and note ownership on render start.
+        nextNoteOnOrder = 0
         for i in 0..<maxVoices {
             voices[i] = AUPolyVoice()
         }
@@ -80,6 +84,28 @@ public final class XPadAUInstrument: XPadAudioUnitBase, @unchecked Sendable {
         }
     }
     
+    /// Release only the most recent still-held instance of a given channel/pitch.
+    /// A bounded scan avoids any allocation on the audio render callback.
+    /// This preserves overlapping same-pitch notes on independent MPE channels.
+    private func releaseNewestVoice(note: UInt8, channel: UInt8) {
+        var newestIndex: Int?
+        var newestOrder: UInt64 = 0
+
+        for index in 0..<maxVoices {
+            let voice = voices[index]
+            guard voice.isActive, !voice.isReleasing,
+                  voice.note == note, voice.channel == channel else { continue }
+            if newestIndex == nil || voice.noteOnOrder > newestOrder {
+                newestIndex = index
+                newestOrder = voice.noteOnOrder
+            }
+        }
+        if let index = newestIndex {
+            voices[index].isReleasing = true
+            voices[index].releasePhase = 0
+        }
+    }
+
     public override var internalRenderBlock: AUInternalRenderBlock {
         let maxV = self.maxVoices
         let outBus = self.outputBus
@@ -135,6 +161,8 @@ public final class XPadAUInstrument: XPadAudioUnitBase, @unchecked Sendable {
                             v.velocity = Float(velocity) / 127.0
                             v.targetAmplitude = 0.07 + 0.93 * pow(Float(velocity) / 127.0, 0.72)
                             v.channel = channel
+                            self.nextNoteOnOrder &+= 1
+                            v.noteOnOrder = self.nextNoteOnOrder
                             v.timbreCC74 = 0.5
                             v.pitchBendSemitones = 0.0
                             v.pressure = 0.0
@@ -143,22 +171,11 @@ public final class XPadAUInstrument: XPadAudioUnitBase, @unchecked Sendable {
                             v.envPhase = 0.0
                             self.voices[targetIdx] = v
                         } else {
-                            // Note off via velocity 0
-                            for i in 0..<maxV {
-                                if self.voices[i].isActive && self.voices[i].note == note && (!self.voices[i].isReleasing || self.voices[i].channel == channel) {
-                                    self.voices[i].isReleasing = true
-                                    self.voices[i].releasePhase = 0.0
-                                }
-                            }
+                            // MIDI 1 note-on with zero velocity is a note-off for this channel.
+                            self.releaseNewestVoice(note: note, channel: channel)
                         }
                     case 0x80: // Note Off
-                        let note = byte1
-                        for i in 0..<maxV {
-                            if self.voices[i].isActive && self.voices[i].note == note && !self.voices[i].isReleasing {
-                                self.voices[i].isReleasing = true
-                                self.voices[i].releasePhase = 0.0
-                            }
-                        }
+                        self.releaseNewestVoice(note: byte1, channel: channel)
                     case 0xE0: // Pitch Bend
                         let raw14 = UInt16(byte2) << 7 | UInt16(byte1)
                         let bendSemitones = MIDIValueCodec.semitones(
@@ -187,8 +204,8 @@ public final class XPadAUInstrument: XPadAudioUnitBase, @unchecked Sendable {
                                     self.voices[i].timbreCC74 = timbre
                                 }
                             }
-                        } else if cc == 123 || cc == 120 { // All Notes Off / Sound Off
-                            for i in 0..<maxV {
+                        } else if cc == 123 || cc == 120 { // Channel-scoped All Notes Off / Sound Off
+                            for i in 0..<maxV where self.voices[i].isActive && self.voices[i].channel == channel {
                                 self.voices[i].isActive = false
                             }
                         }
