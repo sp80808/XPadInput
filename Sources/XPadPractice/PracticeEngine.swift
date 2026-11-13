@@ -85,18 +85,22 @@ public final class PracticeEngine: ObservableObject {
     }
     
     public func pausePractice() {
+        guard isPracticeActive, !isPaused else { return }
         isPaused = true
         advanceWorkItem?.cancel()
         advanceWorkItem = nil
         hintWorkItem?.cancel()
         hintWorkItem = nil
         sessionTimer?.invalidate()
+        sessionTimer = nil
         challengeTimer?.invalidate()
+        challengeTimer = nil
         feedbackMessage = "Practice paused"
         feedbackType = .neutral
     }
     
     public func resumePractice() {
+        guard isPracticeActive, isPaused else { return }
         isPaused = false
         startSessionTimer()
         
@@ -384,7 +388,10 @@ public final class PracticeEngine: ObservableObject {
         challengeRemainingTime = timeLimit
         challengeTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                guard let self = self else { return }
+                guard let self = self,
+                      self.isPracticeActive,
+                      !self.isPaused,
+                      self.currentChallenge != nil else { return }
                 self.challengeRemainingTime -= 1.0
                 if self.challengeRemainingTime <= 0 {
                     self.challengeTimer?.invalidate()
@@ -397,7 +404,9 @@ public final class PracticeEngine: ObservableObject {
     
     private func completeChallenge(timeExpired: Bool) {
         challengeTimer?.invalidate()
+        challengeTimer = nil
         sessionTimer?.invalidate()
+        sessionTimer = nil
         
         let accuracy = calculateOverallAccuracy()
         

@@ -150,4 +150,27 @@ final class XPadPracticeTests: XCTestCase {
         XCTAssertEqual(MasteryLevel.advanced.sortOrder, 3)
         XCTAssertEqual(MasteryLevel.expert.sortOrder, 4)
     }
+    func testStoppedPracticeCannotRestartSessionTimerOnResume() throws {
+        let engine = PracticeEngine()
+        let lesson = PracticeLesson(
+            title: "Timer lifecycle",
+            description: "Paused or stopped sessions must not restart",
+            category: .fundamentals,
+            difficulty: .beginner,
+            key: .c,
+            scale: Scale(root: .c, type: .major),
+            steps: [PracticeStep(instruction: "Play C", expectedChord: Chord(root: .c, quality: .major))]
+        )
+        engine.startLesson(lesson)
+        engine.pausePractice()
+        XCTAssertTrue(engine.isPaused)
+        engine.stopPractice()
+        XCTAssertFalse(engine.isPracticeActive)
+        XCTAssertFalse(engine.isPaused)
+        engine.resumePractice()
+        XCTAssertEqual(engine.feedbackMessage, "Practice session ended")
+        engine.pausePractice()
+        XCTAssertEqual(engine.feedbackMessage, "Practice session ended")
+    }
+
 }
