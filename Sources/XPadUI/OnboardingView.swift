@@ -48,8 +48,8 @@ public struct OnboardingView: View {
             icon: "puzzlepiece.extension.fill",
             title: "Install AU / VST3 Plugins",
             subtitle: "Ready for your DAW",
-            body: "XPadInput can automatically place its Audio Unit and VST3 plugins into your system folders so Logic, Ableton, and other hosts discover them immediately.",
-            hint: "Click the install button below, or skip and do this later.",
+            body: "XPI always works as a standalone app: your DAW sees its virtual MIDI sources directly. Audio Unit and VST3 plugins are optional and can only be installed when this build includes them.",
+            hint: "Nothing to install? That's fine — continue to the next step to connect your DAW over MIDI.",
             accent: XTheme.primary
         ),
         .init(
@@ -114,6 +114,13 @@ public struct OnboardingView: View {
 
                     if step.title == "Install AU / VST3 Plugins" {
                         VStack(spacing: 8) {
+                            if !appState.pluginBundlesAvailable {
+                                Label("No AU / VST3 plugin bundles are included in this build", systemImage: "info.circle.fill")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(XTheme.textSecondary)
+                                    .multilineTextAlignment(.center)
+                                    .accessibilityLabel("No AU or VST3 plugin bundles are included in this build. XPI works as a standalone app over virtual MIDI.")
+                            } else {
                             Button(action: {
                                 appState.installPlugins()
                             }) {
@@ -124,7 +131,7 @@ public struct OnboardingView: View {
                                         Text("Plugins Installed")
                                     } else {
                                         Image(systemName: "arrow.down.app.fill")
-                                        Text("Auto-Install Plugins")
+                                        Text("Install Available Plugins")
                                     }
                                 }
                             }
@@ -137,6 +144,7 @@ public struct OnboardingView: View {
                                     .foregroundColor(.red)
                                     .multilineTextAlignment(.center)
                                     .frame(maxWidth: 400)
+                            }
                             }
                         }
                         .padding(.top, 4)

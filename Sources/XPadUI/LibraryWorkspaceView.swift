@@ -34,7 +34,7 @@ public struct LibraryWorkspaceView: View {
                     }
                 }
 
-                // CoreAudio Virtual Audio Driver & Loopback Section
+                // In-app loopback monitor & WAV capture (not a system audio device)
                 VirtualAudioView()
 
                 Divider()

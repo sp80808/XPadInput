@@ -20,15 +20,26 @@ public final class PluginInstaller: @unchecked Sendable {
 
     private init() {}
 
-    public var status: Status {
-        let auStatus = isPluginInstalled(type: .au)
-        let vst3Status = isPluginInstalled(type: .vst3)
+    /// Plugin formats whose bundle actually ships next to this build.
+    public var availablePluginTypes: [PluginType] {
+        [PluginType.au, .vst3].filter { isSourceBundleAvailable($0) }
+    }
 
-        if auStatus && vst3Status {
-            return .installed
-        } else {
-            return .notInstalled
-        }
+    /// True only when at least one host-loadable bundle exists to install.
+    /// Release UI must gate any "Install" affordance on this (#84).
+    public var hasInstallableBundles: Bool {
+        !availablePluginTypes.isEmpty
+    }
+
+    public func isSourceBundleAvailable(_ type: PluginType) -> Bool {
+        fileManager.fileExists(atPath: sourceURL(for: type).path)
+    }
+
+    /// `.installed` only when bundles ship with this build and every one of them is installed.
+    public var status: Status {
+        let available = availablePluginTypes
+        guard !available.isEmpty else { return .notInstalled }
+        return available.allSatisfy { isPluginInstalled(type: $0) } ? .installed : .notInstalled
     }
 
     public enum PluginType {
@@ -57,6 +68,10 @@ public final class PluginInstaller: @unchecked Sendable {
         }
     }
 
+    private func sourceURL(for type: PluginType) -> URL {
+        Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent(type.bundleName)
+    }
+
     private func isPluginInstalled(type: PluginType) -> Bool {
         guard let destDir = type.destinationDirectory else { return false }
         let destURL = destDir.appendingPathComponent(type.bundleName)
@@ -64,9 +79,16 @@ public final class PluginInstaller: @unchecked Sendable {
     }
 
     public func install(method: InstallationMethod = .symlink) -> Status {
+        // Preflight before touching anything: never remove a known-good bundle
+        // or report success for a format that has no source bundle.
+        let installable = availablePluginTypes
+        guard !installable.isEmpty else {
+            return .failed("This build does not include AU or VST3 plugin bundles. Use XPI as a standalone app and select its virtual MIDI sources in your DAW.")
+        }
         do {
-            try installPlugin(type: .au, method: method)
-            try installPlugin(type: .vst3, method: method)
+            for type in installable {
+                try installPlugin(type: type, method: method)
+            }
             return .installed
         } catch {
             return .failed(error.localizedDescription)
@@ -78,12 +100,11 @@ public final class PluginInstaller: @unchecked Sendable {
             throw NSError(domain: "PluginInstaller", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not locate destination directory."])
         }
 
-        // Try to find the built plugin bundle next to the main executable
-        let bundleURL = Bundle.main.bundleURL
-        let sourceURL = bundleURL.deletingLastPathComponent().appendingPathComponent(type.bundleName)
+        // Built plugin bundle is expected next to the main executable
+        let bundleSource = sourceURL(for: type)
 
-        if !fileManager.fileExists(atPath: sourceURL.path) {
-             throw NSError(domain: "PluginInstaller", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not find plugin bundle at \(sourceURL.path). Ensure it's built and located next to the main app."])
+        if !fileManager.fileExists(atPath: bundleSource.path) {
+             throw NSError(domain: "PluginInstaller", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not find plugin bundle at \(bundleSource.path). Ensure it's built and located next to the main app."])
         }
 
         if !fileManager.fileExists(atPath: destDir.path) {
@@ -98,9 +119,9 @@ public final class PluginInstaller: @unchecked Sendable {
 
         switch method {
         case .symlink:
-            try fileManager.createSymbolicLink(at: destURL, withDestinationURL: sourceURL)
+            try fileManager.createSymbolicLink(at: destURL, withDestinationURL: bundleSource)
         case .copy:
-            try fileManager.copyItem(at: sourceURL, to: destURL)
+            try fileManager.copyItem(at: bundleSource, to: destURL)
         }
     }
 }

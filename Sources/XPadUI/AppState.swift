@@ -146,6 +146,9 @@ public final class AppState: @unchecked Sendable {
 
     public var pluginInstallStatus: PluginInstaller.Status = PluginInstaller.shared.status
 
+    /// Whether this build actually ships AU/VST3 bundles that can be installed (#84).
+    public var pluginBundlesAvailable: Bool { PluginInstaller.shared.hasInstallableBundles }
+
     public func installPlugins() {
         pluginInstallStatus = PluginInstaller.shared.install()
     }
