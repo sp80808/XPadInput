@@ -131,6 +131,10 @@ public struct SequenceWorkspaceView: View {
                             }
                         }
                         .xButton(.secondary, size: .small)
+                        .disabled(sequencer.recordedEvents.isEmpty)
+                        .help(sequencer.recordedEvents.isEmpty
+                              ? "Nothing recorded yet — enable Record and play, or insert a Harmony clip"
+                              : "Export the recorded performance as a Standard MIDI File")
                         .scaleEffect(exportScale ? 1.08 : 1.0)
                         .animation(.spring(response: 0.2, dampingFraction: 0.75), value: exportScale)
                     }

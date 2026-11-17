@@ -36,7 +36,7 @@ public struct AUPluginView: View {
                     Text("XPI: Game Controller MIDI")
                         .font(.system(size: 14, weight: .bold))
                         .foregroundColor(XTheme.textPrimary)
-                    Text("AUv3 / VST3")
+                    Text("PLUGIN UI PREVIEW")
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
@@ -57,14 +57,6 @@ public struct AUPluginView: View {
                             .foregroundColor(XTheme.textSecondary)
                     }
                     
-                    HStack(spacing: 4) {
-                        Image(systemName: "waveform.path")
-                            .font(.system(size: 11))
-                            .foregroundColor(XTheme.primary)
-                        Text("CoreAudio HAL")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(XTheme.textTertiary)
-                    }
                 }
             }
             .padding(.horizontal, 16)

@@ -2,7 +2,8 @@ import SwiftUI
 import XPadCore
 import XPadAudio
 
-/// Control panel and live VU level visualizer for the CoreAudio Virtual Audio Driver and loopback capture.
+/// In-app loopback monitor and WAV capture. This is NOT a system-wide CoreAudio device:
+/// other apps (OBS, DAWs) cannot select it. See issue #83.
 public struct VirtualAudioView: View {
     @State private var virtualDriver = VirtualAudioDriver.shared
     @State private var loopbackEngine = VirtualAudioLoopbackEngine.shared
@@ -24,10 +25,10 @@ public struct VirtualAudioView: View {
                         .font(.system(size: 18))
                         .foregroundColor(virtualDriver.isEnabled ? XTheme.primary : XTheme.textTertiary)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("CoreAudio Virtual Audio Driver")
+                        Text("Loopback Monitor & WAV Capture")
                             .font(.system(size: 13, weight: .bold))
                             .foregroundColor(XTheme.textPrimary)
-                        Text("Direct loopback stream for OBS, DAWs, and system capture")
+                        Text("In-app only · not visible to other apps as an audio device")
                             .font(.system(size: 10))
                             .foregroundColor(XTheme.textSecondary)
                     }
@@ -46,6 +47,8 @@ public struct VirtualAudioView: View {
                 ))
                 .toggleStyle(.switch)
                 .labelsHidden()
+                .help("Turns the in-app loopback tap on or off")
+                .accessibilityLabel("Loopback monitor")
             }
             
             Divider()
@@ -73,7 +76,9 @@ public struct VirtualAudioView: View {
             .background(XTheme.surface)
             .clipShape(RoundedRectangle(cornerRadius: 8))
             
-            // Settings Grid
+            // Settings Grid — these only update in-app state; they do not reconfigure
+            // CoreAudio hardware, so they are disabled and explained (#83).
+            VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 12) {
                 // Buffer Size Picker
                 VStack(alignment: .leading, spacing: 4) {
@@ -109,11 +114,19 @@ public struct VirtualAudioView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .disabled(true)
+            .opacity(0.5)
+
+            Text("Buffer and sample-rate options apply only to a system audio device, which XPI does not install yet. Captures use the live audio engine format.")
+                .font(.system(size: 9))
+                .foregroundColor(XTheme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
             
             // Stem Recorder Section
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Zero-Loss WAV Stem Capture")
+                    Text("WAV Capture")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(XTheme.textPrimary)
                     if isRecordingStem {
@@ -131,7 +144,7 @@ public struct VirtualAudioView: View {
                             .foregroundColor(XTheme.primary)
                             .lineLimit(1)
                     } else {
-                        Text("Capture continuous 32-bit float master stream to disk")
+                        Text("Record the master output to a WAV file")
                             .font(.system(size: 9))
                             .foregroundColor(XTheme.textTertiary)
                     }

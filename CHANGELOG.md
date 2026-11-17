@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `centsOffset(forMIDINote:rootNote:)` / `semitoneOffset(forMIDINote:rootNote:)` return per-note offsets from 12-TET, in the same form `MicrotonalTemperament` feeds the synth and MPE pitch bend. Wiring into the temperament selector is not done yet.
 - `XPadVersion.current` as the single app-version constant.
 
+### Changed
+- **UI truthfulness pass (#83, #84, #55)**:
+  - Library: the "CoreAudio Virtual Audio Driver" panel is now "Loopback Monitor & WAV Capture" and says it is in-app only. Buffer/sample-rate pickers are disabled with an explanation because they never reconfigured CoreAudio.
+  - Onboarding: the plugin step only offers Install when AU/VST3 bundles actually ship with the build; otherwise it explains that XPI works standalone over virtual MIDI.
+  - `PluginInstaller` preflights available bundles before touching the filesystem, installs only formats that exist, and reports `.installed` only when something real is installed.
+  - SEQUENCE: Export .MID is disabled (with a tooltip) until something has been recorded.
+  - Plugin view header no longer advertises "AUv3 / VST3" or "CoreAudio HAL".
+
 ### Fixed
 - Control scheme archives and MIDI-CI DeviceInfo reported stale versions (`0.0.04` / `0.0.02`); both now use `XPadVersion.current`.
 - CI packaged `0.0.02` artifacts; it now packages `0.0.05`.
